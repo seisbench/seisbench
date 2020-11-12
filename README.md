@@ -1,2 +1,2 @@
-# seisbench
+# SeisBench
 SeisBench - The Seismology Benchmark collection
