@@ -5,4 +5,6 @@ from pathlib import Path
 cache_root = os.getenv("SEISBENCH_CACHE_ROOT", Path(Path.home(), ".seisbench"))
 
 # Version number
-__version__ = "0.0"
+__version__ = "0.0.0"
+
+# TODO: Setup logging
