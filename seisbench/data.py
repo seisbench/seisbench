@@ -17,10 +17,13 @@ class WaveformDataset(ABC):
     """
 
     # TODO: Define/implement a convention for channel naming/order
-    def __init__(self, name, citation=None, lazyload=True, **kwargs):
+    def __init__(
+        self, name, citation=None, lazyload=True, dimension_order="NCW", **kwargs
+    ):
         self._name = name
         self.lazyload = lazyload
         self._citation = citation
+        self.dimension_order = dimension_order
 
         # Check if dataset is cached
         # TODO: Validate if cached dataset was downloaded with the same parameters
@@ -50,6 +53,10 @@ class WaveformDataset(ABC):
 
     def _dataset_path(self):
         return Path(seisbench.cache_root, self.name.lower())
+
+    # NOTE: Obtains the dimension ordering which can be specified by the user
+    def _get_dim_order(self):
+        return [("NCW").find(s) for s in self.dimension_order]
 
     @abstractmethod
     def _download_dataset(self, **kwargs):
@@ -93,10 +100,30 @@ class WaveformDataset(ABC):
 
     def filter(self, mask):
         """
-        Filters data set inplace, e.g. by distance/magnitude/..., using a binary mask
+        Filters dataset inplace, e.g. by distance/magnitude/..., using a binary mask
         Example usage dataset.filter(dataset["p_status"] == "manual")
         :return:
         """
+        self._metadata = self._metadata[mask]
+        self._evict_cache()
+
+    # NOTE: lat/lon columns are specified to enhance generalisability as naming convention may
+    # change between datasets and users may also want to filter as a function of  recievers/sources
+    def region_filter(self, domain, lat_col, lon_col):
+        """
+        In place filtering of dataset based on predefined region or geometry.
+        :param domain: The domain filter
+        :type domain: obspy.core.fdsn.mass_downloader.domain:
+        :param lat_col: Name of latitude coordinate column
+        :type lat_col: str
+        :param lon_col: Name of longitude coordinate column
+        :type lon_col: str
+        :return:
+        """
+        check_domain = lambda metadata: domain.is_in_domain(
+            metadata[lat_col], metadata[lon_col]
+        )
+        mask = self._metadata.apply(check_domain, axis=1)
         self._metadata = self._metadata[mask]
         self._evict_cache()
 
@@ -129,7 +156,7 @@ class WaveformDataset(ABC):
         Collects waveforms and returns them as an array.
         :param split: Split (train/dev/test) to obtain waveforms for
         :param mask: Binary mask on the metadata, indicating which traces should be returned. Can not be used jointly with split.
-        :return: Waveform array with shape (number of traces, number of components, record samples). If the number of components or record samples varies between different entries, all entries are padded to the maximum length.
+        :return: Waveform array with dimensions ordered according to dimension_order e.g. default 'NCW' (number of traces, number of components, record samples). If the number of components or record samples varies between different entries, all entries are padded to the maximum length.
         """
         if split is not None and mask is not None:
             raise ValueError("Split and mask can not be used jointly.")
@@ -163,7 +190,8 @@ class WaveformDataset(ABC):
                     constant_value=0,
                 )
 
-        return np.stack(waveforms, axis=0)
+        dim_0, dim_1, dim_2 = self._get_dim_order()
+        return np.stack(waveforms, axis=0).transpose(dim_0, dim_1, dim_2)
 
     def _get_single_waveform(self, trace_name, f_wave=None):
         if trace_name not in self._waveform_cache:

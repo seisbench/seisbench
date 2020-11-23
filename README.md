@@ -11,7 +11,6 @@ import seisbench.data
 # The SeisBench path can be set with the environment variable SEISBENCH_CACHE_ROOT
 dummy = seisbench.data.DummyDataset()
 
-print(dummy.dataset)
 print(len(dummy))
 print(dummy.metadata)
 
