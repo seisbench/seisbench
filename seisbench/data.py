@@ -112,6 +112,7 @@ class WaveformDataset(ABC):
     def region_filter(self, domain, lat_col, lon_col):
         """
         In place filtering of dataset based on predefined region or geometry.
+        See also convenience functions region_filter_[source|receiver]
         :param domain: The domain filter
         :type domain: obspy.core.fdsn.mass_downloader.domain:
         :param lat_col: Name of latitude coordinate column
@@ -124,8 +125,17 @@ class WaveformDataset(ABC):
             metadata[lat_col], metadata[lon_col]
         )
         mask = self._metadata.apply(check_domain, axis=1)
-        self._metadata = self._metadata[mask]
-        self._evict_cache()
+        self.filter(mask)
+
+    def region_filter_source(self, domain):
+        self.region_filter(
+            domain, lat_col="source_latitude", lon_col="source_longitude"
+        )
+
+    def region_filter_receiver(self, domain):
+        self.region_filter(
+            domain, lat_col="receiver_latitude", lon_col="receiver_longitude"
+        )
 
     def _evict_cache(self):
         """
