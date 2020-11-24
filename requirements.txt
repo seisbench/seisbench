@@ -4,3 +4,4 @@ h5py>=3.1
 obspy>=1.2
 tqdm>=4.52
 fiona>=1.8.13
+shapely>=1.7.1

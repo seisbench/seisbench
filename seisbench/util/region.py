@@ -3,6 +3,7 @@ from obspy.clients.fdsn.mass_downloader.domain import (
     CircularDomain,
     RectangularDomain,
 )
+from obspy.geodetics.base import locations2degrees
 import fiona
 import shapely.geometry
 
@@ -19,14 +20,10 @@ class RectangleDomain(RectangularDomain):
         self.maxlongitude = maxlongitude
 
     def is_in_domain(self, latitude, longitude):
-        if (
-            latitude >= self.minlatitude
-            and latitude <= self.maxlatitude
-            and longitude >= self.minlongitude
-            and longitude <= self.maxlongitude
-        ):
-            return True
-        return False
+        return (
+            self.minlatitude <= latitude <= self.maxlatitude
+            and self.minlongitude <= longitude <= self.maxlongitude
+        )
 
 
 class CircleDomain(CircularDomain):
@@ -38,10 +35,8 @@ class CircleDomain(CircularDomain):
         super().__init__(latitude, longitude, minradius, maxradius)
 
     def is_in_domain(self, latitude, longitude):
-        d = ((self.latitude - latitude) ** 2 + (self.longitude - longitude) ** 2) ** 0.5
-        if d < self.maxradius and d > self.minradius:
-            return True
-        return False
+        d = locations2degrees(self.latitude, self.longitude, latitude, longitude)
+        return self.min_radius < d < self.maxradius
 
 
 class Germany(Domain):
@@ -66,6 +61,4 @@ class Germany(Domain):
         }
 
     def is_in_domain(self, latitude, longitude):
-        if self.shape.contains(shapely.geometry.Point(longitude, latitude)):
-            return True
-        return False
+        return self.shape.contains(shapely.geometry.Point(longitude, latitude))
