@@ -36,7 +36,7 @@ class CircleDomain(CircularDomain):
 
     def is_in_domain(self, latitude, longitude):
         d = locations2degrees(self.latitude, self.longitude, latitude, longitude)
-        return self.min_radius < d < self.maxradius
+        return self.minradius < d < self.maxradius
 
 
 class Germany(Domain):

@@ -29,3 +29,6 @@ pre-commit install
 ```
 Note that the black code style can be imposed later as well,
 so if you are experiencing issues with installing black, just ignore the style.
+
+## Tests
+Run tests using `pytest` by running `python -m pytest` in the repository root directory.
