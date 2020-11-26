@@ -16,14 +16,23 @@ class WaveformDataset(ABC):
     This class is the abstract base class for waveform datasets.
     """
 
-    # TODO: Define/implement a convention for channel naming/order
     def __init__(
-        self, name, citation=None, lazyload=True, dimension_order="NCW", **kwargs
+        self,
+        name,
+        citation=None,
+        lazyload=True,
+        dimension_order=None,
+        component_order=None,
+        **kwargs,
     ):
         self._name = name
         self.lazyload = lazyload
         self._citation = citation
-        self.dimension_order = dimension_order
+
+        self._dimension_order = None
+        self._dimension_mapping = None
+        self._component_order = None
+        self._component_mapping = None
 
         # Check if dataset is cached
         # TODO: Validate if cached dataset was downloaded with the same parameters
@@ -34,6 +43,11 @@ class WaveformDataset(ABC):
             )
             self._download_dataset(**kwargs)
         self._metadata = pd.read_csv(metadata_path)
+        self._data_format = self._read_data_format()
+
+        self.dimension_order = dimension_order
+        self.component_order = component_order
+
         self._waveform_cache = {}
 
         if not self.lazyload:
@@ -51,12 +65,71 @@ class WaveformDataset(ABC):
     def citation(self):
         return self._citation
 
+    @property
+    def dimension_order(self):
+        return self._dimension_order
+
+    @dimension_order.setter
+    def dimension_order(self, value):
+        if value is None:
+            value = seisbench.config["dimension_order"]
+
+        self._dimension_mapping = self._get_order_mapping(
+            "N" + self._data_format["dimension_order"], value
+        )
+        self._dimension_order = value
+
+    @property
+    def component_order(self):
+        return self._component_order
+
+    @component_order.setter
+    def component_order(self, value):
+        if value is None:
+            value = seisbench.config["component_order"]
+
+        self._component_mapping = self._get_order_mapping(
+            self._data_format["component_order"], value
+        )
+        self._component_order = value
+
+    def _get_order_mapping(self, source, target):
+        source = list(source)
+        target = list(target)
+
+        if len(target) != len(source):
+            raise ValueError(
+                f"Number of source and target components needs to be identical. Got {len(source)}!={len(target)}."
+            )
+        if len(set(source)) != len(source):
+            raise ValueError(
+                f"Source components/channels need to have unique names. Got {source}."
+            )
+        if len(set(target)) != len(target):
+            raise ValueError(
+                f"Source components/channels need to have unique names. Got {target}."
+            )
+
+        try:
+            mapping = [source.index(t) for t in target]
+        except ValueError:
+            raise ValueError(
+                f"Could not determine mapping {source} -> {target}. Please provide valid target components/channels."
+            )
+
+        return mapping
+
     def _dataset_path(self):
         return Path(seisbench.cache_root, self.name.lower())
 
-    # NOTE: Obtains the dimension ordering which can be specified by the user
-    def _get_dim_order(self):
-        return [("NCW").find(s) for s in self.dimension_order]
+    def _read_data_format(self):
+        with h5py.File(self._dataset_path() / "waveforms.hdf5", "r") as f_wave:
+            g_data_format = f_wave["data_format"]
+            data_format = {key: g_data_format[key][()] for key in g_data_format.keys()}
+        for key in data_format.keys():
+            if isinstance(data_format[key], bytes):
+                data_format[key] = data_format[key].decode()
+        return data_format
 
     @abstractmethod
     def _download_dataset(self, **kwargs):
@@ -76,7 +149,7 @@ class WaveformDataset(ABC):
             for trace_name in self._metadata["trace_name"]:
                 self._get_single_waveform(trace_name, f_wave=f_wave)
 
-    def _write_data(self, metadata, waveforms, metadata_dict=None):
+    def _write_data(self, metadata, waveforms, data_format, metadata_dict=None):
         """
         Writes data from memory to disk using the standard file format. Should only be used in _download_dataset.
         :param metadata:
@@ -90,13 +163,17 @@ class WaveformDataset(ABC):
         metadata.to_csv(self._dataset_path() / "metadata.csv", index=False)
 
         with h5py.File(self._dataset_path() / "waveforms.hdf5", "w") as fout:
-            gdata = fout.create_group("data")
+            g_data_format = fout.create_group("data_format")
+            for key in data_format.keys():
+                g_data_format.create_dataset(key, data=data_format[key])
+
+            g_data = fout.create_group("data")
             for trace_name in tqdm(
                 metadata["trace_name"],
                 total=len(metadata),
                 desc="Writing waveforms to disk",
             ):
-                gdata.create_dataset(str(trace_name), data=waveforms[trace_name])
+                g_data.create_dataset(str(trace_name), data=waveforms[trace_name])
 
     def filter(self, mask):
         """
@@ -186,22 +263,11 @@ class WaveformDataset(ABC):
             for trace_name in load_metadata["trace_name"]:
                 waveforms.append(self._get_single_waveform(trace_name, f_wave=f_wave))
 
-        max_components = max([x.shape[0] for x in waveforms])
-        max_records = max([x.shape[1] for x in waveforms])
+        waveforms = self._pad_packed_sequence(waveforms)
+        component_dimension = list(self._data_format["dimension_order"]).index("C") + 1
+        waveforms = waveforms.take(self._component_mapping, axis=component_dimension)
 
-        for i, waveform in enumerate(waveforms):
-            if waveform.shape != (max_components, max_records):
-                d_components = max_components - waveform.shape[0]
-                d_records = max_records - waveform.shape[1]
-                waveforms[i] = np.pad(
-                    waveform,
-                    ((0, d_components), (0, d_records)),
-                    "constant",
-                    constant_value=0,
-                )
-
-        dim_0, dim_1, dim_2 = self._get_dim_order()
-        return np.stack(waveforms, axis=0).transpose(dim_0, dim_1, dim_2)
+        return waveforms.transpose(*self._dimension_mapping)
 
     def _get_single_waveform(self, trace_name, f_wave=None):
         if trace_name not in self._waveform_cache:
@@ -211,6 +277,19 @@ class WaveformDataset(ABC):
             self._waveform_cache[trace_name] = g_data[str(trace_name)][()]
 
         return self._waveform_cache[trace_name]
+
+    def _pad_packed_sequence(self, seq):
+        max_size = np.array(
+            [max([x.shape[i] for x in seq]) for i in range(seq[0].ndim)]
+        )
+
+        for i, elem in enumerate(seq):
+            d = max_size - np.array(elem.shape)
+            if (d != 0).any():
+                pad = [(0, d_dim) for d_dim in d]
+                seq[i] = np.pad(elem, pad, "constant", constant_values=0)
+
+        return np.stack(seq, axis=0)
 
 
 class DummyDataset(WaveformDataset):
@@ -295,4 +374,5 @@ class DummyDataset(WaveformDataset):
             "std_MA": "source_magnitude_uncertainty",
             "std_ML": "source_magnitude_uncertainty2",
         }
-        self._write_data(metadata, waveforms, metadata_dict)
+        data_format = {"dimension_order": "CW", "component_order": "ZNE"}
+        self._write_data(metadata, waveforms, data_format, metadata_dict=metadata_dict)
