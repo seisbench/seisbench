@@ -67,13 +67,29 @@ array([-34161.54633207, -34226.77126392, -34192.63113299, ...,
 
 Three components per entry, floating point numbers, so we apparently have gain corrected raw data in nanometers per second. It is not yet clear what the components are but that should be easy to figure out by comparing with data downloaded from a web service.
 
-Also there seems to be no time window starting time specified. Unless I missed something, we only have the pick times and the event origin times. Also it's not clear what the sampling frequency is. Maybe it's 20 Hz in general. 2400 samples is not too much. It appears that the time window is centered around the pick times, with 1200 samples before and 1200 samples after that time. Otherwise it would not be possible to recover the absolute timing.
+Also there seems to be no time window starting time specified.  Unless I missed something, we only have the pick times and the event origin times. Also there seems to be no indication what the sampling frequency is. Data snippets are always 2400 samples long. It appears that the time window is centered exactly around the pick times, with 1200 samples before and 1200 samples after that time. Otherwise it would not be possible to recover absolute timing. 2400 (1200+1200) samples is not a lot and corresponds to only 30 s lead time for 40 Hz data.
 
 ## Evaluation
 
 Quite nice! Very pragmatic approach, but unfortunately entirely NumPy specific and therefore cannot be considered portable except in a Python/NumPy ecosystem. Probably easy handling and fast reading. A disadvantage is the dependency on a specific software, which would make it very hard to sell it as a "standard". What I also don't like is the difficulty to access individual data, e.g. for simple viewing in PQL or so. Plain MiniSEED files are handier here but also slower to read (I presume).
 
 This NumPy format may well come into play as a "common denominator" intermediate format immediately before the actual processing.
+
+What I don't like
+
+* unspecified sampling frequency and time window starting time
+
+* fixed number of samples leading to sampling-frequency dependent time windows
+
+* rather short time windows exactly centered about the pick time
+
+* data set not suitable for all kinds of seismic onsets, especially
+  long-period onsets lacking short periods (not uncommon!)
+
+* data set hardly suitable for other analyses like magnitudes
+
+The unknown sampling frequency is interesting in the sense that the ML is then agnostic of absolute frequencies. This might prevent the ML from learning about certain kinds of noise that shows up prominently in rather narrow frequency bands, especially microseisms. But that might also have advantages (TBD). For instance, the evaluation may be simplified: time axis is always samples and the reference onset is always at sample number 1200. We then simply compare offset in samples of the ML-determined onset. Not sure if that is the motivation behind, though.
+
 
 
 [1] [numpy.lib.format](https://numpy.org/devdocs/reference/generated/numpy.lib.format.html)
