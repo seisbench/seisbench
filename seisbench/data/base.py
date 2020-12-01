@@ -52,6 +52,9 @@ class WaveformDataset(ABC):
         if not self.lazyload:
             self._load_waveform_data()
 
+    def __str__(self):
+        return f"{self._name} - {len(self)} traces"
+
     @property
     def metadata(self):
         return self._metadata
