@@ -66,6 +66,11 @@ class WaveformDataset(ABC):
         return self._citation
 
     @property
+    def data_format(self):
+        # Returns a copy of the data format, to ensure internal data format is not modified.
+        return dict(self._data_format)
+
+    @property
     def dimension_order(self):
         return self._dimension_order
 
@@ -127,9 +132,20 @@ class WaveformDataset(ABC):
         with h5py.File(self._dataset_path() / "waveforms.hdf5", "r") as f_wave:
             g_data_format = f_wave["data_format"]
             data_format = {key: g_data_format[key][()] for key in g_data_format.keys()}
+
         for key in data_format.keys():
             if isinstance(data_format[key], bytes):
                 data_format[key] = data_format[key].decode()
+
+        if "sampling_rate" not in data_format:
+            logging.warning("Sampling rate not specified in data set")
+        if "dimension_order" not in data_format:
+            logging.warning("Dimension order not specified in data set. Assuming CW.")
+            data_format["dimension_order"] = "CW"
+        if "component_order" not in data_format:
+            logging.warning("Component order not specified in data set. Assuming ZNE.")
+            data_format["component_order"] = "ZNE"
+
         return data_format
 
     @abstractmethod
@@ -379,5 +395,12 @@ class DummyDataset(WaveformDataset):
             "std_MA": "source_magnitude_uncertainty",
             "std_ML": "source_magnitude_uncertainty2",
         }
-        data_format = {"dimension_order": "CW", "component_order": "ZNE"}
+        data_format = {
+            "dimension_order": "CW",
+            "component_order": "ZNE",
+            "sampling_rate": sampling_rate,
+            "measurement": "velocity",
+            "unit": "counts",
+            "instrument_response": "not restituted",
+        }
         self._write_data(metadata, waveforms, data_format, metadata_dict=metadata_dict)
