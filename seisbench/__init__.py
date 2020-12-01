@@ -1,6 +1,7 @@
 import os as _os
 from pathlib import Path as _Path
 import json as _json
+import logging as _logging
 
 __all__ = ["cache_root", "__version__", "config"]
 
@@ -24,4 +25,9 @@ else:
 # Version number
 __version__ = "0.0.0"
 
-# TODO: Setup logging
+logger = _logging.getLogger("seisbench")
+_ch = _logging.StreamHandler()
+_ch.setFormatter(
+    _logging.Formatter("%(asctime)s | %(name)s | %(levelname)s | %(message)s")
+)
+logger.addHandler(_ch)

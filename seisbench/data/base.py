@@ -5,7 +5,6 @@ import pandas as pd
 import h5py
 import numpy as np
 import ftplib
-import logging
 from obspy import UTCDateTime
 from obspy.clients.fdsn import Client
 from tqdm import tqdm
@@ -38,7 +37,7 @@ class WaveformDataset(ABC):
         # TODO: Validate if cached dataset was downloaded with the same parameters
         metadata_path = self._dataset_path() / "metadata.csv"
         if not metadata_path.is_file():
-            logging.info(
+            seisbench.logger.info(
                 f"Dataset {name} not in cache. Downloading and preprocessing corpus..."
             )
             self._download_dataset(**kwargs)
@@ -138,12 +137,16 @@ class WaveformDataset(ABC):
                 data_format[key] = data_format[key].decode()
 
         if "sampling_rate" not in data_format:
-            logging.warning("Sampling rate not specified in data set")
+            seisbench.logger.warning("Sampling rate not specified in data set")
         if "dimension_order" not in data_format:
-            logging.warning("Dimension order not specified in data set. Assuming CW.")
+            seisbench.logger.warning(
+                "Dimension order not specified in data set. Assuming CW."
+            )
             data_format["dimension_order"] = "CW"
         if "component_order" not in data_format:
-            logging.warning("Component order not specified in data set. Assuming ZNE.")
+            seisbench.logger.warning(
+                "Component order not specified in data set. Assuming ZNE."
+            )
             data_format["component_order"] = "ZNE"
 
         return data_format
@@ -245,7 +248,7 @@ class WaveformDataset(ABC):
         for key in delete_keys:
             del self._waveform_cache[key]
 
-        logging.debug(f"Deleted {len(delete_keys)} entries in cache eviction")
+        seisbench.logger.debug(f"Deleted {len(delete_keys)} entries in cache eviction")
 
     def __getitem__(self, item):
         if not isinstance(item, str):
