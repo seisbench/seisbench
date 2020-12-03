@@ -20,7 +20,7 @@ class STEAD(WaveformDataset):
             name=self.__class__.__name__.lower(), citation=citation, **kwargs
         )
 
-    def _download_dataset(self, basepath=None, **kwargs):
+    def _download_dataset(self, writer, basepath=None, **kwargs):
         download_instructions = (
             "Please download STEAD following the instructions at https://github.com/smousavi05/STEAD. "
             "Provide the locations of the STEAD unpacked files (merged.csv and merged.hdf5) as parameter basepath to the class. "

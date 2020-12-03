@@ -8,6 +8,7 @@ import ftplib
 from obspy import UTCDateTime
 from obspy.clients.fdsn import Client
 from tqdm import tqdm
+import shutil
 
 
 class WaveformDataset(ABC):
@@ -42,7 +43,8 @@ class WaveformDataset(ABC):
             seisbench.logger.info(
                 f"Dataset {name} not in cache. Downloading and preprocessing corpus..."
             )
-            self._download_dataset(**kwargs)
+            with WaveformDataWriter(self._dataset_path()) as writer:
+                self._download_dataset(writer, **kwargs)
         self._metadata = pd.read_csv(metadata_path)
         self._data_format = self._read_data_format()
 
@@ -162,7 +164,7 @@ class WaveformDataset(ABC):
         return data_format
 
     @abstractmethod
-    def _download_dataset(self, **kwargs):
+    def _download_dataset(self, writer, **kwargs):
         """
         Download and convert the dataset to the standard seisbench format. The metadata must contain at least the columns 'trace_name' and 'split'.
         :param kwargs:
@@ -178,32 +180,6 @@ class WaveformDataset(ABC):
         with h5py.File(self._dataset_path() / "waveforms.hdf5", "r") as f_wave:
             for trace_name in self._metadata["trace_name"]:
                 self._get_single_waveform(trace_name, f_wave=f_wave)
-
-    def _write_data(self, metadata, waveforms, data_format, metadata_dict=None):
-        """
-        Writes data from memory to disk using the standard file format. Should only be used in _download_dataset.
-        :param metadata:
-        :param waveforms:
-        :param metadata_dict: String mapping from the column names used in the provided metadata to the standard column names
-        :return:
-        """
-        if metadata_dict is not None:
-            metadata.rename(columns=metadata_dict, inplace=True)
-
-        metadata.to_csv(self._dataset_path() / "metadata.csv", index=False)
-
-        with h5py.File(self._dataset_path() / "waveforms.hdf5", "w") as fout:
-            g_data_format = fout.create_group("data_format")
-            for key in data_format.keys():
-                g_data_format.create_dataset(key, data=data_format[key])
-
-            g_data = fout.create_group("data")
-            for trace_name in tqdm(
-                metadata["trace_name"],
-                total=len(metadata),
-                desc="Writing waveforms to disk",
-            ):
-                g_data.create_dataset(str(trace_name), data=waveforms[trace_name])
 
     def filter(self, mask):
         """
@@ -330,6 +306,80 @@ class WaveformDataset(ABC):
         return np.stack(new_seq, axis=0)
 
 
+class WaveformDataWriter:
+    def __init__(self, path):
+        self.path = Path(path)
+        self.metadata_dict = {}
+        self.data_format = {}
+
+        self.path.mkdir(parents=True, exist_ok=True)
+
+        self._metadata = []
+        self._waveform_file = None
+        self._pbar = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._finalize()
+        if self._waveform_file is not None:
+            self._waveform_file.close()
+        if self._pbar is not None:
+            self._pbar.close()
+
+        if exc_type is None:
+            return True
+        else:
+            if (self.path / "metadata.csv").is_file():
+                shutil.move(
+                    self.path / "metadata.csv", self.path / "metadata.csv.partial"
+                )
+            if (self.path / "waveforms.hdf5").is_file():
+                shutil.move(
+                    self.path / "waveforms.hdf5", self.path / "waveforms.hdf5.partial"
+                )
+            seisbench.logger.error(
+                f"Error in downloading dataset. "
+                f"Saved current progress to {self.path}/*.partial. Error message:\n"
+            )
+
+    def add_trace(self, metadata, waveform):
+        self._metadata.append(metadata)
+        trace_name = str(metadata["trace_name"])
+
+        if self._waveform_file is None:
+            self._waveform_file = h5py.File(self.path / "waveforms.hdf5", "w")
+            self._waveform_file.create_group("data")
+        if self._pbar is None:
+            self._pbar = tqdm(desc="Traces converted")
+
+        self._waveform_file["data"].create_dataset(trace_name, data=waveform)
+        self._pbar.update()
+
+    def set_total(self, n):
+        if self._pbar is None:
+            self._pbar = tqdm(desc="Traces converted")
+        self._pbar.total = n
+
+    def _finalize(self):
+        if len(self._metadata) == 0:
+            return
+
+        if len(self.data_format) > 0:
+            g_data_format = self._waveform_file.create_group("data_format")
+            for key in self.data_format.keys():
+                g_data_format.create_dataset(key, data=self.data_format[key])
+        else:
+            seisbench.logger.warning("No data format options specified.")
+
+        metadata = pd.DataFrame(self._metadata)
+        if self.metadata_dict is not None:
+            metadata.rename(columns=self.metadata_dict, inplace=True)
+
+        metadata.to_csv(self.path / "metadata.csv", index=False)
+
+
 class DummyDataset(WaveformDataset):
     """
     A dummy dataset visualizing the implementation of custom datasets
@@ -345,8 +395,29 @@ class DummyDataset(WaveformDataset):
             name=self.__class__.__name__.lower(), citation=citation, **kwargs
         )
 
-    def _download_dataset(self, trace_length=60, **kwargs):
+    def _download_dataset(self, writer, trace_length=60, **kwargs):
         sampling_rate = 20
+
+        writer.metadata_dict = {
+            "time": "trace_start_time",
+            "latitude": "source_latitude",
+            "longitude": "source_longitude",
+            "depth": "source_depth_km",
+            "cls": "source_event_category",
+            "MA": "source_magnitude",
+            "ML": "source_magnitude2",
+            "std_MA": "source_magnitude_uncertainty",
+            "std_ML": "source_magnitude_uncertainty2",
+        }
+        writer.data_format = {
+            "dimension_order": "CW",
+            "component_order": "ZNE",
+            "sampling_rate": sampling_rate,
+            "measurement": "velocity",
+            "unit": "counts",
+            "instrument_response": "not restituted",
+        }
+
         path = self._dataset_path()
         path.mkdir(parents=True, exist_ok=True)
         with ftplib.FTP("datapub.gfz-potsdam.de", "anonymous", "") as ftp:
@@ -364,14 +435,28 @@ class DummyDataset(WaveformDataset):
                 x = x.replace(c, "_")
             return x
 
-        metadata["trace_name"] = metadata["time"].apply(to_tracename)
-        waveforms = {}
         client = Client("GFZ")
-        for trace_name, time in tqdm(
-            zip(metadata["trace_name"], metadata["time"]),
-            total=len(metadata),
-            desc="Downloading waveforms",
-        ):
+        inv = client.get_stations(
+            net="CX",
+            sta="PB01",
+            starttime=UTCDateTime.strptime(
+                "2007/01/01 00:00:00.00", "%Y/%m/%d %H:%M:%S.%f"
+            ),
+        )
+
+        metadata["trace_name"] = metadata["time"].apply(to_tracename)
+        metadata["network_code"] = "CX"
+        metadata["receiver_code"] = "PB01"
+        metadata["receiver_type"] = "BH"
+        metadata["receiver_latitude"] = inv[0][0].latitude
+        metadata["receiver_longitude"] = inv[0][0].longitude
+        metadata["receiver_elevation_m"] = inv[0][0].elevation
+        metadata["source_magnitude_type"] = "MA"
+        metadata["source_magnitude_type2"] = "ML"
+
+        writer.set_total(len(metadata))
+        for _, row in metadata.iterrows():
+            time = row["time"]
             waveform = np.zeros((3, sampling_rate * trace_length))
             time = UTCDateTime.strptime(time, "%Y/%m/%d %H:%M:%S.%f")
             stream = client.get_waveforms(
@@ -382,42 +467,4 @@ class DummyDataset(WaveformDataset):
                 waveform[cid] = ctrace.data[: sampling_rate * trace_length].astype(
                     float
                 )
-            waveforms[trace_name] = waveform
-
-        inv = client.get_stations(
-            net="CX",
-            sta="PB01",
-            starttime=UTCDateTime.strptime(
-                "2007/01/01 00:00:00.00", "%Y/%m/%d %H:%M:%S.%f"
-            ),
-        )
-
-        metadata["network_code"] = "CX"
-        metadata["receiver_code"] = "PB01"
-        metadata["receiver_type"] = "BH"
-        metadata["receiver_latitude"] = inv[0][0].latitude
-        metadata["receiver_longitude"] = inv[0][0].longitude
-        metadata["receiver_elevation_m"] = inv[0][0].elevation
-        metadata["source_magnitude_type"] = "MA"
-        metadata["source_magnitude_type2"] = "ML"
-
-        metadata_dict = {
-            "time": "trace_start_time",
-            "latitude": "source_latitude",
-            "longitude": "source_longitude",
-            "depth": "source_depth_km",
-            "cls": "source_event_category",
-            "MA": "source_magnitude",
-            "ML": "source_magnitude2",
-            "std_MA": "source_magnitude_uncertainty",
-            "std_ML": "source_magnitude_uncertainty2",
-        }
-        data_format = {
-            "dimension_order": "CW",
-            "component_order": "ZNE",
-            "sampling_rate": sampling_rate,
-            "measurement": "velocity",
-            "unit": "counts",
-            "instrument_response": "not restituted",
-        }
-        self._write_data(metadata, waveforms, data_format, metadata_dict=metadata_dict)
+            writer.add_trace(row, waveform)

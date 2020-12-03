@@ -4,6 +4,7 @@ import seisbench.util.region as region
 import numpy as np
 import pytest
 import logging
+from pathlib import Path
 
 
 def test_get_order_mapping():
@@ -124,3 +125,50 @@ def test_lazyload_cache(caplog):
     with caplog.at_level(logging.WARNING):
         seisbench.data.DummyDataset(lazyload=False, cache=False)
     assert "Skipping preloading of waveforms as cache is set to inactive" in caplog.text
+
+
+def test_writer(caplog, tmp_path: Path):
+    # Test empty writer
+    with seisbench.data.WaveformDataWriter(tmp_path / "writer_a") as writer:
+        pass
+
+    assert (tmp_path / "writer_a").is_dir()  # Path exists
+    assert not any((tmp_path / "writer_a").iterdir())  # Path is empty
+
+    # Test correct write
+    with seisbench.data.WaveformDataWriter(tmp_path / "writer_b") as writer:
+        trace = {"trace_name": "dummy", "split": 2}
+        writer.add_trace(trace, np.zeros((3, 100)))
+
+    assert (tmp_path / "writer_b").is_dir()  # Path exists
+    assert (
+        "No data format options specified" in caplog.text
+    )  # Check warning data format
+    assert (
+        tmp_path / "writer_b" / "metadata.csv"
+    ).is_file()  # Check metadata file exist
+    assert (
+        tmp_path / "writer_b" / "waveforms.hdf5"
+    ).is_file()  # Check waveform file exist
+
+    # Test with failing write
+    with pytest.raises(Exception):
+        with seisbench.data.WaveformDataWriter(tmp_path / "writer_c") as writer:
+            trace = {"trace_name": "dummy", "split": 2}
+            writer.add_trace(trace, np.zeros((3, 100)))
+            raise Exception("Dummy exception to test failure handling of writer")
+
+    assert (tmp_path / "writer_c").is_dir()  # Path exists
+    assert "Error in downloading dataset" in caplog.text  # Check error data writer
+    assert (
+        tmp_path / "writer_c" / "metadata.csv.partial"
+    ).is_file()  # Check partial metadata file exist
+    assert not (
+        tmp_path / "writer_c" / "metadata.csv"
+    ).is_file()  # Check metadata file exist
+    assert (
+        tmp_path / "writer_c" / "waveforms.hdf5.partial"
+    ).is_file()  # Check partial  waveform file exist
+    assert not (
+        tmp_path / "writer_c" / "waveforms.hdf5"
+    ).is_file()  # Check waveform file exist
