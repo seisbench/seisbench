@@ -45,17 +45,10 @@ class WaveformDataset(ABC):
             )
             with WaveformDataWriter(self._dataset_path()) as writer:
                 self._download_dataset(writer, **kwargs)
-        
+
         self._metadata = pd.read_csv(metadata_path)
-        
-        try:
-            self._data_format = self._read_data_format()
-        except KeyError:
-            seisbench.logger.warning(
-                "No data_format group found in .hdf5 File. Assuming component order: ZNE, dimension order: CW"    
-            )
-            self._data_format = {"dimension_order": "CW", "component_order": "ZNE"}
-        
+
+        self._data_format = self._read_data_format()
         self.dimension_order = dimension_order
         self.component_order = component_order
 
@@ -149,8 +142,14 @@ class WaveformDataset(ABC):
 
     def _read_data_format(self):
         with h5py.File(self._dataset_path() / "waveforms.hdf5", "r") as f_wave:
-            g_data_format = f_wave["data_format"]
-            data_format = {key: g_data_format[key][()] for key in g_data_format.keys()}
+            try:
+                g_data_format = f_wave["data_format"]
+                data_format = {
+                    key: g_data_format[key][()] for key in g_data_format.keys()
+                }
+            except KeyError:
+                seisbench.logger.warning("No data_format group found in .hdf5 File.")
+                data_format = {}
 
         for key in data_format.keys():
             if isinstance(data_format[key], bytes):
