@@ -45,9 +45,17 @@ class WaveformDataset(ABC):
             )
             with WaveformDataWriter(self._dataset_path()) as writer:
                 self._download_dataset(writer, **kwargs)
+        
         self._metadata = pd.read_csv(metadata_path)
-        self._data_format = self._read_data_format()
-
+        
+        try:
+            self._data_format = self._read_data_format()
+        except KeyError:
+            seisbench.logger.warning(
+                "No data_format group found in .hdf5 File. Assuming component order: ZNE, dimension order: CW"    
+            )
+            self._data_format = {"dimension_order": "CW", "component_order": "ZNE"}
+        
         self.dimension_order = dimension_order
         self.component_order = component_order
 
