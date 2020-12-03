@@ -3,6 +3,7 @@ import seisbench.util.region as region
 
 import numpy as np
 import pytest
+import logging
 
 
 def test_get_order_mapping():
@@ -41,15 +42,15 @@ def test_pad_packed_sequence():
 
 
 def test_lazyload():
-    dummy = seisbench.data.DummyDataset(lazyload=True)
+    dummy = seisbench.data.DummyDataset(lazyload=True, cache=True)
     assert len(dummy._waveform_cache) == 0
 
-    dummy = seisbench.data.DummyDataset(lazyload=False)
+    dummy = seisbench.data.DummyDataset(lazyload=False, cache=True)
     assert len(dummy._waveform_cache) == len(dummy)
 
 
 def test_filter_and_cache_evict():
-    dummy = seisbench.data.DummyDataset(lazyload=False)
+    dummy = seisbench.data.DummyDataset(lazyload=False, cache=True)
     assert len(dummy._waveform_cache) == len(dummy)
 
     mask = np.arange(len(dummy)) < len(dummy) / 2
@@ -117,3 +118,9 @@ def test_get_waveforms():
     waveforms = dummy.get_waveforms()
 
     assert waveforms.shape == (3, 1200, len(dummy))
+
+
+def test_lazyload_cache(caplog):
+    with caplog.at_level(logging.WARNING):
+        seisbench.data.DummyDataset(lazyload=False, cache=False)
+    assert "Skipping preloading of waveforms as cache is set to inactive" in caplog.text

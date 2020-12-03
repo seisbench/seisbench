@@ -22,11 +22,13 @@ class WaveformDataset(ABC):
         lazyload=True,
         dimension_order=None,
         component_order=None,
+        cache=False,
         **kwargs,
     ):
         self._name = name
         self.lazyload = lazyload
         self._citation = citation
+        self.cache = cache
 
         self._dimension_order = None
         self._dimension_mapping = None
@@ -50,7 +52,12 @@ class WaveformDataset(ABC):
         self._waveform_cache = {}
 
         if not self.lazyload:
-            self._load_waveform_data()
+            if self.cache:
+                self._load_waveform_data()
+            else:
+                seisbench.logger.warning(
+                    "Skipping preloading of waveforms as cache is set to inactive."
+                )
 
     def __str__(self):
         return f"{self._name} - {len(self)} traces"
@@ -293,13 +300,17 @@ class WaveformDataset(ABC):
         return waveforms.transpose(*self._dimension_mapping)
 
     def _get_single_waveform(self, trace_name, f_wave=None):
-        if trace_name not in self._waveform_cache:
+        if not self.cache or trace_name not in self._waveform_cache:
             if f_wave is None:
                 f_wave = h5py.File(self._dataset_path() / "waveforms.hdf5", "r")
             g_data = f_wave["data"]
-            self._waveform_cache[trace_name] = g_data[str(trace_name)][()]
+            waveform = g_data[str(trace_name)][()]
+            if self.cache:
+                self._waveform_cache[trace_name] = waveform
+        else:
+            waveform = self._waveform_cache[trace_name]
 
-        return self._waveform_cache[trace_name]
+        return waveform
 
     @staticmethod
     def _pad_packed_sequence(seq):
