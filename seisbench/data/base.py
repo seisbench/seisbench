@@ -430,10 +430,11 @@ class DummyDataset(WaveformDataset):
         path = self._dataset_path()
         path.mkdir(parents=True, exist_ok=True)
 
-        seisbench.util.download_with_progress_bar_ftp(
+        seisbench.util.download_ftp(
             "datapub.gfz-potsdam.de",
             "download/10.5880.GFZ.2.4.2019.004/IPOC_catalog_magnitudes.csv",
             path / "raw_catalog.csv",
+            progress_bar=False,
         )
 
         metadata = pd.read_csv(path / "raw_catalog.csv")
