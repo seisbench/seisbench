@@ -138,7 +138,7 @@ class WaveformDataset(ABC):
         return mapping
 
     def _dataset_path(self):
-        return Path(seisbench.cache_root, self.name.lower())
+        return Path(seisbench.cache_root, "datasets", self.name.lower())
 
     def _read_data_format(self):
         with h5py.File(self._dataset_path() / "waveforms.hdf5", "r") as f_wave:
