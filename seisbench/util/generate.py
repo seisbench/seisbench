@@ -104,7 +104,6 @@ class PytorchWindowGenerator(WaveformGenerator, Dataset):
 
         self._idx = 0
         self.window_starts = []
-        self.bool_mask = np.zeros(len(dataset), dtype=np.bool)
 
     def create_windows(self, X, y):
         """
@@ -173,14 +172,12 @@ class PytorchWindowGenerator(WaveformGenerator, Dataset):
 
     def __getitem__(self, index):
         idx = self.list_ids[index]
-        self.bool_mask[idx] = True
 
-        X = self.dataset.get_waveforms(mask=self.bool_mask)
-        y = self.dataset.get_waveforms(mask=self.bool_mask)
+        X = self.dataset.get_waveforms(idx=idx)
+        y = self.dataset.get_waveforms(idx=idx)
 
         # NOTE: Here would be where an operation can remove zero padding on traces
         # This also requires a change to PyTorch code, just use standard format (NCW) for now
 
-        X, y = self.sequential_windower(X.squeeze(), y.squeeze())
-        self.bool_mask[idx] = False
+        X, y = self.sequential_windower(X, y)
         return X, y
