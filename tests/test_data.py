@@ -100,7 +100,7 @@ def test_region_filter():
     assert len(dummy) == np.sum(np.logical_and(mask_lat, mask_lon))
 
 
-def test_get_waveforms():
+def test_get_waveforms_dimensions():
     dummy = seisbench.data.DummyDataset()
 
     waveforms = dummy.get_waveforms()
@@ -119,6 +119,27 @@ def test_get_waveforms():
     waveforms = dummy.get_waveforms()
 
     assert waveforms.shape == (3, 1200, len(dummy))
+
+
+def test_get_waveforms_select():
+    dummy = seisbench.data.DummyDataset()
+
+    waveforms_full = dummy.get_waveforms()
+    assert waveforms_full.shape == (len(dummy), 3, 1200)
+
+    waveforms_ind = dummy.get_waveforms(idx=5)
+    assert waveforms_ind.shape == (3, 1200)
+    assert (waveforms_ind == waveforms_full[5]).all()
+
+    waveforms_list = dummy.get_waveforms(idx=[10])
+    assert waveforms_list.shape == (1, 3, 1200)
+    assert (waveforms_list[0] == waveforms_full[10]).all()
+
+    mask = np.zeros(len(dummy), dtype=bool)
+    mask[15] = True
+    waveforms_mask = dummy.get_waveforms(mask=mask)
+    assert waveforms_mask.shape == (1, 3, 1200)
+    assert (waveforms_mask[0] == waveforms_full[15]).all()
 
 
 def test_lazyload_cache(caplog):

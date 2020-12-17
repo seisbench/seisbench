@@ -140,7 +140,7 @@ class WaveformDataset(ABC):
         return mapping
 
     def _dataset_path(self):
-        return Path(seisbench.cache_root, self.name.lower())
+        return Path(seisbench.cache_root, "datasets", self.name.lower())
 
     def _read_data_format(self):
         with h5py.File(self._dataset_path() / "waveforms.hdf5", "r") as f_wave:
@@ -253,25 +253,36 @@ class WaveformDataset(ABC):
     def __len__(self):
         return len(self._metadata)
 
-    def get_waveforms(self, split=None, mask=None):
+    def get_waveforms(self, idx=None, split=None, mask=None):
         """
         Collects waveforms and returns them as an array.
+        :param idx: Idx or list of idx to obtain waveforms for
         :param split: Split (train/dev/test) to obtain waveforms for
         :param mask: Binary mask on the metadata, indicating which traces should be returned. Can not be used jointly with split.
         :return: Waveform array with dimensions ordered according to dimension_order e.g. default 'NCW' (number of traces, number of components, record samples). If the number of components or record samples varies between different entries, all entries are padded to the maximum length.
         """
-        if split is not None and mask is not None:
-            raise ValueError("Split and mask can not be used jointly.")
+        squeeze = False
+        if idx is not None:
+            if split is not None or mask is not None:
+                raise ValueError("Split and mask can not be used jointly with idx.")
+            if isinstance(idx, int):
+                idx = [idx]
+                squeeze = True
 
-        if split is not None and split not in ["train", "dev", "test"]:
-            raise ValueError("Split must be one of 'train', 'dev', 'test' or None.")
-
-        if split is not None:
-            load_metadata = self._metadata["split"] == split
-        elif mask is not None:
-            load_metadata = self._metadata[mask]
+            load_metadata = self._metadata.iloc[idx]
         else:
-            load_metadata = self._metadata
+            if split is not None and mask is not None:
+                raise ValueError("Split and mask can not be used jointly.")
+
+            if split is not None and split not in ["train", "dev", "test"]:
+                raise ValueError("Split must be one of 'train', 'dev', 'test' or None.")
+
+            if split is not None:
+                load_metadata = self._metadata["split"] == split
+            elif mask is not None:
+                load_metadata = self._metadata[mask]
+            else:
+                load_metadata = self._metadata
 
         waveforms = []
         with h5py.File(self._dataset_path() / "waveforms.hdf5", "r") as f_wave:
@@ -279,10 +290,18 @@ class WaveformDataset(ABC):
                 waveforms.append(self._get_single_waveform(trace_name, f_wave=f_wave))
 
         waveforms = self._pad_packed_sequence(waveforms)
+        # Impose correct component order
         component_dimension = list(self._data_format["dimension_order"]).index("C") + 1
         waveforms = waveforms.take(self._component_mapping, axis=component_dimension)
 
-        return waveforms.transpose(*self._dimension_mapping)
+        # Impose correct dimension order
+        waveforms = waveforms.transpose(*self._dimension_mapping)
+
+        if squeeze:
+            batch_dimension = list(self.dimension_order).index("N")
+            waveforms = np.squeeze(waveforms, axis=batch_dimension)
+
+        return waveforms
 
     def _get_single_waveform(self, trace_name, f_wave=None):
         if not self.cache or trace_name not in self._waveform_cache:
