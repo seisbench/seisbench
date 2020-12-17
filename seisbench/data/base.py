@@ -1,4 +1,6 @@
 import seisbench
+import seisbench.util
+
 from abc import abstractmethod, ABC
 from pathlib import Path
 import pandas as pd
@@ -446,12 +448,13 @@ class DummyDataset(WaveformDataset):
 
         path = self._dataset_path()
         path.mkdir(parents=True, exist_ok=True)
-        with ftplib.FTP("datapub.gfz-potsdam.de", "anonymous", "") as ftp:
-            with open(path / "raw_catalog.csv", "wb") as fout:
-                ftp.retrbinary(
-                    "RETR download/10.5880.GFZ.2.4.2019.004/IPOC_catalog_magnitudes.csv",
-                    fout.write,
-                )
+
+        seisbench.util.download_ftp(
+            "datapub.gfz-potsdam.de",
+            "download/10.5880.GFZ.2.4.2019.004/IPOC_catalog_magnitudes.csv",
+            path / "raw_catalog.csv",
+            progress_bar=False,
+        )
 
         metadata = pd.read_csv(path / "raw_catalog.csv")
         metadata = metadata.iloc[:100].copy()
