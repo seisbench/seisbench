@@ -1,12 +1,12 @@
 import seisbench
-from .base import WaveformDataset
+from .base import BenchmarkDataset
 
 from pathlib import Path
 import shutil
 import h5py
 
 
-class STEAD(WaveformDataset):
+class STEAD(BenchmarkDataset):
     """
     STEAD dataset
     """
@@ -43,12 +43,12 @@ class STEAD(WaveformDataset):
                 "Basepath does not contain file merged.hdf5. " + download_instructions
             )
 
-        self._dataset_path().mkdir(parents=True, exist_ok=True)
+        self.path.mkdir(parents=True, exist_ok=True)
         seisbench.logger.warning(
             "Copying STEAD files to cache. This might take a while."
         )
-        shutil.copy(basepath / "merged.csv", self._dataset_path() / "metadata.csv")
-        shutil.copy(basepath / "merged.hdf5", self._dataset_path() / "waveforms.hdf5")
+        shutil.copy(basepath / "merged.csv", self.path / "metadata.csv")
+        shutil.copy(basepath / "merged.hdf5", self.path / "waveforms.hdf5")
 
         data_format = {
             "dimension_order": "WC",
@@ -59,7 +59,7 @@ class STEAD(WaveformDataset):
             "instrument_response": "not restituted",
         }
 
-        with h5py.File(self._dataset_path() / "waveforms.hdf5", "a") as fout:
+        with h5py.File(self.path / "waveforms.hdf5", "a") as fout:
             g_data_format = fout.create_group("data_format")
             for key in data_format.keys():
                 g_data_format.create_dataset(key, data=data_format[key])

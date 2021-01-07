@@ -6,48 +6,44 @@ from pathlib import Path
 import pandas as pd
 import h5py
 import numpy as np
-import ftplib
 from obspy import UTCDateTime
 from obspy.clients.fdsn import Client
 from tqdm import tqdm
 import shutil
 
 
-class WaveformDataset(ABC):
+class WaveformDataset:
     """
-    This class is the abstract base class for waveform datasets.
+    This class is the base class for waveform datasets.
     """
 
     def __init__(
         self,
-        name,
-        citation=None,
+        path,
+        name=None,
         lazyload=True,
         dimension_order=None,
         component_order=None,
         cache=False,
         **kwargs,
     ):
-        self._name = name
+        if name is None:
+            self._name = "Unnamed dataset"
+        else:
+            self._name = name
         self.lazyload = lazyload
-        self._citation = citation
         self.cache = cache
+        self._path = path
 
         self._dimension_order = None
         self._dimension_mapping = None
         self._component_order = None
         self._component_mapping = None
 
-        # Check if dataset is cached
-        # TODO: Validate if cached dataset was downloaded with the same parameters
-        metadata_path = self._dataset_path() / "metadata.csv"
-        if not metadata_path.is_file():
-            seisbench.logger.info(
-                f"Dataset {name} not in cache. Downloading and preprocessing corpus..."
-            )
-            with WaveformDataWriter(self._dataset_path()) as writer:
-                self._download_dataset(writer, **kwargs)
+        if not self._verify_dataset():
+            raise ValueError(f"Dataset not found at {self.path}")
 
+        metadata_path = self.path / "metadata.csv"
         self._metadata = pd.read_csv(metadata_path)
 
         self._data_format = self._read_data_format()
@@ -76,8 +72,10 @@ class WaveformDataset(ABC):
         return self._name
 
     @property
-    def citation(self):
-        return self._citation
+    def path(self):
+        if self._path is None:
+            raise ValueError("Path is None. Can't create data set without a path.")
+        return Path(self._path)
 
     @property
     def data_format(self):
@@ -139,11 +137,14 @@ class WaveformDataset(ABC):
 
         return mapping
 
-    def _dataset_path(self):
-        return Path(seisbench.cache_root, "datasets", self.name.lower())
+    def _verify_dataset(self):
+        metadata_path = self.path / "metadata.csv"
+        waveform_path = self.path / "waveforms.hdf5"
+
+        return metadata_path.is_file() and waveform_path.is_file()
 
     def _read_data_format(self):
-        with h5py.File(self._dataset_path() / "waveforms.hdf5", "r") as f_wave:
+        with h5py.File(self.path / "waveforms.hdf5", "r") as f_wave:
             try:
                 g_data_format = f_wave["data_format"]
                 data_format = {
@@ -172,21 +173,12 @@ class WaveformDataset(ABC):
 
         return data_format
 
-    @abstractmethod
-    def _download_dataset(self, writer, **kwargs):
-        """
-        Download and convert the dataset to the standard seisbench format. The metadata must contain at least the columns 'trace_name' and 'split'.
-        :param kwargs:
-        :return:
-        """
-        pass
-
     def _load_waveform_data(self):
         """
         Loads waveform data from hdf5 file into cache
         :return:
         """
-        with h5py.File(self._dataset_path() / "waveforms.hdf5", "r") as f_wave:
+        with h5py.File(self.path / "waveforms.hdf5", "r") as f_wave:
             for trace_name in self._metadata["trace_name"]:
                 self._get_single_waveform(trace_name, f_wave=f_wave)
 
@@ -285,7 +277,7 @@ class WaveformDataset(ABC):
                 load_metadata = self._metadata
 
         waveforms = []
-        with h5py.File(self._dataset_path() / "waveforms.hdf5", "r") as f_wave:
+        with h5py.File(self.path / "waveforms.hdf5", "r") as f_wave:
             for trace_name in load_metadata["trace_name"]:
                 waveforms.append(self._get_single_waveform(trace_name, f_wave=f_wave))
 
@@ -306,7 +298,7 @@ class WaveformDataset(ABC):
     def _get_single_waveform(self, trace_name, f_wave=None):
         if not self.cache or trace_name not in self._waveform_cache:
             if f_wave is None:
-                f_wave = h5py.File(self._dataset_path() / "waveforms.hdf5", "r")
+                f_wave = h5py.File(self.path / "waveforms.hdf5", "r")
             g_data = f_wave["data"]
             waveform = g_data[str(trace_name)][()]
             if self.cache:
@@ -332,6 +324,46 @@ class WaveformDataset(ABC):
                 new_seq.append(elem)
 
         return np.stack(new_seq, axis=0)
+
+
+class BenchmarkDataset(WaveformDataset, ABC):
+    """
+    This class is the base class for benchmark waveform datasets.
+    It adds functionality to download the dataset to cache and to annotate it with a citation.
+    """
+
+    def __init__(self, name, citation=None, **kwargs):
+        self._name = name
+        self._citation = citation
+
+        # Check if dataset is cached
+        # TODO: Validate if cached dataset was downloaded with the same parameters
+        if not self._verify_dataset():
+            seisbench.logger.info(
+                f"Dataset {name} not in cache. Downloading and preprocessing corpus..."
+            )
+            with WaveformDataWriter(self.path) as writer:
+                self._download_dataset(writer, **kwargs)
+
+        super().__init__(path=None, name=name, citation=citation, **kwargs)
+
+    @property
+    def citation(self):
+        return self._citation
+
+    @property
+    def path(self):
+        return Path(seisbench.cache_root, "datasets", self.name.lower())
+
+    @abstractmethod
+    def _download_dataset(self, writer, **kwargs):
+        """
+        Download and convert the dataset to the standard seisbench format.
+        The metadata must contain at least the columns 'trace_name' and 'split'.
+        :param kwargs:
+        :return:
+        """
+        pass
 
 
 class WaveformDataWriter:
@@ -408,7 +440,7 @@ class WaveformDataWriter:
         metadata.to_csv(self.path / "metadata.csv", index=False)
 
 
-class DummyDataset(WaveformDataset):
+class DummyDataset(BenchmarkDataset):
     """
     A dummy dataset visualizing the implementation of custom datasets
     """
@@ -446,7 +478,7 @@ class DummyDataset(WaveformDataset):
             "instrument_response": "not restituted",
         }
 
-        path = self._dataset_path()
+        path = self.path
         path.mkdir(parents=True, exist_ok=True)
 
         seisbench.util.download_ftp(
