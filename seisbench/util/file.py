@@ -9,6 +9,12 @@ def download_http(url, target, progress_bar=True, desc="Downloading"):
     seisbench.logger.info(f"Downloading file from {url} to {target}")
 
     req = requests.get(url, stream=True, headers={"User-Agent": "SeisBench"})
+
+    if req.status_code != 200:
+        raise ValueError(
+            f"Invalid URL. Request returned status code {req.status_code}."
+        )
+
     content_length = req.headers.get("Content-Length")
     total = int(content_length) if content_length is not None else None
     if progress_bar:

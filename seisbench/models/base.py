@@ -1,7 +1,10 @@
 import seisbench
+import seisbench.util as util
 
 from abc import abstractmethod, ABC
 from pathlib import Path
+import os
+import torch
 import torch.nn as nn
 
 
@@ -10,6 +13,7 @@ class SeisBenchModel(nn.Module):
         super().__init__()
         self._name = name
         self._citation = citation
+        self._weights_docstring = None
 
     @property
     def name(self):
@@ -19,17 +23,39 @@ class SeisBenchModel(nn.Module):
     def citation(self):
         return self._citation
 
+    @property
+    def weights_docstring(self):
+        return self._weights_docstring
+
     def _model_path(self):
         return Path(seisbench.cache_root, "models", self.name.lower())
 
+    def _remote_path(self):
+        return os.path.join(seisbench.remote_root, "models", self.name.lower())
+
     def load_pretrained(self, name):
         weight_path = self._model_path() / f"{name}.pt"
+        doc_path = self._model_path() / f"{name}.txt"
         if not weight_path.is_file():
             seisbench.logger.info(f"Weight file {name} not in cache. Downloading...")
-            # TODO: Download from SeisBench endpoint
-            raise NotImplementedError("Downloading models is not yet implemented")
+            weight_path.parent.mkdir(exist_ok=True, parents=True)
 
-        self.load(weight_path)
+            remote_weight_path = os.path.join(self._remote_path(), f"{name}.pt")
+            util.download_http(remote_weight_path, weight_path)
+
+            remote_doc_path = os.path.join(self._remote_path(), f"{name}.txt")
+            try:
+                util.download_http(remote_doc_path, doc_path, progress_bar=False)
+            except ValueError:
+                pass
+
+        self.load_state_dict(torch.load(weight_path))
+
+        if doc_path.is_file():
+            with open(doc_path, "r") as f:
+                self._weights_docstring = f.read()
+        else:
+            self._weights_docstring = ""
 
 
 class WaveformModel(ABC):
