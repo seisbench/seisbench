@@ -1,4 +1,4 @@
-from .base import SeisBenchModel, WaveformModel
+from .base import WaveformModel
 import seisbench
 
 import torch
@@ -7,9 +7,9 @@ import obspy
 import numpy as np
 
 
-class GPD(SeisBenchModel, WaveformModel):
+class GPD(WaveformModel):
     # TODO: How to handle filtering (e.g. highpass/lowpass)?
-    def __init__(self, in_channels=3, classes=3, eps=1e-10):
+    def __init__(self, in_channels=3, classes=3, phases="NPS", eps=1e-10):
         citation = (
             "Ross, Z. E., Meier, M.-A., Hauksson, E., & Heaton, T. H. (2018). "
             "Generalized Seismic Phase Detection with Deep Learning. "
@@ -20,6 +20,11 @@ class GPD(SeisBenchModel, WaveformModel):
         self.in_channels = in_channels
         self.classes = classes
         self.eps = eps
+        self._phases = phases
+        if phases is not None and len(phases) != classes:
+            raise ValueError(
+                f"Number of classes ({classes}) does not match number of phases ({len(phases)})."
+            )
 
         # TODO: Verify Pooling
         # TODO: Verify order of activation, pooling and batch norm
@@ -67,11 +72,23 @@ class GPD(SeisBenchModel, WaveformModel):
     def device(self):
         return next(self.parameters()).device
 
+    @property
+    def phases(self):
+        if self._phases is not None:
+            return self._phases
+        else:
+            return list(range(self.classes))
+
+    def _parse_metadata(self):
+        super()._parse_metadata()
+        self._phases = self._weights_metadata.get("phases", None)
+
     def annotate(self, stream, strict=True, prediction_rate=100, **kwargs):
         """
         Annotates the stream using a sliding window approach.
         :param stream:
         :param strict:
+        :param prediction_rate:
         :param kwargs:
         :return:
         """
@@ -95,9 +112,7 @@ class GPD(SeisBenchModel, WaveformModel):
         groups = self.groups_stream_by_instrument(stream)
 
         for group in groups:
-            times, data = self.stream_to_arrays(
-                group, self.component_order, strict=strict
-            )
+            times, data = self.stream_to_arrays(group, strict=strict)
             if 100 % prediction_rate != 0:
                 seisbench.logger.warning(
                     "Prediction rate is no real divisor of sampling rate. "
@@ -141,7 +156,7 @@ class GPD(SeisBenchModel, WaveformModel):
                                 "network": trace.stats.network,
                                 "station": trace.stats.station,
                                 "location": trace.stats.location,
-                                "channel": f"GPD{i}",
+                                "channel": f"GPD_{self.phases[i]}",
                             },
                         )
                     )

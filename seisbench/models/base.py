@@ -13,19 +13,15 @@ import numpy as np
 
 
 class SeisBenchModel(nn.Module):
-    def __init__(self, name, citation=None, component_order=None):
+    def __init__(self, name, citation=None):
         super().__init__()
         self._name = name
         self._citation = citation
         self._weights_docstring = None
         self._weights_metadata = None
-        if component_order is None:
-            self._component_order = seisbench.config["component_order"]
-        else:
-            self._component_order = component_order
 
     def __str__(self):
-        return f"SeisBench model\t\t{self.name}\nComponent order:\t{self.component_order}\n\n{super().__str__()}"
+        return f"SeisBench model\t\t{self.name}\n\n{super().__str__()}"
 
     @property
     def name(self):
@@ -38,10 +34,6 @@ class SeisBenchModel(nn.Module):
     @property
     def weights_docstring(self):
         return self._weights_docstring
-
-    @property
-    def component_order(self):
-        return self._component_order
 
     def _model_path(self):
         return Path(seisbench.cache_root, "models", self.name.lower())
@@ -72,20 +64,35 @@ class SeisBenchModel(nn.Module):
         if metadata_path.is_file():
             with open(metadata_path, "r") as f:
                 self._weights_metadata = json.load(f)
-                self._weights_docstring = self._weights_metadata.get("docstring", "")
-                self._component_order = self._weights_metadata.get(
-                    "component_order", seisbench.config["component_order"]
-                )
         else:
-            self._weights_docstring = ""
+            self._weights_metadata = {}
+        self._parse_metadata()
+
+    def _parse_metadata(self):
+        self._weights_docstring = self._weights_metadata.get("docstring", "")
 
 
-class WaveformModel(ABC):
+class WaveformModel(SeisBenchModel, ABC):
     """
     Abstract interface for models processing waveforms.
     Additionally implements functions commonly required to apply models to waveforms.
     Class does not inherit from SeisBenchModel to allow implementation of non-DL models with this interface.
     """
+
+    def __init__(self, name, component_order=None, *args, **kwargs):
+        super().__init__(name, *args, **kwargs)
+
+        if component_order is None:
+            self._component_order = seisbench.config["component_order"]
+        else:
+            self._component_order = component_order
+
+    def __str__(self):
+        return f"Component order:\t{self.component_order}\n{super().__str__()}"
+
+    @property
+    def component_order(self):
+        return self._component_order
 
     @abstractmethod
     def annotate(self, stream, *args, **kwargs):
@@ -108,6 +115,12 @@ class WaveformModel(ABC):
         :return: A classification for the full stream, e.g., signal/noise or source magnitude
         """
         pass
+
+    def _parse_metadata(self):
+        super()._parse_metadata()
+        self._component_order = self._weights_metadata.get(
+            "component_order", seisbench.config["component_order"]
+        )
 
     @staticmethod
     def resample(stream, sampling_rate):
@@ -158,8 +171,7 @@ class WaveformModel(ABC):
 
         return False
 
-    @staticmethod
-    def stream_to_arrays(stream, component_order, strict=True):
+    def stream_to_arrays(self, stream, strict=True):
         """
         Converts streams into a list of start times and numpy arrays
         Assumes:
@@ -179,6 +191,7 @@ class WaveformModel(ABC):
 
         sampling_rate = stream[0].stats.sampling_rate
 
+        component_order = self._component_order
         comp_dict = {c: i for i, c in enumerate(component_order)}
 
         start_sorted = PriorityQueue()

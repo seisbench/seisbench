@@ -71,6 +71,14 @@ def test_has_mismatching_records():
     assert seisbench.models.WaveformModel.has_mismatching_records(stream)
 
 
+class DummyWaveformModel(seisbench.models.WaveformModel):
+    def annotate(self, stream, *args, **kwargs):
+        pass
+
+    def classify(self, stream, *args, **kwargs):
+        pass
+
+
 def test_stream_to_arrays():
     t0 = UTCDateTime(0)
     stats_z = {
@@ -94,6 +102,7 @@ def test_stream_to_arrays():
         "sampling_rate": 100,
         "starttime": t0,
     }
+    dummy = DummyWaveformModel(name="dummy", component_order="ZNE")
 
     trace_z = obspy.Trace(np.ones(1000), stats_z)
     trace_n = obspy.Trace(2 * np.ones(1000), stats_n)
@@ -101,9 +110,7 @@ def test_stream_to_arrays():
 
     # Aligned strict
     stream = obspy.Stream([trace_z, trace_n, trace_e])
-    times, data = seisbench.models.WaveformModel.stream_to_arrays(
-        stream, "ZNE", strict=True
-    )
+    times, data = dummy.stream_to_arrays(stream, strict=True)
     assert len(times) == len(data) == 1
     assert times[0] == t0
     assert data[0].shape == (3, len(trace_z.data))
@@ -113,9 +120,7 @@ def test_stream_to_arrays():
 
     # Aligned non strict
     stream = obspy.Stream([trace_z, trace_n, trace_e])
-    times, data = seisbench.models.WaveformModel.stream_to_arrays(
-        stream, "ZNE", strict=False
-    )
+    times, data = dummy.stream_to_arrays(stream, strict=False)
     assert len(times) == len(data) == 1
     assert times[0] == t0
     assert data[0].shape == (3, len(trace_z.data))
@@ -125,9 +130,7 @@ def test_stream_to_arrays():
 
     # Covering strict
     stream = obspy.Stream([trace_z, trace_n, trace_e.slice(t0 + 1, t0 + 5)])
-    times, data = seisbench.models.WaveformModel.stream_to_arrays(
-        stream, "ZNE", strict=True
-    )
+    times, data = dummy.stream_to_arrays(stream, strict=True)
     assert len(times) == len(data) == 1
     assert times[0] == t0 + 1
     assert data[0].shape == (3, 401)
@@ -137,9 +140,7 @@ def test_stream_to_arrays():
 
     # Covering non-strict
     stream = obspy.Stream([trace_z, trace_n, trace_e.slice(t0 + 1, t0 + 5)])
-    times, data = seisbench.models.WaveformModel.stream_to_arrays(
-        stream, "ZNE", strict=False
-    )
+    times, data = dummy.stream_to_arrays(stream, strict=False)
     assert len(times) == len(data) == 1
     assert times[0] == t0
     assert data[0].shape == (3, len(trace_z.data))
@@ -153,9 +154,7 @@ def test_stream_to_arrays():
     stream = obspy.Stream(
         [trace_z, trace_n, trace_e.slice(t0 + 1, t0 + 5), trace_e.slice(t0 + 6, t0 + 8)]
     )
-    times, data = seisbench.models.WaveformModel.stream_to_arrays(
-        stream, "ZNE", strict=True
-    )
+    times, data = dummy.stream_to_arrays(stream, strict=True)
     assert len(times) == len(data) == 2
     assert times[0] == t0 + 1
     assert times[1] == t0 + 6
@@ -170,9 +169,7 @@ def test_stream_to_arrays():
     stream = obspy.Stream(
         [trace_z, trace_n, trace_e.slice(t0 + 1, t0 + 5), trace_e.slice(t0 + 6, t0 + 8)]
     )
-    times, data = seisbench.models.WaveformModel.stream_to_arrays(
-        stream, "ZNE", strict=False
-    )
+    times, data = dummy.stream_to_arrays(stream, strict=False)
     assert len(times) == len(data) == 1
     assert times[0] == t0
     assert data[0].shape == (3, len(trace_z.data))
@@ -188,9 +185,7 @@ def test_stream_to_arrays():
     stream = obspy.Stream(
         [trace_z, trace_n.slice(t0 + 1, t0 + 5), trace_e.slice(t0 + 3, t0 + 7)]
     )
-    times, data = seisbench.models.WaveformModel.stream_to_arrays(
-        stream, "ZNE", strict=True
-    )
+    times, data = dummy.stream_to_arrays(stream, strict=True)
     assert len(times) == len(data) == 1
     assert times[0] == t0 + 3
     assert data[0].shape == (3, 201)
@@ -202,9 +197,7 @@ def test_stream_to_arrays():
     stream = obspy.Stream(
         [trace_z, trace_n.slice(t0 + 1, t0 + 5), trace_e.slice(t0 + 3, t0 + 7)]
     )
-    times, data = seisbench.models.WaveformModel.stream_to_arrays(
-        stream, "ZNE", strict=False
-    )
+    times, data = dummy.stream_to_arrays(stream, strict=False)
     assert len(times) == len(data) == 1
     assert times[0] == t0
     assert data[0].shape == (3, len(trace_z.data))
@@ -224,9 +217,7 @@ def test_stream_to_arrays():
             trace_e.slice(t0 + 1, t0 + 2),
         ]
     )
-    times, data = seisbench.models.WaveformModel.stream_to_arrays(
-        stream, "ZNE", strict=True
-    )
+    times, data = dummy.stream_to_arrays(stream, strict=True)
     assert len(times) == len(data) == 0
 
     # No overlap non strict
@@ -237,9 +228,7 @@ def test_stream_to_arrays():
             trace_e.slice(t0 + 1, t0 + 2),
         ]
     )
-    times, data = seisbench.models.WaveformModel.stream_to_arrays(
-        stream, "ZNE", strict=False
-    )
+    times, data = dummy.stream_to_arrays(stream, strict=False)
     assert len(times) == len(data) == 1
     assert times[0] == t0
     assert data[0].shape == (3, 201)
@@ -261,9 +250,7 @@ def test_stream_to_arrays():
             trace_e.slice(t0 + 2, t0 + 3),
         ]
     )
-    times, data = seisbench.models.WaveformModel.stream_to_arrays(
-        stream, "ZNE", strict=True
-    )
+    times, data = dummy.stream_to_arrays(stream, strict=True)
     assert len(times) == len(data) == 2
     for i in range(2):
         assert times[i] == t0 + 2 * i
@@ -283,9 +270,7 @@ def test_stream_to_arrays():
             trace_e.slice(t0 + 2, t0 + 3),
         ]
     )
-    times, data = seisbench.models.WaveformModel.stream_to_arrays(
-        stream, "ZNE", strict=False
-    )
+    times, data = dummy.stream_to_arrays(stream, strict=False)
     assert len(times) == len(data) == 2
     for i in range(2):
         assert times[i] == t0 + 2 * i
