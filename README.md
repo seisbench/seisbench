@@ -1,6 +1,12 @@
 # SeisBench
 SeisBench - The Seismology Benchmark collection
 
+## Installation
+
+To install SeisBench and the required dependencies, run `pip install -e .` in the root directory of this repository.
+Make sure to include the `-e` argument, as this will automatically propagate changes to the SeisBench code into the installed package.
+For development, it is recommended to install SeisBench into a separate virtual environment, e.g., using anaconda. 
+
 ## Example dataset loading
 To load the example dataset, run the following commands in a python shell in the repository root directory.
 ```python
