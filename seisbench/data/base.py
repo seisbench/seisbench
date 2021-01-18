@@ -10,6 +10,7 @@ from obspy import UTCDateTime
 from obspy.clients.fdsn import Client
 from tqdm import tqdm
 import shutil
+import matplotlib.pyplot as plt
 
 
 class WaveformDataset:
@@ -325,6 +326,108 @@ class WaveformDataset:
 
         return np.stack(new_seq, axis=0)
 
+    def plot_map(self, res="110m", connections=False, **kwargs):
+        """
+        Plots the dataset onto a map using the Mercator projection. Requires a cartopy installation.
+        :param res: Resolution for cartopy features
+        :param connections: If true, plots lines connecting sources and stations
+        :param kwargs: Plotting kwargs that will be passed to matplotlib plot. Args need to be prefixed with 'sta_', 'ev_' and 'conn_' to address stations, events or connections.
+        :return: A figure handle for the created figure
+        """
+        fig = plt.figure(figsize=(15, 10))
+        try:
+            import cartopy.crs as ccrs
+            from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+            import cartopy.feature as cfeature
+        except ModuleNotFoundError:
+            raise ModuleNotFoundError(
+                "Plotting the data set requires cartopy. "
+                "Please install cartopy, e.g., using conda."
+            )
+
+        ax = fig.add_subplot(111, projection=ccrs.Mercator())
+
+        ax.coastlines(res)
+        land_50m = cfeature.NaturalEarthFeature(
+            "physical", "land", res, edgecolor="face", facecolor=cfeature.COLORS["land"]
+        )
+        ax.add_feature(land_50m)
+
+        def prefix_dict(kws, prefix):
+            return {
+                k[len(prefix) :]: v
+                for k, v in kws.items()
+                if k[: len(prefix)] == prefix
+            }
+
+        lines_kws = {
+            "marker": "",
+            "linestyle": "-",
+            "color": "grey",
+            "alpha": 0.5,
+            "linewidth": 0.5,
+        }
+        lines_kws.update(prefix_dict(kwargs, "conn_"))
+
+        station_kws = {"marker": "^", "color": "k", "linestyle": "", "ms": 10}
+        station_kws.update(prefix_dict(kwargs, "sta_"))
+
+        event_kws = {"marker": ".", "color": "r", "linestyle": ""}
+        event_kws.update(prefix_dict(kwargs, "ev_"))
+
+        # Plot connecting lines
+        if connections:
+            station_source_pairs = self.metadata[
+                [
+                    "station_longitude_deg",
+                    "station_latitude_deg",
+                    "source_longitude_deg",
+                    "source_latitude_deg",
+                ]
+            ].values
+            for row in station_source_pairs:
+                ax.plot(
+                    [row[0], row[2]],
+                    [row[1], row[3]],
+                    transform=ccrs.Geodetic(),
+                    **lines_kws,
+                )
+
+        # Plot stations
+        station_locations = np.unique(
+            self.metadata[["station_longitude_deg", "station_latitude_deg"]].values,
+            axis=0,
+        )
+        ax.plot(
+            station_locations[:, 0],
+            station_locations[:, 1],
+            transform=ccrs.PlateCarree(),
+            **station_kws,
+        )
+
+        # Plot events
+        source_locations = np.unique(
+            self.metadata[["source_longitude_deg", "source_latitude_deg"]].values,
+            axis=0,
+        )
+        ax.plot(
+            source_locations[:, 0],
+            source_locations[:, 1],
+            transform=ccrs.PlateCarree(),
+            **event_kws,
+        )
+
+        # Gridlines
+        gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True)
+        gl.top_labels = False
+        gl.left_labels = False
+        gl.xformatter = LONGITUDE_FORMATTER
+        gl.yformatter = LATITUDE_FORMATTER
+
+        fig.suptitle(self.name)
+
+        return fig
+
 
 class BenchmarkDataset(WaveformDataset, ABC):
     """
@@ -451,9 +554,7 @@ class DummyDataset(BenchmarkDataset):
             "Magnitude scales, attenuation models and feature matrices for the IPOC catalog. "
             "V. 1.0. GFZ Data Services. https://doi.org/10.5880/GFZ.2.4.2019.004"
         )
-        super().__init__(
-            name=self.__class__.__name__.lower(), citation=citation, **kwargs
-        )
+        super().__init__(name=self.__class__.__name__, citation=citation, **kwargs)
 
     def _download_dataset(self, writer, trace_length=60, **kwargs):
         sampling_rate = 20

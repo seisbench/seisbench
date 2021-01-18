@@ -17,9 +17,7 @@ class STEAD(BenchmarkDataset):
             "Mousavi, S. M., Sheng, Y., Zhu, W., Beroza G.C., (2019). STanford EArthquake Dataset (STEAD): "
             "A Global Data Set of Seismic Signals for AI, IEEE Access, doi:10.1109/ACCESS.2019.2947848"
         )
-        super().__init__(
-            name=self.__class__.__name__.lower(), citation=citation, **kwargs
-        )
+        super().__init__(name=self.__class__.__name__, citation=citation, **kwargs)
 
     def _download_dataset(self, writer, basepath=None, **kwargs):
         download_instructions = (
