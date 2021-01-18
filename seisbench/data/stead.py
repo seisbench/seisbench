@@ -4,6 +4,7 @@ from .base import BenchmarkDataset
 from pathlib import Path
 import shutil
 import h5py
+import pandas as pd
 
 
 class STEAD(BenchmarkDataset):
@@ -27,6 +28,42 @@ class STEAD(BenchmarkDataset):
             "This step is only necessary the first time STEAD is loaded."
         )
 
+        metadata_dict = {
+            "trace_start_time": "trace_start_time",
+            "trace_category": "trace_category",
+            "trace_name": "trace_name",
+            "p_arrival_sample": "trace_p_arrival_sample",
+            "p_status": "trace_p_status",
+            "p_weight": "trace_p_weight",
+            "p_travel_sec": "trace_p_travel_sec",
+            "s_arrival_sample": "trace_s_arrival_sample",
+            "s_status": "trace_s_status",
+            "s_weight": "trace_s_weight",
+            "s_travel_sec": "trace_s_travel_sec",
+            "back_azimuth_deg": "trace_back_azimuth_deg",
+            "snr_db": "trace_snr_db",
+            "coda_end_sample": "trace_coda_end_sample",
+            "network_code": "station_network_code",
+            "receiver_code": "station_code",
+            "receiver_type": "station_type",
+            "receiver_latitude": "station_latitude_deg",
+            "receiver_longitude": "station_longitude_deg",
+            "receiver_elevation_m": "station_elevation_m",
+            "source_id": "source_id",
+            "source_origin_time": "source_origin_time",
+            "source_origin_uncertainty_sec": "source_origin_uncertainty_sec",
+            "source_latitude": "source_latitude_deg",
+            "source_longitude": "source_longitude_deg",
+            "source_error_sec": "source_error_sec",
+            "source_gap_deg": "source_gap_deg",
+            "source_horizontal_uncertainty_km": "source_horizontal_uncertainty_km",
+            "source_depth_km": "source_depth_km",
+            "source_depth_uncertainty_km": "source_depth_uncertainty_km",
+            "source_magnitude": "source_magnitude",
+            "source_magnitude_type": "source_magnitude_type",
+            "source_magnitude_author": "source_magnitude_author",
+        }
+
         if basepath is None:
             raise ValueError(
                 "No cached version of STEAD found. " + download_instructions
@@ -47,7 +84,12 @@ class STEAD(BenchmarkDataset):
         seisbench.logger.warning(
             "Copying STEAD files to cache. This might take a while."
         )
-        shutil.copy(basepath / "merged.csv", self.path / "metadata.csv")
+
+        # Copy metadata and rename columns to SeisBench format
+        metadata = pd.read_csv(basepath / "merged.csv")
+        metadata.rename(columns=metadata_dict, inplace=True)
+        metadata.to_csv(self.path / "metadata.csv", index=False)
+
         shutil.copy(basepath / "merged.hdf5", self.path / "waveforms.hdf5")
 
         data_format = {

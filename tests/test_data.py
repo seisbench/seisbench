@@ -68,8 +68,8 @@ def test_region_filter():
     lat = 0
     lon = np.linspace(-10, 10, len(dummy))
 
-    dummy.metadata["receiver_latitude"] = lat
-    dummy.metadata["receiver_longitude"] = lon
+    dummy.metadata["station_latitude_deg"] = lat
+    dummy.metadata["station_longitude_deg"] = lon
 
     domain = region.CircleDomain(0, 0, 1, 5)
 
@@ -85,8 +85,8 @@ def test_region_filter():
     lat = np.random.random(n) * 40 - 20
     lon = np.random.random(n) * 40 - 20
 
-    dummy.metadata["source_latitude"] = lat
-    dummy.metadata["source_longitude"] = lon
+    dummy.metadata["source_latitude_deg"] = lat
+    dummy.metadata["source_longitude_deg"] = lon
 
     domain = region.RectangleDomain(
         minlatitude=-5, maxlatitude=5, minlongitude=10, maxlongitude=15

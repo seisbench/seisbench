@@ -213,12 +213,12 @@ class WaveformDataset:
 
     def region_filter_source(self, domain):
         self.region_filter(
-            domain, lat_col="source_latitude", lon_col="source_longitude"
+            domain, lat_col="source_latitude_deg", lon_col="source_longitude_deg"
         )
 
     def region_filter_receiver(self, domain):
         self.region_filter(
-            domain, lat_col="receiver_latitude", lon_col="receiver_longitude"
+            domain, lat_col="station_latitude_deg", lon_col="station_longitude_deg"
         )
 
     def _evict_cache(self):
@@ -460,8 +460,8 @@ class DummyDataset(BenchmarkDataset):
 
         writer.metadata_dict = {
             "time": "trace_start_time",
-            "latitude": "source_latitude",
-            "longitude": "source_longitude",
+            "latitude": "source_latitude_deg",
+            "longitude": "source_longitude_deg",
             "depth": "source_depth_km",
             "cls": "source_event_category",
             "MA": "source_magnitude",
@@ -506,12 +506,12 @@ class DummyDataset(BenchmarkDataset):
         )
 
         metadata["trace_name"] = metadata["time"].apply(to_tracename)
-        metadata["network_code"] = "CX"
-        metadata["receiver_code"] = "PB01"
-        metadata["receiver_type"] = "BH"
-        metadata["receiver_latitude"] = inv[0][0].latitude
-        metadata["receiver_longitude"] = inv[0][0].longitude
-        metadata["receiver_elevation_m"] = inv[0][0].elevation
+        metadata["station_network_code"] = "CX"
+        metadata["station_code"] = "PB01"
+        metadata["station_type"] = "BH"
+        metadata["station_latitude_deg"] = inv[0][0].latitude
+        metadata["station_longitude_deg"] = inv[0][0].longitude
+        metadata["station_elevation_m"] = inv[0][0].elevation
         metadata["source_magnitude_type"] = "MA"
         metadata["source_magnitude_type2"] = "ML"
 
