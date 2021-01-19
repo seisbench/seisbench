@@ -11,6 +11,7 @@ from obspy.clients.fdsn import Client
 from tqdm import tqdm
 import shutil
 import matplotlib.pyplot as plt
+import os
 
 
 class WaveformDataset:
@@ -443,10 +444,16 @@ class BenchmarkDataset(WaveformDataset, ABC):
         # TODO: Validate if cached dataset was downloaded with the same parameters
         if not self._verify_dataset():
             seisbench.logger.info(
-                f"Dataset {name} not in cache. Downloading and preprocessing corpus..."
+                f"Dataset {name} not in cache. Trying to download preprocessed corpus from SeisBench repository."
             )
-            with WaveformDataWriter(self.path) as writer:
-                self._download_dataset(writer, **kwargs)
+            try:
+                self._download_preprocessed()
+            except ValueError:
+                seisbench.logger.info(
+                    f"Dataset {name} not SeisBench repository. Starting download and conversion from source."
+                )
+                with WaveformDataWriter(self.path) as writer:
+                    self._download_dataset(writer, **kwargs)
 
         super().__init__(path=None, name=name, citation=citation, **kwargs)
 
@@ -457,6 +464,26 @@ class BenchmarkDataset(WaveformDataset, ABC):
     @property
     def path(self):
         return Path(seisbench.cache_root, "datasets", self.name.lower())
+
+    def _remote_path(self):
+        return os.path.join(seisbench.remote_root, "datasets", self.name.lower())
+
+    def _download_preprocessed(self):
+        self.path.mkdir(parents=True, exist_ok=True)
+
+        metadata_path = self.path / "metadata.csv"
+        waveforms_path = self.path / "waveforms.hdf5"
+
+        remote_path = self._remote_path()
+        remote_metadata_path = os.path.join(remote_path, "metadata.csv")
+        remote_waveforms_path = os.path.join(remote_path, "waveforms.hdf5")
+
+        seisbench.util.download_http(
+            remote_metadata_path, metadata_path, desc="Downloading metadata"
+        )
+        seisbench.util.download_http(
+            remote_waveforms_path, waveforms_path, desc="Downloading waveforms"
+        )
 
     @abstractmethod
     def _download_dataset(self, writer, **kwargs):
