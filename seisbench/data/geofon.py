@@ -293,6 +293,8 @@ class GEOFON(BenchmarkDataset):
 
             completeness += min(1.0, c_completeness / samples)
 
+        data -= np.mean(data, axis=1, keepdims=True)
+
         completeness /= len(component_order)
         return starttime, data, completeness
 
