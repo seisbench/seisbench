@@ -9,7 +9,7 @@ import numpy as np
 
 class GPD(WaveformModel):
     # TODO: How to handle filtering (e.g. highpass/lowpass)?
-    def __init__(self, in_channels=3, classes=3, phases="NPS", eps=1e-10):
+    def __init__(self, in_channels=3, classes=3, phases=None, eps=1e-10):
         citation = (
             "Ross, Z. E., Meier, M.-A., Hauksson, E., & Heaton, T. H. (2018). "
             "Generalized Seismic Phase Detection with Deep Learning. "

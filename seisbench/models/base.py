@@ -41,17 +41,23 @@ class SeisBenchModel(nn.Module):
     def _remote_path(self):
         return os.path.join(seisbench.remote_root, "models", self.name.lower())
 
-    def load_pretrained(self, name):
-        weight_path = self._model_path() / f"{name}.pt"
-        metadata_path = self._model_path() / f"{name}.json"
+    @classmethod
+    def from_pretrained(cls, name):
+        dummy_instance = cls()  # Required to query the pathes
+        weight_path = dummy_instance._model_path() / f"{name}.pt"
+        metadata_path = dummy_instance._model_path() / f"{name}.json"
         if not weight_path.is_file():
             seisbench.logger.info(f"Weight file {name} not in cache. Downloading...")
             weight_path.parent.mkdir(exist_ok=True, parents=True)
 
-            remote_weight_path = os.path.join(self._remote_path(), f"{name}.pt")
+            remote_weight_path = os.path.join(
+                dummy_instance._remote_path(), f"{name}.pt"
+            )
             util.download_http(remote_weight_path, weight_path)
 
-            remote_metadata_path = os.path.join(self._remote_path(), f"{name}.json")
+            remote_metadata_path = os.path.join(
+                dummy_instance._remote_path(), f"{name}.json"
+            )
             try:
                 util.download_http(
                     remote_metadata_path, metadata_path, progress_bar=False
@@ -59,14 +65,21 @@ class SeisBenchModel(nn.Module):
             except ValueError:
                 pass
 
-        self.load_state_dict(torch.load(weight_path))
-
         if metadata_path.is_file():
             with open(metadata_path, "r") as f:
-                self._weights_metadata = json.load(f)
+                weights_metadata = json.load(f)
         else:
-            self._weights_metadata = {}
-        self._parse_metadata()
+            weights_metadata = {}
+
+        model_args = weights_metadata.get("model_args", {})
+        model = cls(**model_args)
+
+        model._weights_metadata = weights_metadata
+        model._parse_metadata()
+
+        model.load_state_dict(torch.load(weight_path))
+
+        return model
 
     def _parse_metadata(self):
         self._weights_docstring = self._weights_metadata.get("docstring", "")
