@@ -11,16 +11,14 @@ The only strictly required column is `trace_name` as it is used for referencing 
 ## Naming scheme
 All column names should follow the structure `CATEGORY_PARAMETER_UNIT`.
 The `CATEGORY` defines which object the parameter describes.
-The categories are `trace`, `source`, `station` and `derived`.
+The categories are `trace`, `source`, `station` and `path`.
 - `trace` contains all information and annotations for the trace, such as the start time, the picks or ground motion parameters.
 - `source` describes the source of the waves, such as an earthquake. Source parameters will be empty for noise traces.
   All rows with the same `source_id` should agree in all source parameters.
 - `station` contains all information about the station recording the trace, such as station and network code or station location. 
   Similar to `source`, all rows describing the same stations should agree in all station parameters (except for actual changes in the station setup over time).
-- `derived` is used for all information that can be derived using information from **multiple** of the other categories. 
-  For example, epicentral distances belong to the derived category, as they can only be derived using information from both `station` and `source` parameters.
-  In contrast, SNR does not belong to `derived` as it can be calculated using the `trace` category only.
-  It should therefore be in the `trace` category.
+- `path` is used for all properties of the propagation path, like travel times or distances.
+Theses parameters will usually be derived from a combination of source, station and trace parameters.
 
 The `PARAMETER` describes the provided information, e.g., `latitude` or `longitude`.
 Parameter names should be as self-contained as possible.
@@ -116,20 +114,20 @@ Exceptions regarding capitalization can be made where common, e.g., seismometer 
 |source_focal_mechanism_eval_mode|e.g. manual/automatic|
 |source_focal_mechanism_scalar_moment_Nm|| 
 
-### Derived parameters
+### Path parameters
 
 |Parameter name|Comment|
 |---|---|
-|derived_p_travel_s||
-|derived_residual_p_s||
-|derived_weight_phase_location_p||
-|derived_s_travel_s||
-|derived_residual_s_s||
-|derived_weight_phase_location_s||
-|derived_azimuth_deg||
-|derived_back_azimuth_deg||
-|derived_ep_distance_km||
-|derived_hyp_distance_km||
+|path_p_travel_s||
+|path_p_residual_s||
+|path_weight_phase_location_p||
+|path_s_travel_s||
+|path_s_residual_s||
+|path_weight_phase_location_s||
+|path_azimuth_deg||
+|path_back_azimuth_deg||
+|path_ep_distance_km||
+|path_hyp_distance_km||
 
 ## Relation to STEAD and QuakeML identifiers
 The table lists names for SeisBench and the analog in the STEAD format.
@@ -143,12 +141,12 @@ In addition it provides names for QuakeML where applicable.
 |trace_p_arrival_sample|p_arrival_sample||
 |trace_p_status|p_status|Pick.evaluationMode, pick.evaluationStatus|
 |trace_p_weight|p_weight|Arrival.weight|
-|derived_p_travel_sec|p_travel_sec||
+|path_p_travel_sec|p_travel_sec||
 |trace_s_arrival_sample|s_arrival_sample||
 |trace_s_status|s_status|Pick.evaluationMode, pick.evaluationStatus|
 |trace_s_weight|s_weight|Arrival.weight|
-|derived_s_travel_sec|s_travel_sec||
-|derived_back_azimuth_deg|back_azimuth_deg||
+|path_s_travel_sec|s_travel_sec||
+|path_back_azimuth_deg|back_azimuth_deg||
 |trace_snr_db|snr_db||
 |trace_coda_end_sample|coda_end_sample||
 |station_network_code|network_code|Network.code|
