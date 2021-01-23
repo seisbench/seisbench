@@ -50,7 +50,7 @@ class GEOFON(BenchmarkDataset):
             str(basepath / "inventory_without_response.xml")
         )
 
-        for event_path in basepath.iterdir():
+        for event_path in sorted(basepath.iterdir()):
             if not event_path.is_dir():
                 continue
             quakeml = [
@@ -93,6 +93,7 @@ class GEOFON(BenchmarkDataset):
     def _get_event_params(event):
         origin = event.preferred_origin()
         mag = event.preferred_magnitude()
+        fm = event.preferred_focal_mechanism()
         event_params = {
             "source_id": str(event.resource_id)[-11:],
             "source_origin_time": str(origin.time),
@@ -103,14 +104,16 @@ class GEOFON(BenchmarkDataset):
             "source_longitude_uncertainty_deg": origin.longitude_errors["uncertainty"],
             "source_depth_km": origin.depth / 1e3,
             "source_depth_uncertainty_km": origin.depth_errors["uncertainty"] / 1e3,
-            "source_magnitude": mag.mag,
-            "source_magnitude_uncertainty": mag.mag_errors["uncertainty"],
-            "source_magnitude_type": mag.magnitude_type,
-            "source_magnitude_author": mag.creation_info.agency_id,
         }
-        if event.preferred_focal_mechanism() is not None:
+
+        if mag is not None:
+            event_params["source_magnitude"] = mag.mag
+            event_params["source_magnitude_uncertainty"] = mag.mag_errors["uncertainty"]
+            event_params["source_magnitude_type"] = mag.magnitude_type
+            event_params["source_magnitude_author"] = mag.creation_info.agency_id
+
+        if fm is not None:
             try:
-                fm = event.preferred_focal_mechanism()
                 t_axis, p_axis, n_axis = (
                     fm.principal_axes.t_axis,
                     fm.principal_axes.p_axis,
@@ -149,7 +152,7 @@ class GEOFON(BenchmarkDataset):
             "trace_back_azimuth_deg": back_azimuth,
             "station_network_code": pick.waveform_id.network_code,
             "station_code": pick.waveform_id.station_code,
-            "station_channel_code": pick.waveform_id.channel_code,
+            "station_channel_code": pick.waveform_id.channel_code[:-1],
             "station_location_code": pick.waveform_id.location_code,
             "station_latitude_deg": lat,
             "station_longitude_deg": lon,
@@ -221,6 +224,9 @@ class GEOFON(BenchmarkDataset):
                         pass
                     except InternalMSEEDError:
                         pass
+                    except TypeError:
+                        # Thrown by obspy for specific invalid MSEED files
+                        pass
         stream.merge(-1)
 
         if len(stream) == 0:
@@ -242,6 +248,13 @@ class GEOFON(BenchmarkDataset):
         t_end = max(pick.time for pick in picks) + time_after
 
         stream = stream.slice(t_start, t_end)
+
+        if len(stream) == 0:
+            seisbench.logger.warning(
+                f'Found no waveforms for {picks[0].waveform_id.id[:-1]} in event {event_params["source_id"]}'
+            )
+            return
+
         actual_t_start, data, completeness = self._stream_to_array(
             stream, component_order
         )
