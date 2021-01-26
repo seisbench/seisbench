@@ -12,6 +12,7 @@ from tqdm import tqdm
 import shutil
 import matplotlib.pyplot as plt
 import os
+import time
 
 
 class WaveformDataset:
@@ -436,13 +437,33 @@ class BenchmarkDataset(WaveformDataset, ABC):
     It adds functionality to download the dataset to cache and to annotate it with a citation.
     """
 
-    def __init__(self, name, citation=None, **kwargs):
+    def __init__(self, name, citation=None, force=False, wait_for_file=False, **kwargs):
         self._name = name
         self._citation = citation
 
         # Check if dataset is cached
         # TODO: Validate if cached dataset was downloaded with the same parameters
         if not self._verify_dataset():
+            # WARNING: While this ensures that no incomplete data is read, this does not completely rule out a duplicate download.
+            # If a second download is started, before the first one created a .partial file, multiple downloads will start.
+            # This will likely lead to crashes.
+            while self._partial_dataset() and not force:
+                if wait_for_file:
+                    seisbench.logger.warning(
+                        f"Found partial instance of dataset {name}. Rechecking in 60 seconds."
+                    )
+                    time.sleep(60)
+                else:
+                    raise ValueError(
+                        f"Found partial instance of dataset {name}. "
+                        f"This suggests that either the download is currently in progress or a download failed. "
+                        f"To redownload the file, call the dataset with force=True. "
+                        f"To wait for another download to finish, use wait_for_file=True."
+                    )
+
+            if force:
+                self._clear_partial_dataset()
+
             seisbench.logger.info(
                 f"Dataset {name} not in cache. Trying to download preprocessed corpus from SeisBench repository."
             )
@@ -464,6 +485,21 @@ class BenchmarkDataset(WaveformDataset, ABC):
     @property
     def path(self):
         return Path(seisbench.cache_root, "datasets", self.name.lower())
+
+    def _partial_dataset(self):
+        metadata_path = self.path / "metadata.csv.partial"
+        waveform_path = self.path / "waveforms.hdf5.partial"
+
+        return metadata_path.is_file() or waveform_path.is_file()
+
+    def _clear_partial_dataset(self):
+        metadata_path = self.path / "metadata.csv.partial"
+        waveform_path = self.path / "waveforms.hdf5.partial"
+
+        if metadata_path.is_file():
+            os.remove(metadata_path)
+        if waveform_path.is_file():
+            os.remove(waveform_path)
 
     def _remote_path(self):
         return os.path.join(seisbench.remote_root, "datasets", self.name.lower())
@@ -519,16 +555,14 @@ class WaveformDataWriter:
             self._pbar.close()
 
         if exc_type is None:
+            metadata_partial = self.path / "metadata.csv.partial"
+            hdf5_partial = self.path / "waveforms.hdf5.partial"
+            if metadata_partial.is_file():
+                metadata_partial.rename(self.path / "metadata.csv")
+            if hdf5_partial.is_file():
+                hdf5_partial.rename(self.path / "waveforms.hdf5")
             return True
         else:
-            if (self.path / "metadata.csv").is_file():
-                shutil.move(
-                    self.path / "metadata.csv", self.path / "metadata.csv.partial"
-                )
-            if (self.path / "waveforms.hdf5").is_file():
-                shutil.move(
-                    self.path / "waveforms.hdf5", self.path / "waveforms.hdf5.partial"
-                )
             seisbench.logger.error(
                 f"Error in downloading dataset. "
                 f"Saved current progress to {self.path}/*.partial. Error message:\n"
@@ -539,7 +573,7 @@ class WaveformDataWriter:
         trace_name = str(metadata["trace_name"])
 
         if self._waveform_file is None:
-            self._waveform_file = h5py.File(self.path / "waveforms.hdf5", "w")
+            self._waveform_file = h5py.File(self.path / "waveforms.hdf5.partial", "w")
             self._waveform_file.create_group("data")
         if self._pbar is None:
             self._pbar = tqdm(desc="Traces converted")
@@ -567,7 +601,7 @@ class WaveformDataWriter:
         if self.metadata_dict is not None:
             metadata.rename(columns=self.metadata_dict, inplace=True)
 
-        metadata.to_csv(self.path / "metadata.csv", index=False)
+        metadata.to_csv(self.path / "metadata.csv.partial", index=False)
 
 
 class DummyDataset(BenchmarkDataset):

@@ -3,6 +3,8 @@ import seisbench
 import requests
 import ftplib
 from tqdm import tqdm
+from pathlib import Path
+import tempfile
 
 
 def download_http(url, target, progress_bar=True, desc="Downloading"):
@@ -19,13 +21,21 @@ def download_http(url, target, progress_bar=True, desc="Downloading"):
     total = int(content_length) if content_length is not None else None
     if progress_bar:
         pbar = tqdm(unit="B", total=total, desc=desc)
+    else:
+        pbar = None
 
-    with open(target, "wb") as f_target:
+    target = Path(target)
+    tmp_target = target.parent / (target.name + ".partial")
+
+    with open(tmp_target, "wb") as f_target:
         for chunk in req.iter_content(chunk_size=1024):
             if chunk:  # filter out keep-alive new chunks
-                if progress_bar:
+                if pbar is not None:
                     pbar.update(len(chunk))
                 f_target.write(chunk)
+
+    seisbench.logger.info(f"Moving file from {tmp_target} to {target}")
+    tmp_target.rename(target)
 
     if progress_bar:
         pbar.close()
@@ -53,8 +63,12 @@ def download_ftp(
                 pbar.update(len(chunk))
             fout.write(chunk)
 
-        with open(target, "wb") as fout:
+        tmp_target = target.parent / (target.name + ".partial")
+        with open(tmp_target, "wb") as fout:
             ftp.retrbinary(f"RETR {file}", callback, blocksize=blocksize)
+
+        seisbench.logger.info(f"Moving file from {tmp_target} to {target}")
+        tmp_target.rename(target)
 
         if progress_bar:
             pbar.close()

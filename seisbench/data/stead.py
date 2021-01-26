@@ -84,11 +84,13 @@ class STEAD(BenchmarkDataset):
         )
 
         # Copy metadata and rename columns to SeisBench format
+        tmp_metadata_path = self.path / "metadata.csv.partial"
         metadata = pd.read_csv(basepath / "merged.csv")
         metadata.rename(columns=metadata_dict, inplace=True)
-        metadata.to_csv(self.path / "metadata.csv", index=False)
+        metadata.to_csv(tmp_metadata_path, index=False)
 
-        shutil.copy(basepath / "merged.hdf5", self.path / "waveforms.hdf5")
+        tmp_waveforms_path = self.path / "waveforms.hdf5.partial"
+        shutil.copy(basepath / "merged.hdf5", tmp_waveforms_path)
 
         data_format = {
             "dimension_order": "WC",
@@ -99,7 +101,11 @@ class STEAD(BenchmarkDataset):
             "instrument_response": "not restituted",
         }
 
-        with h5py.File(self.path / "waveforms.hdf5", "a") as fout:
+        with h5py.File(self.path / "waveforms.hdf5.partial", "a") as fout:
             g_data_format = fout.create_group("data_format")
             for key in data_format.keys():
                 g_data_format.create_dataset(key, data=data_format[key])
+
+        seisbench.logger.info("Renaming STEAD files.")
+        tmp_metadata_path.rename(self.path / "metadata.hdf5")
+        tmp_metadata_path.rename(self.path / "waveforms.hdf5")
