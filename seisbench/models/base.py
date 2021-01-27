@@ -48,47 +48,12 @@ class SeisBenchModel(nn.Module):
 
         return weight_path, metadata_path
 
-    def _partial_model(self, name):
-        weight_path = self._model_path() / f"{name}.pt.partial"
-        metadata_path = self._model_path() / f"{name}.json.partial"
-
-        return weight_path.is_file() or metadata_path.is_file()
-
-    def _clear_partial_model(self, name):
-        weight_path = self._model_path() / f"{name}.pt.partial"
-        metadata_path = self._model_path() / f"{name}.json.partial"
-
-        if weight_path.is_file():
-            os.remove(weight_path)
-        if metadata_path.is_file():
-            os.remove(metadata_path)
-
     @classmethod
     def from_pretrained(cls, name, force=False, wait_for_file=False):
-        dummy_instance = cls()  # Required to query the pathes
+        dummy_instance = cls()  # Required to query the paths
         weight_path, metadata_path = dummy_instance._pretrained_path(name)
 
-        if not weight_path.is_file():
-            # WARNING: While this ensures that no incomplete weights are read, this does not completely rule out a duplicate download.
-            # If a second download is started, before the first one created a .partial file, multiple downloads will start.
-            # This will likely lead to crashes.
-            while dummy_instance._partial_model(name) and not force:
-                if wait_for_file:
-                    seisbench.logger.warning(
-                        f"Found partial instance of weights {name}. Rechecking in 60 seconds."
-                    )
-                    time.sleep(60)
-                else:
-                    raise ValueError(
-                        f"Found partial instance of weights {name}. "
-                        f"This suggests that either the download is currently in progress or a download failed. "
-                        f"To redownload the file, call the dataset with force=True. "
-                        f"To wait for another download to finish, use wait_for_file=True."
-                    )
-
-            if force:
-                dummy_instance._clear_partial_model(name)
-
+        def download_weights_callback(weight_path):
             seisbench.logger.info(f"Weight file {name} not in cache. Downloading...")
             weight_path.parent.mkdir(exist_ok=True, parents=True)
 
@@ -97,6 +62,7 @@ class SeisBenchModel(nn.Module):
             )
             util.download_http(remote_weight_path, weight_path)
 
+        def download_metadata_callback(metadata_path):
             remote_metadata_path = os.path.join(
                 dummy_instance._remote_path(), f"{name}.json"
             )
@@ -105,7 +71,21 @@ class SeisBenchModel(nn.Module):
                     remote_metadata_path, metadata_path, progress_bar=False
                 )
             except ValueError:
+                # A missing metadata file does not lead to a crash
                 pass
+
+        seisbench.util.callback_if_uncached(
+            weight_path,
+            download_weights_callback,
+            force=force,
+            wait_for_file=wait_for_file,
+        )
+        seisbench.util.callback_if_uncached(
+            metadata_path,
+            download_metadata_callback,
+            force=force,
+            wait_for_file=wait_for_file,
+        )
 
         if metadata_path.is_file():
             with open(metadata_path, "r") as f:

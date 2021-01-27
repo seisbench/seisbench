@@ -150,14 +150,18 @@ def test_lazyload_cache(caplog):
 
 def test_writer(caplog, tmp_path: Path):
     # Test empty writer
-    with seisbench.data.WaveformDataWriter(tmp_path / "writer_a") as writer:
+    with seisbench.data.WaveformDataWriter(
+        tmp_path / "writer_a" / "metadata.csv", tmp_path / "writer_a" / "waveforms.hdf5"
+    ) as writer:
         pass
 
     assert (tmp_path / "writer_a").is_dir()  # Path exists
     assert not any((tmp_path / "writer_a").iterdir())  # Path is empty
 
     # Test correct write
-    with seisbench.data.WaveformDataWriter(tmp_path / "writer_b") as writer:
+    with seisbench.data.WaveformDataWriter(
+        tmp_path / "writer_b" / "metadata.csv", tmp_path / "writer_b" / "waveforms.hdf5"
+    ) as writer:
         trace = {"trace_name": "dummy", "split": 2}
         writer.add_trace(trace, np.zeros((3, 100)))
 
@@ -174,7 +178,10 @@ def test_writer(caplog, tmp_path: Path):
 
     # Test with failing write
     with pytest.raises(Exception):
-        with seisbench.data.WaveformDataWriter(tmp_path / "writer_c") as writer:
+        with seisbench.data.WaveformDataWriter(
+            tmp_path / "writer_c" / "metadata.csv.partial",
+            tmp_path / "writer_c" / "waveforms.hdf5.partial",
+        ) as writer:
             trace = {"trace_name": "dummy", "split": 2}
             writer.add_trace(trace, np.zeros((3, 100)))
             raise Exception("Dummy exception to test failure handling of writer")

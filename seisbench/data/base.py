@@ -441,40 +441,24 @@ class BenchmarkDataset(WaveformDataset, ABC):
         self._name = name
         self._citation = citation
 
-        # Check if dataset is cached
         # TODO: Validate if cached dataset was downloaded with the same parameters
-        if not self._verify_dataset():
-            # WARNING: While this ensures that no incomplete data is read, this does not completely rule out a duplicate download.
-            # If a second download is started, before the first one created a .partial file, multiple downloads will start.
-            # This will likely lead to crashes.
-            while self._partial_dataset() and not force:
-                if wait_for_file:
-                    seisbench.logger.warning(
-                        f"Found partial instance of dataset {name}. Rechecking in 60 seconds."
-                    )
-                    time.sleep(60)
-                else:
-                    raise ValueError(
-                        f"Found partial instance of dataset {name}. "
-                        f"This suggests that either the download is currently in progress or a download failed. "
-                        f"To redownload the file, call the dataset with force=True. "
-                        f"To wait for another download to finish, use wait_for_file=True."
-                    )
-
-            if force:
-                self._clear_partial_dataset()
-
+        def download_callback(files):
             seisbench.logger.info(
                 f"Dataset {name} not in cache. Trying to download preprocessed corpus from SeisBench repository."
             )
             try:
-                self._download_preprocessed()
+                self._download_preprocessed(*files)
             except ValueError:
                 seisbench.logger.info(
                     f"Dataset {name} not SeisBench repository. Starting download and conversion from source."
                 )
-                with WaveformDataWriter(self.path) as writer:
+                with WaveformDataWriter(*files) as writer:
                     self._download_dataset(writer, **kwargs)
+
+        files = [self.path / "metadata.csv", self.path / "waveforms.hdf5"]
+        seisbench.util.callback_if_uncached(
+            files, download_callback, force=force, wait_for_file=wait_for_file
+        )
 
         super().__init__(path=None, name=name, citation=citation, **kwargs)
 
@@ -486,29 +470,11 @@ class BenchmarkDataset(WaveformDataset, ABC):
     def path(self):
         return Path(seisbench.cache_root, "datasets", self.name.lower())
 
-    def _partial_dataset(self):
-        metadata_path = self.path / "metadata.csv.partial"
-        waveform_path = self.path / "waveforms.hdf5.partial"
-
-        return metadata_path.is_file() or waveform_path.is_file()
-
-    def _clear_partial_dataset(self):
-        metadata_path = self.path / "metadata.csv.partial"
-        waveform_path = self.path / "waveforms.hdf5.partial"
-
-        if metadata_path.is_file():
-            os.remove(metadata_path)
-        if waveform_path.is_file():
-            os.remove(waveform_path)
-
     def _remote_path(self):
         return os.path.join(seisbench.remote_root, "datasets", self.name.lower())
 
-    def _download_preprocessed(self):
+    def _download_preprocessed(self, metadata_path, waveforms_path):
         self.path.mkdir(parents=True, exist_ok=True)
-
-        metadata_path = self.path / "metadata.csv"
-        waveforms_path = self.path / "waveforms.hdf5"
 
         remote_path = self._remote_path()
         remote_metadata_path = os.path.join(remote_path, "metadata.csv")
@@ -533,12 +499,14 @@ class BenchmarkDataset(WaveformDataset, ABC):
 
 
 class WaveformDataWriter:
-    def __init__(self, path):
-        self.path = Path(path)
+    def __init__(self, metadata_path, waveforms_path):
+        self.metadata_path = Path(metadata_path)
+        self.waveforms_path = Path(waveforms_path)
         self.metadata_dict = {}
         self.data_format = {}
 
-        self.path.mkdir(parents=True, exist_ok=True)
+        self.metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        self.waveforms_path.parent.mkdir(parents=True, exist_ok=True)
 
         self._metadata = []
         self._waveform_file = None
@@ -555,17 +523,11 @@ class WaveformDataWriter:
             self._pbar.close()
 
         if exc_type is None:
-            metadata_partial = self.path / "metadata.csv.partial"
-            hdf5_partial = self.path / "waveforms.hdf5.partial"
-            if metadata_partial.is_file():
-                metadata_partial.rename(self.path / "metadata.csv")
-            if hdf5_partial.is_file():
-                hdf5_partial.rename(self.path / "waveforms.hdf5")
             return True
         else:
             seisbench.logger.error(
                 f"Error in downloading dataset. "
-                f"Saved current progress to {self.path}/*.partial. Error message:\n"
+                f"Saved current progress to {self.metadata_path} and {self.waveforms_path}. Error message:\n"
             )
 
     def add_trace(self, metadata, waveform):
@@ -573,7 +535,7 @@ class WaveformDataWriter:
         trace_name = str(metadata["trace_name"])
 
         if self._waveform_file is None:
-            self._waveform_file = h5py.File(self.path / "waveforms.hdf5.partial", "w")
+            self._waveform_file = h5py.File(self.waveforms_path, "w")
             self._waveform_file.create_group("data")
         if self._pbar is None:
             self._pbar = tqdm(desc="Traces converted")
@@ -601,7 +563,7 @@ class WaveformDataWriter:
         if self.metadata_dict is not None:
             metadata.rename(columns=self.metadata_dict, inplace=True)
 
-        metadata.to_csv(self.path / "metadata.csv.partial", index=False)
+        metadata.to_csv(self.metadata_path, index=False)
 
 
 class DummyDataset(BenchmarkDataset):
