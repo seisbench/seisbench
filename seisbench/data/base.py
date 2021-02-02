@@ -14,6 +14,14 @@ import os
 class WaveformDataset:
     """
     This class is the base class for waveform datasets.
+
+    Description for chunked data sets:
+    As data sets can become too large to handle, one can chunk datasets.
+    Instead of one metadata.csv and one waveforms.hdf5 file, a chunked data set consists of multiple chunks.
+    Each chunk has one metadata{chunk}.csv and waveforms{chunk}.hdf5 file.
+    Optionally, but recommended, a chunks file can be added to the dataset, which lists all chunk identifiers seperated by linebreaks.
+    If no chunks file is available, chunks are derived from the file names.
+    The data_format needs to be specified in each chunk and needs to be consistent across chunks.
     """
 
     def __init__(
@@ -24,6 +32,7 @@ class WaveformDataset:
         dimension_order=None,
         component_order=None,
         cache=False,
+        chunks=None,  # Which chunks should be loaded. If None, load all chunks.
         **kwargs,
     ):
         if name is None:
@@ -33,17 +42,23 @@ class WaveformDataset:
         self.lazyload = lazyload
         self.cache = cache
         self._path = path
+        self._chunks = chunks
+        if chunks is not None:
+            self._chunks = sorted(chunks)
 
         self._dimension_order = None
         self._dimension_mapping = None
         self._component_order = None
         self._component_mapping = None
 
-        if not self._verify_dataset():
-            raise ValueError(f"Dataset not found at {self.path}")
+        self._verify_dataset()
 
-        metadata_path = self.path / "metadata.csv"
-        self._metadata = pd.read_csv(metadata_path)
+        metadatas = []
+        for chunk, metadata_path, _ in zip(*self._chunks_with_paths()):
+            tmp_metadata = pd.read_csv(metadata_path)
+            tmp_metadata["trace_chunk"] = chunk
+            metadatas.append(tmp_metadata)
+        self._metadata = pd.concat(metadatas)
 
         self._data_format = self._read_data_format()
         self.dimension_order = dimension_order
@@ -109,6 +124,66 @@ class WaveformDataset:
         )
         self._component_order = value
 
+    @property
+    def chunks(self):
+        if self._chunks is None:
+            self._chunks = self.available_chunks(self.path)
+        return self._chunks
+
+    @staticmethod
+    def available_chunks(path):
+        path = Path(path)
+        chunks_path = path / "chunks"
+        if chunks_path.is_file():
+            with open(chunks_path, "r") as f:
+                chunks = [x for x in f.read().split("\n") if x.strip()]
+
+            if len(chunks) == 0:
+                seisbench.logger.warning(
+                    "Found empty chunks file. Using chunk detection from file names."
+                )
+
+        else:
+            chunks = []
+
+        # This control flow ensures that chunks are detected from file names also in case of an empty chunks file
+        if len(chunks) == 0:
+            if (path / "waveforms.hdf5").is_file():
+                chunks = [""]
+            else:
+                metadata_files = set(
+                    [
+                        x.name[8:-4]
+                        for x in path.iterdir()
+                        if x.name.startswith("metadata") and x.name.endswith(".csv")
+                    ]
+                )
+                waveform_files = set(
+                    [
+                        x.name[9:-5]
+                        for x in path.iterdir()
+                        if x.name.startswith("waveforms") and x.name.endswith(".hdf5")
+                    ]
+                )
+
+                chunks = metadata_files & waveform_files
+
+                if len(metadata_files - chunks) > 0:
+                    seisbench.logger.warning(
+                        f"Found metadata but no waveforms for chunks {metadata_files - chunks}"
+                    )
+                if len(waveform_files - chunks) > 0:
+                    seisbench.logger.warning(
+                        f"Found waveforms but no metadata for chunks {waveform_files - chunks}"
+                    )
+
+                if len(chunks) == 0:
+                    raise FileNotFoundError(f"Did not find any chunks for the dataset")
+
+                chunks = list(chunks)
+
+        return sorted(chunks)
+
     @staticmethod
     def _get_order_mapping(source, target):
         source = list(source)
@@ -136,22 +211,41 @@ class WaveformDataset:
 
         return mapping
 
-    def _verify_dataset(self):
-        metadata_path = self.path / "metadata.csv"
-        waveform_path = self.path / "waveforms.hdf5"
+    def _chunks_with_paths(self):
+        metadata_paths = [self.path / f"metadata{chunk}.csv" for chunk in self.chunks]
+        waveform_paths = [self.path / f"waveforms{chunk}.hdf5" for chunk in self.chunks]
 
-        return metadata_path.is_file() and waveform_path.is_file()
+        return self.chunks, metadata_paths, waveform_paths
+
+    def _verify_dataset(self):
+        for chunk, metadata_path, waveform_path in zip(*self._chunks_with_paths()):
+            chunks_str = f" for chunk '{chunk}'" if chunk != "" else ""
+
+            if not metadata_path.is_file():
+                raise FileNotFoundError(f"Missing metadata file{chunks_str}")
+            if not waveform_path.is_file():
+                raise FileNotFoundError(f"Missing waveforms file{chunks_str}")
 
     def _read_data_format(self):
-        with h5py.File(self.path / "waveforms.hdf5", "r") as f_wave:
-            try:
-                g_data_format = f_wave["data_format"]
-                data_format = {
-                    key: g_data_format[key][()] for key in g_data_format.keys()
-                }
-            except KeyError:
-                seisbench.logger.warning("No data_format group found in .hdf5 File.")
-                data_format = {}
+        data_format = None
+        for waveform_file in self._chunks_with_paths()[2]:
+            with h5py.File(waveform_file, "r") as f_wave:
+                try:
+                    g_data_format = f_wave["data_format"]
+                    tmp_data_format = {
+                        key: g_data_format[key][()] for key in g_data_format.keys()
+                    }
+                except KeyError:
+                    seisbench.logger.warning(
+                        "No data_format group found in .hdf5 File."
+                    )
+                    tmp_data_format = {}
+
+            if data_format is None:
+                data_format = tmp_data_format
+
+            if not tmp_data_format == data_format:
+                raise ValueError(f"Found inconsistent data format groups.")
 
         for key in data_format.keys():
             if isinstance(data_format[key], bytes):
@@ -177,9 +271,12 @@ class WaveformDataset:
         Loads waveform data from hdf5 file into cache
         :return:
         """
-        with h5py.File(self.path / "waveforms.hdf5", "r") as f_wave:
-            for trace_name in self._metadata["trace_name"]:
-                self._get_single_waveform(trace_name, f_wave=f_wave)
+        chunks, metadata_paths, waveforms_path = self._chunks_with_paths()
+        with LoadingContext(chunks, waveforms_path) as context:
+            for trace_name, chunk in zip(
+                self._metadata["trace_name"], self._metadata["trace_chunk"]
+            ):
+                self._get_single_waveform(trace_name, chunk, context=context)
 
     def filter(self, mask):
         """
@@ -276,9 +373,14 @@ class WaveformDataset:
                 load_metadata = self._metadata
 
         waveforms = []
-        with h5py.File(self.path / "waveforms.hdf5", "r") as f_wave:
-            for trace_name in load_metadata["trace_name"]:
-                waveforms.append(self._get_single_waveform(trace_name, f_wave=f_wave))
+        chunks, metadata_paths, waveforms_path = self._chunks_with_paths()
+        with LoadingContext(chunks, waveforms_path) as context:
+            for trace_name, chunk in zip(
+                load_metadata["trace_name"], load_metadata["trace_chunk"]
+            ):
+                waveforms.append(
+                    self._get_single_waveform(trace_name, chunk, context=context)
+                )
 
         waveforms = self._pad_packed_sequence(waveforms)
         # Impose correct component order
@@ -294,11 +396,9 @@ class WaveformDataset:
 
         return waveforms
 
-    def _get_single_waveform(self, trace_name, f_wave=None):
+    def _get_single_waveform(self, trace_name, chunk, context):
         if not self.cache or trace_name not in self._waveform_cache:
-            if f_wave is None:
-                f_wave = h5py.File(self.path / "waveforms.hdf5", "r")
-            g_data = f_wave["data"]
+            g_data = context[chunk]["data"]
             waveform = g_data[str(trace_name)][()]
             if self.cache:
                 self._waveform_cache[trace_name] = waveform
@@ -427,6 +527,37 @@ class WaveformDataset:
         return fig
 
 
+class LoadingContext:
+    """
+    The LoadingContext is a dict of pointers to the hdf5 files for the chunks.
+    It is an easy way to manage opening and closing of file pointers when required.
+    """
+
+    def __init__(self, chunks, waveform_paths):
+        self.chunk_dict = {
+            chunk: waveform_path for chunk, waveform_path in zip(chunks, waveform_paths)
+        }
+        self.file_pointers = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        for file in self.file_pointers.values():
+            file.close()
+        self.file_pointers = {}
+
+    def __getitem__(self, chunk):
+        if chunk not in self.chunk_dict:
+            raise KeyError(f'Unknown chunk "{chunk}"')
+
+        if chunk not in self.file_pointers:
+            self.file_pointers[chunk] = h5py.File(self.chunk_dict[chunk], "r")
+        return self.file_pointers[chunk]
+
+
+# TODO: Overwrite available_chunks function to download chunks file if necessary
+# TODO: Implement correct download
 class BenchmarkDataset(WaveformDataset, ABC):
     """
     This class is the base class for benchmark waveform datasets.
