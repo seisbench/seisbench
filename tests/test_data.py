@@ -260,3 +260,18 @@ def test_available_chunks(caplog, tmp_path: Path):
     assert chunks == ["a"]
     assert "Found metadata but no waveforms for chunks" in caplog.text
     assert "Found waveforms but no metadata for chunks" in caplog.text
+
+
+def test_chunked_loading():
+    chunk0 = seisbench.data.ChunkedDummyDataset(chunks=["0"])
+    chunk1 = seisbench.data.ChunkedDummyDataset(chunks=["1"])
+    chunk01 = seisbench.data.ChunkedDummyDataset()
+
+    assert len(chunk0) + len(chunk1) == len(chunk01)
+
+    wv = chunk0.get_waveforms()
+    assert wv.shape[0] == len(chunk0)
+    wv = chunk1.get_waveforms()
+    assert wv.shape[0] == len(chunk1)
+    wv = chunk01.get_waveforms()
+    assert wv.shape[0] == len(chunk01)

@@ -9,6 +9,7 @@ import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import os
+import inspect
 
 
 class WaveformDataset:
@@ -556,38 +557,95 @@ class LoadingContext:
         return self.file_pointers[chunk]
 
 
-# TODO: Overwrite available_chunks function to download chunks file if necessary
-# TODO: Implement correct download
 class BenchmarkDataset(WaveformDataset, ABC):
     """
     This class is the base class for benchmark waveform datasets.
     It adds functionality to download the dataset to cache and to annotate it with a citation.
     """
 
-    def __init__(self, name, citation=None, force=False, wait_for_file=False, **kwargs):
+    def __init__(
+        self,
+        name,
+        chunks=None,
+        citation=None,
+        force=False,
+        wait_for_file=False,
+        **kwargs,
+    ):
         self._name = name
         self._citation = citation
+        self.path.mkdir(exist_ok=True, parents=True)
+
+        if chunks is None:
+            if (self.path / "metadata.csv").is_file() and (
+                self.path / "waveforms.hdf5"
+            ).is_file():
+                # If the data set is not chunked, do not search for a chunk file.
+                chunks = [""]
+            else:
+                # Search for chunk file in cache or remote repository.
+                # This is necessary, because otherwise it is unclear if datasets have been downloaded completely.
+                def chunks_callback(file):
+                    remote_chunks_path = os.path.join(self._remote_path(), "chunks")
+                    try:
+                        seisbench.util.download_http(
+                            remote_chunks_path, file, progress_bar=False
+                        )
+                    except ValueError:
+                        seisbench.logger.info(
+                            "Found no remote chunk file. Progressing."
+                        )
+
+                chunks_path = self.path / "chunks"
+                seisbench.util.callback_if_uncached(
+                    chunks_path,
+                    chunks_callback,
+                    force=force,
+                    wait_for_file=wait_for_file,
+                )
+
+                if chunks_path.is_file():
+                    with open(chunks_path, "r") as f:
+                        chunks = [x for x in f.read().split("\n") if x.strip()]
+                else:
+                    # Assume file is not chunked.
+                    # To write the conversion for a chunked file, simply write the chunks file before calling the super constructor.
+                    chunks = [""]
 
         # TODO: Validate if cached dataset was downloaded with the same parameters
-        def download_callback(files):
-            seisbench.logger.info(
-                f"Dataset {name} not in cache. Trying to download preprocessed corpus from SeisBench repository."
-            )
-            try:
-                self._download_preprocessed(*files)
-            except ValueError:
+        for chunk in chunks:
+
+            def download_callback(files):
+                chunk_str = f'Chunk "{chunk}" of ' if chunk != "" else ""
                 seisbench.logger.info(
-                    f"Dataset {name} not SeisBench repository. Starting download and conversion from source."
+                    f"{chunk_str}Dataset {name} not in cache. Trying to download preprocessed version from SeisBench repository."
                 )
-                with WaveformDataWriter(*files) as writer:
-                    self._download_dataset(writer, **kwargs)
+                try:
+                    self._download_preprocessed(*files, chunk=chunk)
+                except ValueError:
+                    seisbench.logger.info(
+                        f"{chunk_str}Dataset {name} not SeisBench repository. Starting download and conversion from source."
+                    )
+                    if (
+                        "chunk"
+                        not in inspect.signature(self._download_dataset).parameters
+                        and chunk != ""
+                    ):
+                        raise ValueError(
+                            "Data set seems not to support chunking, but chunk provided."
+                        )
+                    with WaveformDataWriter(*files) as writer:
+                        self._download_dataset(writer, chunk=chunk, **kwargs)
 
-        files = [self.path / "metadata.csv", self.path / "waveforms.hdf5"]
-        seisbench.util.callback_if_uncached(
-            files, download_callback, force=force, wait_for_file=wait_for_file
-        )
+            files = [
+                self.path / f"metadata{chunk}.csv",
+                self.path / f"waveforms{chunk}.hdf5",
+            ]
+            seisbench.util.callback_if_uncached(
+                files, download_callback, force=force, wait_for_file=wait_for_file
+            )
 
-        super().__init__(path=None, name=name, citation=citation, **kwargs)
+        super().__init__(path=None, name=name, chunks=chunks, **kwargs)
 
     @property
     def citation(self):
@@ -600,12 +658,12 @@ class BenchmarkDataset(WaveformDataset, ABC):
     def _remote_path(self):
         return os.path.join(seisbench.remote_root, "datasets", self.name.lower())
 
-    def _download_preprocessed(self, metadata_path, waveforms_path):
+    def _download_preprocessed(self, metadata_path, waveforms_path, chunk):
         self.path.mkdir(parents=True, exist_ok=True)
 
         remote_path = self._remote_path()
-        remote_metadata_path = os.path.join(remote_path, "metadata.csv")
-        remote_waveforms_path = os.path.join(remote_path, "waveforms.hdf5")
+        remote_metadata_path = os.path.join(remote_path, f"metadata{chunk}.csv")
+        remote_waveforms_path = os.path.join(remote_path, f"waveforms{chunk}.hdf5")
 
         seisbench.util.download_http(
             remote_metadata_path, metadata_path, desc="Downloading metadata"
@@ -615,10 +673,12 @@ class BenchmarkDataset(WaveformDataset, ABC):
         )
 
     @abstractmethod
-    def _download_dataset(self, writer, **kwargs):
+    def _download_dataset(self, writer, chunk, **kwargs):
         """
         Download and convert the dataset to the standard seisbench format.
         The metadata must contain at least the columns 'trace_name' and 'split'.
+        :param writer: A WaveformDataWriter instance
+        :param chunk: The chunk to be downloaded. Can be ignored if unchunked data set is created.
         :param kwargs:
         :return:
         """
