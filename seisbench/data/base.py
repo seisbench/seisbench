@@ -6,18 +6,23 @@ from pathlib import Path
 import pandas as pd
 import h5py
 import numpy as np
-from obspy import UTCDateTime
-from obspy.clients.fdsn import Client
 from tqdm import tqdm
-import shutil
 import matplotlib.pyplot as plt
 import os
-import time
+import inspect
 
 
 class WaveformDataset:
     """
     This class is the base class for waveform datasets.
+
+    Description for chunked data sets:
+    As data sets can become too large to handle, one can chunk datasets.
+    Instead of one metadata.csv and one waveforms.hdf5 file, a chunked data set consists of multiple chunks.
+    Each chunk has one metadata{chunk}.csv and waveforms{chunk}.hdf5 file.
+    Optionally, but recommended, a chunks file can be added to the dataset, which lists all chunk identifiers seperated by linebreaks.
+    If no chunks file is available, chunks are derived from the file names.
+    The data_format needs to be specified in each chunk and needs to be consistent across chunks.
     """
 
     def __init__(
@@ -28,6 +33,7 @@ class WaveformDataset:
         dimension_order=None,
         component_order=None,
         cache=False,
+        chunks=None,  # Which chunks should be loaded. If None, load all chunks.
         **kwargs,
     ):
         if name is None:
@@ -37,17 +43,23 @@ class WaveformDataset:
         self.lazyload = lazyload
         self.cache = cache
         self._path = path
+        self._chunks = chunks
+        if chunks is not None:
+            self._chunks = sorted(chunks)
 
         self._dimension_order = None
         self._dimension_mapping = None
         self._component_order = None
         self._component_mapping = None
 
-        if not self._verify_dataset():
-            raise ValueError(f"Dataset not found at {self.path}")
+        self._verify_dataset()
 
-        metadata_path = self.path / "metadata.csv"
-        self._metadata = pd.read_csv(metadata_path)
+        metadatas = []
+        for chunk, metadata_path, _ in zip(*self._chunks_with_paths()):
+            tmp_metadata = pd.read_csv(metadata_path)
+            tmp_metadata["trace_chunk"] = chunk
+            metadatas.append(tmp_metadata)
+        self._metadata = pd.concat(metadatas)
 
         self._data_format = self._read_data_format()
         self.dimension_order = dimension_order
@@ -113,6 +125,66 @@ class WaveformDataset:
         )
         self._component_order = value
 
+    @property
+    def chunks(self):
+        if self._chunks is None:
+            self._chunks = self.available_chunks(self.path)
+        return self._chunks
+
+    @staticmethod
+    def available_chunks(path):
+        path = Path(path)
+        chunks_path = path / "chunks"
+        if chunks_path.is_file():
+            with open(chunks_path, "r") as f:
+                chunks = [x for x in f.read().split("\n") if x.strip()]
+
+            if len(chunks) == 0:
+                seisbench.logger.warning(
+                    "Found empty chunks file. Using chunk detection from file names."
+                )
+
+        else:
+            chunks = []
+
+        # This control flow ensures that chunks are detected from file names also in case of an empty chunks file
+        if len(chunks) == 0:
+            if (path / "waveforms.hdf5").is_file():
+                chunks = [""]
+            else:
+                metadata_files = set(
+                    [
+                        x.name[8:-4]
+                        for x in path.iterdir()
+                        if x.name.startswith("metadata") and x.name.endswith(".csv")
+                    ]
+                )
+                waveform_files = set(
+                    [
+                        x.name[9:-5]
+                        for x in path.iterdir()
+                        if x.name.startswith("waveforms") and x.name.endswith(".hdf5")
+                    ]
+                )
+
+                chunks = metadata_files & waveform_files
+
+                if len(metadata_files - chunks) > 0:
+                    seisbench.logger.warning(
+                        f"Found metadata but no waveforms for chunks {metadata_files - chunks}"
+                    )
+                if len(waveform_files - chunks) > 0:
+                    seisbench.logger.warning(
+                        f"Found waveforms but no metadata for chunks {waveform_files - chunks}"
+                    )
+
+                if len(chunks) == 0:
+                    raise FileNotFoundError(f"Did not find any chunks for the dataset")
+
+                chunks = list(chunks)
+
+        return sorted(chunks)
+
     @staticmethod
     def _get_order_mapping(source, target):
         source = list(source)
@@ -140,22 +212,41 @@ class WaveformDataset:
 
         return mapping
 
-    def _verify_dataset(self):
-        metadata_path = self.path / "metadata.csv"
-        waveform_path = self.path / "waveforms.hdf5"
+    def _chunks_with_paths(self):
+        metadata_paths = [self.path / f"metadata{chunk}.csv" for chunk in self.chunks]
+        waveform_paths = [self.path / f"waveforms{chunk}.hdf5" for chunk in self.chunks]
 
-        return metadata_path.is_file() and waveform_path.is_file()
+        return self.chunks, metadata_paths, waveform_paths
+
+    def _verify_dataset(self):
+        for chunk, metadata_path, waveform_path in zip(*self._chunks_with_paths()):
+            chunks_str = f" for chunk '{chunk}'" if chunk != "" else ""
+
+            if not metadata_path.is_file():
+                raise FileNotFoundError(f"Missing metadata file{chunks_str}")
+            if not waveform_path.is_file():
+                raise FileNotFoundError(f"Missing waveforms file{chunks_str}")
 
     def _read_data_format(self):
-        with h5py.File(self.path / "waveforms.hdf5", "r") as f_wave:
-            try:
-                g_data_format = f_wave["data_format"]
-                data_format = {
-                    key: g_data_format[key][()] for key in g_data_format.keys()
-                }
-            except KeyError:
-                seisbench.logger.warning("No data_format group found in .hdf5 File.")
-                data_format = {}
+        data_format = None
+        for waveform_file in self._chunks_with_paths()[2]:
+            with h5py.File(waveform_file, "r") as f_wave:
+                try:
+                    g_data_format = f_wave["data_format"]
+                    tmp_data_format = {
+                        key: g_data_format[key][()] for key in g_data_format.keys()
+                    }
+                except KeyError:
+                    seisbench.logger.warning(
+                        "No data_format group found in .hdf5 File."
+                    )
+                    tmp_data_format = {}
+
+            if data_format is None:
+                data_format = tmp_data_format
+
+            if not tmp_data_format == data_format:
+                raise ValueError(f"Found inconsistent data format groups.")
 
         for key in data_format.keys():
             if isinstance(data_format[key], bytes):
@@ -181,9 +272,12 @@ class WaveformDataset:
         Loads waveform data from hdf5 file into cache
         :return:
         """
-        with h5py.File(self.path / "waveforms.hdf5", "r") as f_wave:
-            for trace_name in self._metadata["trace_name"]:
-                self._get_single_waveform(trace_name, f_wave=f_wave)
+        chunks, metadata_paths, waveforms_path = self._chunks_with_paths()
+        with LoadingContext(chunks, waveforms_path) as context:
+            for trace_name, chunk in zip(
+                self._metadata["trace_name"], self._metadata["trace_chunk"]
+            ):
+                self._get_single_waveform(trace_name, chunk, context=context)
 
     def filter(self, mask):
         """
@@ -280,9 +374,14 @@ class WaveformDataset:
                 load_metadata = self._metadata
 
         waveforms = []
-        with h5py.File(self.path / "waveforms.hdf5", "r") as f_wave:
-            for trace_name in load_metadata["trace_name"]:
-                waveforms.append(self._get_single_waveform(trace_name, f_wave=f_wave))
+        chunks, metadata_paths, waveforms_path = self._chunks_with_paths()
+        with LoadingContext(chunks, waveforms_path) as context:
+            for trace_name, chunk in zip(
+                load_metadata["trace_name"], load_metadata["trace_chunk"]
+            ):
+                waveforms.append(
+                    self._get_single_waveform(trace_name, chunk, context=context)
+                )
 
         waveforms = self._pad_packed_sequence(waveforms)
         # Impose correct component order
@@ -298,11 +397,9 @@ class WaveformDataset:
 
         return waveforms
 
-    def _get_single_waveform(self, trace_name, f_wave=None):
+    def _get_single_waveform(self, trace_name, chunk, context):
         if not self.cache or trace_name not in self._waveform_cache:
-            if f_wave is None:
-                f_wave = h5py.File(self.path / "waveforms.hdf5", "r")
-            g_data = f_wave["data"]
+            g_data = context[chunk]["data"]
             waveform = g_data[str(trace_name)][()]
             if self.cache:
                 self._waveform_cache[trace_name] = waveform
@@ -431,36 +528,124 @@ class WaveformDataset:
         return fig
 
 
+class LoadingContext:
+    """
+    The LoadingContext is a dict of pointers to the hdf5 files for the chunks.
+    It is an easy way to manage opening and closing of file pointers when required.
+    """
+
+    def __init__(self, chunks, waveform_paths):
+        self.chunk_dict = {
+            chunk: waveform_path for chunk, waveform_path in zip(chunks, waveform_paths)
+        }
+        self.file_pointers = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        for file in self.file_pointers.values():
+            file.close()
+        self.file_pointers = {}
+
+    def __getitem__(self, chunk):
+        if chunk not in self.chunk_dict:
+            raise KeyError(f'Unknown chunk "{chunk}"')
+
+        if chunk not in self.file_pointers:
+            self.file_pointers[chunk] = h5py.File(self.chunk_dict[chunk], "r")
+        return self.file_pointers[chunk]
+
+
 class BenchmarkDataset(WaveformDataset, ABC):
     """
     This class is the base class for benchmark waveform datasets.
     It adds functionality to download the dataset to cache and to annotate it with a citation.
     """
 
-    def __init__(self, name, citation=None, force=False, wait_for_file=False, **kwargs):
+    def __init__(
+        self,
+        name,
+        chunks=None,
+        citation=None,
+        force=False,
+        wait_for_file=False,
+        **kwargs,
+    ):
         self._name = name
         self._citation = citation
+        self.path.mkdir(exist_ok=True, parents=True)
+
+        if chunks is None:
+            if (self.path / "metadata.csv").is_file() and (
+                self.path / "waveforms.hdf5"
+            ).is_file():
+                # If the data set is not chunked, do not search for a chunk file.
+                chunks = [""]
+            else:
+                # Search for chunk file in cache or remote repository.
+                # This is necessary, because otherwise it is unclear if datasets have been downloaded completely.
+                def chunks_callback(file):
+                    remote_chunks_path = os.path.join(self._remote_path(), "chunks")
+                    try:
+                        seisbench.util.download_http(
+                            remote_chunks_path, file, progress_bar=False
+                        )
+                    except ValueError:
+                        seisbench.logger.info(
+                            "Found no remote chunk file. Progressing."
+                        )
+
+                chunks_path = self.path / "chunks"
+                seisbench.util.callback_if_uncached(
+                    chunks_path,
+                    chunks_callback,
+                    force=force,
+                    wait_for_file=wait_for_file,
+                )
+
+                if chunks_path.is_file():
+                    with open(chunks_path, "r") as f:
+                        chunks = [x for x in f.read().split("\n") if x.strip()]
+                else:
+                    # Assume file is not chunked.
+                    # To write the conversion for a chunked file, simply write the chunks file before calling the super constructor.
+                    chunks = [""]
 
         # TODO: Validate if cached dataset was downloaded with the same parameters
-        def download_callback(files):
-            seisbench.logger.info(
-                f"Dataset {name} not in cache. Trying to download preprocessed corpus from SeisBench repository."
-            )
-            try:
-                self._download_preprocessed(*files)
-            except ValueError:
+        for chunk in chunks:
+
+            def download_callback(files):
+                chunk_str = f'Chunk "{chunk}" of ' if chunk != "" else ""
                 seisbench.logger.info(
-                    f"Dataset {name} not SeisBench repository. Starting download and conversion from source."
+                    f"{chunk_str}Dataset {name} not in cache. Trying to download preprocessed version from SeisBench repository."
                 )
-                with WaveformDataWriter(*files) as writer:
-                    self._download_dataset(writer, **kwargs)
+                try:
+                    self._download_preprocessed(*files, chunk=chunk)
+                except ValueError:
+                    seisbench.logger.info(
+                        f"{chunk_str}Dataset {name} not SeisBench repository. Starting download and conversion from source."
+                    )
+                    if (
+                        "chunk"
+                        not in inspect.signature(self._download_dataset).parameters
+                        and chunk != ""
+                    ):
+                        raise ValueError(
+                            "Data set seems not to support chunking, but chunk provided."
+                        )
+                    with WaveformDataWriter(*files) as writer:
+                        self._download_dataset(writer, chunk=chunk, **kwargs)
 
-        files = [self.path / "metadata.csv", self.path / "waveforms.hdf5"]
-        seisbench.util.callback_if_uncached(
-            files, download_callback, force=force, wait_for_file=wait_for_file
-        )
+            files = [
+                self.path / f"metadata{chunk}.csv",
+                self.path / f"waveforms{chunk}.hdf5",
+            ]
+            seisbench.util.callback_if_uncached(
+                files, download_callback, force=force, wait_for_file=wait_for_file
+            )
 
-        super().__init__(path=None, name=name, citation=citation, **kwargs)
+        super().__init__(path=None, name=name, chunks=chunks, **kwargs)
 
     @property
     def citation(self):
@@ -473,12 +658,12 @@ class BenchmarkDataset(WaveformDataset, ABC):
     def _remote_path(self):
         return os.path.join(seisbench.remote_root, "datasets", self.name.lower())
 
-    def _download_preprocessed(self, metadata_path, waveforms_path):
+    def _download_preprocessed(self, metadata_path, waveforms_path, chunk):
         self.path.mkdir(parents=True, exist_ok=True)
 
         remote_path = self._remote_path()
-        remote_metadata_path = os.path.join(remote_path, "metadata.csv")
-        remote_waveforms_path = os.path.join(remote_path, "waveforms.hdf5")
+        remote_metadata_path = os.path.join(remote_path, f"metadata{chunk}.csv")
+        remote_waveforms_path = os.path.join(remote_path, f"waveforms{chunk}.hdf5")
 
         seisbench.util.download_http(
             remote_metadata_path, metadata_path, desc="Downloading metadata"
@@ -488,10 +673,12 @@ class BenchmarkDataset(WaveformDataset, ABC):
         )
 
     @abstractmethod
-    def _download_dataset(self, writer, **kwargs):
+    def _download_dataset(self, writer, chunk, **kwargs):
         """
         Download and convert the dataset to the standard seisbench format.
         The metadata must contain at least the columns 'trace_name' and 'split'.
+        :param writer: A WaveformDataWriter instance
+        :param chunk: The chunk to be downloaded. Can be ignored if unchunked data set is created.
         :param kwargs:
         :return:
         """
@@ -564,92 +751,3 @@ class WaveformDataWriter:
             metadata.rename(columns=self.metadata_dict, inplace=True)
 
         metadata.to_csv(self.metadata_path, index=False)
-
-
-class DummyDataset(BenchmarkDataset):
-    """
-    A dummy dataset visualizing the implementation of custom datasets
-    """
-
-    def __init__(self, **kwargs):
-        citation = (
-            "Münchmeyer, Jannes; Bindi, Dino; Sippl, Christian; Leser, Ulf; Tilmann, Frederik (2019): "
-            "Magnitude scales, attenuation models and feature matrices for the IPOC catalog. "
-            "V. 1.0. GFZ Data Services. https://doi.org/10.5880/GFZ.2.4.2019.004"
-        )
-        super().__init__(name=self.__class__.__name__, citation=citation, **kwargs)
-
-    def _download_dataset(self, writer, trace_length=60, **kwargs):
-        sampling_rate = 20
-
-        writer.metadata_dict = {
-            "time": "trace_start_time",
-            "latitude": "source_latitude_deg",
-            "longitude": "source_longitude_deg",
-            "depth": "source_depth_km",
-            "cls": "source_event_category",
-            "MA": "source_magnitude",
-            "ML": "source_magnitude2",
-            "std_MA": "source_magnitude_uncertainty",
-            "std_ML": "source_magnitude_uncertainty2",
-        }
-        writer.data_format = {
-            "dimension_order": "CW",
-            "component_order": "ZNE",
-            "sampling_rate": sampling_rate,
-            "measurement": "velocity",
-            "unit": "counts",
-            "instrument_response": "not restituted",
-        }
-
-        path = self.path
-        path.mkdir(parents=True, exist_ok=True)
-
-        seisbench.util.download_ftp(
-            "datapub.gfz-potsdam.de",
-            "download/10.5880.GFZ.2.4.2019.004/IPOC_catalog_magnitudes.csv",
-            path / "raw_catalog.csv",
-            progress_bar=False,
-        )
-
-        metadata = pd.read_csv(path / "raw_catalog.csv")
-        metadata = metadata.iloc[:100].copy()
-
-        def to_tracename(x):
-            for c in "/:.":
-                x = x.replace(c, "_")
-            return x
-
-        client = Client("GFZ")
-        inv = client.get_stations(
-            net="CX",
-            sta="PB01",
-            starttime=UTCDateTime.strptime(
-                "2007/01/01 00:00:00.00", "%Y/%m/%d %H:%M:%S.%f"
-            ),
-        )
-
-        metadata["trace_name"] = metadata["time"].apply(to_tracename)
-        metadata["station_network_code"] = "CX"
-        metadata["station_code"] = "PB01"
-        metadata["station_type"] = "BH"
-        metadata["station_latitude_deg"] = inv[0][0].latitude
-        metadata["station_longitude_deg"] = inv[0][0].longitude
-        metadata["station_elevation_m"] = inv[0][0].elevation
-        metadata["source_magnitude_type"] = "MA"
-        metadata["source_magnitude_type2"] = "ML"
-
-        writer.set_total(len(metadata))
-        for _, row in metadata.iterrows():
-            time = row["time"]
-            waveform = np.zeros((3, sampling_rate * trace_length))
-            time = UTCDateTime.strptime(time, "%Y/%m/%d %H:%M:%S.%f")
-            stream = client.get_waveforms(
-                "CX", "PB01", "*", "BH?", time, time + trace_length
-            )
-            for cid, component in enumerate("ZNE"):
-                ctrace = stream.select(channel=f"??{component}")[0]
-                waveform[cid] = ctrace.data[: sampling_rate * trace_length].astype(
-                    float
-                )
-            writer.add_trace(row, waveform)

@@ -196,7 +196,82 @@ def test_writer(caplog, tmp_path: Path):
     ).is_file()  # Check metadata file exist
     assert (
         tmp_path / "writer_c" / "waveforms.hdf5.partial"
-    ).is_file()  # Check partial  waveform file exist
+    ).is_file()  # Check partial waveform file exist
     assert not (
         tmp_path / "writer_c" / "waveforms.hdf5"
     ).is_file()  # Check waveform file exist
+
+
+def test_available_chunks(caplog, tmp_path: Path):
+    # Empty directory raises FileNotFoundError
+    folder = tmp_path / "a"
+    folder.mkdir(exist_ok=True, parents=True)
+    with pytest.raises(FileNotFoundError):
+        seisbench.data.WaveformDataset.available_chunks(folder)
+
+    # Empty chunk file prints warning
+    folder = tmp_path / "b"
+    folder.mkdir(exist_ok=True, parents=True)
+    open(folder / "chunks", "w").close()
+    with caplog.at_level(logging.WARNING):
+        with pytest.raises(FileNotFoundError):
+            seisbench.data.WaveformDataset.available_chunks(folder)
+    assert (
+        "Found empty chunks file. Using chunk detection from file names." in caplog.text
+    )
+
+    # Unchunked dataset
+    folder = tmp_path / "c"
+    folder.mkdir(exist_ok=True, parents=True)
+    open(folder / "metadata.csv", "w").close()
+    open(folder / "waveforms.hdf5", "w").close()
+    chunks = seisbench.data.WaveformDataset.available_chunks(folder)
+    assert chunks == [""]
+
+    # Chunked dataset detected from chunkfile
+    folder = tmp_path / "d"
+    folder.mkdir(exist_ok=True, parents=True)
+    with open(folder / "chunks", "w") as f:
+        f.write("a\nb\nc\n")
+    chunks = seisbench.data.WaveformDataset.available_chunks(folder)
+    assert chunks == ["a", "b", "c"]
+
+    # Chunked dataset detected from file names
+    folder = tmp_path / "e"
+    folder.mkdir(exist_ok=True, parents=True)
+    open(folder / "metadataa.csv", "w").close()
+    open(folder / "waveformsa.hdf5", "w").close()
+    open(folder / "metadatab.csv", "w").close()
+    open(folder / "waveformsb.hdf5", "w").close()
+    open(folder / "metadatac.csv", "w").close()
+    open(folder / "waveformsc.hdf5", "w").close()
+    chunks = seisbench.data.WaveformDataset.available_chunks(folder)
+    assert chunks == ["a", "b", "c"]
+
+    # Chunked dataset with inconsistent chunks
+    folder = tmp_path / "f"
+    folder.mkdir(exist_ok=True, parents=True)
+    open(folder / "metadataa.csv", "w").close()
+    open(folder / "waveformsa.hdf5", "w").close()
+    open(folder / "metadatab.csv", "w").close()
+    open(folder / "waveformsc.hdf5", "w").close()
+    with caplog.at_level(logging.WARNING):
+        chunks = seisbench.data.WaveformDataset.available_chunks(folder)
+    assert chunks == ["a"]
+    assert "Found metadata but no waveforms for chunks" in caplog.text
+    assert "Found waveforms but no metadata for chunks" in caplog.text
+
+
+def test_chunked_loading():
+    chunk0 = seisbench.data.ChunkedDummyDataset(chunks=["0"])
+    chunk1 = seisbench.data.ChunkedDummyDataset(chunks=["1"])
+    chunk01 = seisbench.data.ChunkedDummyDataset()
+
+    assert len(chunk0) + len(chunk1) == len(chunk01)
+
+    wv = chunk0.get_waveforms()
+    assert wv.shape[0] == len(chunk0)
+    wv = chunk1.get_waveforms()
+    assert wv.shape[0] == len(chunk1)
+    wv = chunk01.get_waveforms()
+    assert wv.shape[0] == len(chunk01)
