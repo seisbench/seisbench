@@ -275,3 +275,73 @@ def test_chunked_loading():
     assert wv.shape[0] == len(chunk1)
     wv = chunk01.get_waveforms()
     assert wv.shape[0] == len(chunk01)
+
+
+def test_unify_sampling_rate(caplog):
+    dummy = seisbench.data.DummyDataset()
+    del dummy._metadata["trace_sampling_rate_hz"]
+    del dummy._data_format["sampling_rate"]
+    with caplog.at_level(logging.WARNING):
+        dummy._unify_sampling_rate()
+    assert "Sampling rate not specified in data set." in caplog.text
+
+    dummy = seisbench.data.DummyDataset()
+    dummy._metadata["trace_sampling_rate_hz"] = 20.0
+    dummy._data_format["sampling_rate"] = 40.0
+    with caplog.at_level(logging.WARNING):
+        dummy._unify_sampling_rate()
+    assert (
+        "Inconsistent sampling rates between metadata and data_format. Using values from metadata."
+        in caplog.text
+    )
+
+    dummy = seisbench.data.DummyDataset()
+    del dummy._metadata["trace_sampling_rate_hz"]
+    dummy._metadata["trace_dt_s"] = 1 / 20.0
+    dummy._data_format["sampling_rate"] = 40.0
+    with caplog.at_level(logging.WARNING):
+        dummy._unify_sampling_rate()
+    assert (
+        "Inconsistent sampling rates between metadata and data_format. Using values from metadata."
+        in caplog.text
+    )
+
+    dummy = seisbench.data.DummyDataset()
+    dummy._metadata["trace_sampling_rate_hz"] = 40.0
+    dummy._metadata["trace_dt_s"] = 1 / 20.0
+    del dummy._data_format["sampling_rate"]
+    with caplog.at_level(logging.WARNING):
+        dummy._unify_sampling_rate()
+    assert (
+        "Inconsistent sampling rates in metadata. Using values from 'trace_sampling_rate_hz'."
+        in caplog.text
+    )
+
+    # Small deviations do not cause warnings
+    caplog.clear()
+    dummy = seisbench.data.DummyDataset()
+    dummy._metadata["trace_sampling_rate_hz"] = 20.0
+    dummy._metadata["trace_dt_s"] = 1 / 20.00001
+    del dummy._data_format["sampling_rate"]
+    with caplog.at_level(logging.WARNING):
+        dummy._unify_sampling_rate()
+    assert caplog.text == ""
+
+    caplog.clear()
+    dummy = seisbench.data.DummyDataset()
+    dummy._metadata["trace_sampling_rate_hz"] = 20.0
+    dummy._metadata["trace_sampling_rate_hz"].values[:20] = np.nan
+    dummy._metadata["trace_dt_s"] = 1 / 20.0
+    del dummy._data_format["sampling_rate"]
+    with caplog.at_level(logging.WARNING):
+        dummy._unify_sampling_rate()
+    assert caplog.text == ""
+
+    caplog.clear()
+    dummy = seisbench.data.DummyDataset()
+    dummy._metadata["trace_sampling_rate_hz"] = 20.0
+    dummy._metadata["trace_sampling_rate_hz"].values[:20] = np.nan
+    del dummy._data_format["sampling_rate"]
+    with caplog.at_level(logging.WARNING):
+        dummy._unify_sampling_rate()
+    assert "Found some traces with undefined sampling rates." in caplog.text

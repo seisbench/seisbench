@@ -56,12 +56,18 @@ class WaveformDataset:
 
         metadatas = []
         for chunk, metadata_path, _ in zip(*self._chunks_with_paths()):
-            tmp_metadata = pd.read_csv(metadata_path)
+            tmp_metadata = pd.read_csv(
+                metadata_path,
+                dtype={"trace_sampling_rate_hz": float, "trace_dt_s": float},
+            )
             tmp_metadata["trace_chunk"] = chunk
             metadatas.append(tmp_metadata)
         self._metadata = pd.concat(metadatas)
 
         self._data_format = self._read_data_format()
+
+        self._unify_sampling_rate()
+
         self.dimension_order = dimension_order
         self.component_order = component_order
 
@@ -185,6 +191,70 @@ class WaveformDataset:
 
         return sorted(chunks)
 
+    def _unify_sampling_rate(self, eps=1e-4):
+        """
+        The sampling rate can be specified in three ways:
+        - as trace_sampling_rate_hz in the metadata
+        - as trace_dt_s in the metadata
+        - as sampling_rate in the data format group, indicating identical sampling rate for all traces
+        This function writes the sampling rate into trace_sampling_rate_hz in the metadata for unified access in the later processing.
+        If the sampling rate is specified in multiple ways and inconsistencies are detected, a warning is logged.
+        :return: None
+        """
+        if "trace_sampling_rate_hz" in self.metadata.columns:
+            if "trace_dt_s" in self.metadata.columns:
+                if np.any(np.isnan(self.metadata["trace_sampling_rate_hz"].values)):
+                    # Implace NaN values. Useful if for parts of data set sampling rate is specified, and for others dt
+                    mask = np.isnan(self.metadata["trace_sampling_rate_hz"].values)
+                    self._metadata["trace_sampling_rate_hz"].values[mask] = (
+                        1 / self.metadata["trace_dt_s"].values[mask]
+                    )
+
+                q = (
+                    self.metadata["trace_sampling_rate_hz"].values
+                    * self.metadata["trace_dt_s"].values
+                )
+                if np.any(q < 1 - eps) or np.any(1 + eps < q):
+                    seisbench.logger.warning(
+                        "Inconsistent sampling rates in metadata. Using values from 'trace_sampling_rate_hz'."
+                    )
+
+            if "sampling_rate" in self.data_format:
+                q = (
+                    self.metadata["trace_sampling_rate_hz"].values
+                    / self.data_format["sampling_rate"]
+                )
+                if np.any(q < 1 - eps) or np.any(1 + eps < q):
+                    seisbench.logger.warning(
+                        "Inconsistent sampling rates between metadata and data_format. Using values from metadata."
+                    )
+
+        elif "trace_dt_s" in self.metadata.columns:
+            self.metadata["trace_sampling_rate_hz"] = 1 / self.metadata["trace_dt_s"]
+            if "sampling_rate" in self.data_format:
+                q = (
+                    self.metadata["trace_sampling_rate_hz"].values
+                    / self.data_format["sampling_rate"]
+                )
+                if np.any(q < 1 - eps) or np.any(1 + eps < q):
+                    seisbench.logger.warning(
+                        "Inconsistent sampling rates between metadata and data_format. Using values from metadata."
+                    )
+
+        elif "sampling_rate" in self.data_format:
+            self._metadata["trace_sampling_rate_hz"] = self.data_format["sampling_rate"]
+
+        else:
+            seisbench.logger.warning("Sampling rate not specified in data set.")
+            self._metadata["trace_sampling_rate_hz"] = np.nan
+
+        if (
+            "trace_sampling_rate_hz" in self.metadata.columns
+            and np.any(np.isnan(self._metadata["trace_sampling_rate_hz"]))
+            and not np.all(np.isnan(self._metadata["trace_sampling_rate_hz"]))
+        ):
+            seisbench.logger.warning("Found some traces with undefined sampling rates.")
+
     @staticmethod
     def _get_order_mapping(source, target):
         source = list(source)
@@ -252,8 +322,6 @@ class WaveformDataset:
             if isinstance(data_format[key], bytes):
                 data_format[key] = data_format[key].decode()
 
-        if "sampling_rate" not in data_format:
-            seisbench.logger.warning("Sampling rate not specified in data set")
         if "dimension_order" not in data_format:
             seisbench.logger.warning(
                 "Dimension order not specified in data set. Assuming CW."
