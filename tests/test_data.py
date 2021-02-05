@@ -285,6 +285,7 @@ def test_unify_sampling_rate(caplog):
         dummy._unify_sampling_rate()
     assert "Sampling rate not specified in data set." in caplog.text
 
+    caplog.clear()
     dummy = seisbench.data.DummyDataset()
     dummy._metadata["trace_sampling_rate_hz"] = 20.0
     dummy._data_format["sampling_rate"] = 40.0
@@ -295,6 +296,7 @@ def test_unify_sampling_rate(caplog):
         in caplog.text
     )
 
+    caplog.clear()
     dummy = seisbench.data.DummyDataset()
     del dummy._metadata["trace_sampling_rate_hz"]
     dummy._metadata["trace_dt_s"] = 1 / 20.0
@@ -306,6 +308,7 @@ def test_unify_sampling_rate(caplog):
         in caplog.text
     )
 
+    caplog.clear()
     dummy = seisbench.data.DummyDataset()
     dummy._metadata["trace_sampling_rate_hz"] = 40.0
     dummy._metadata["trace_dt_s"] = 1 / 20.0
@@ -345,3 +348,64 @@ def test_unify_sampling_rate(caplog):
     with caplog.at_level(logging.WARNING):
         dummy._unify_sampling_rate()
     assert "Found some traces with undefined sampling rates." in caplog.text
+
+    caplog.clear()
+    dummy = seisbench.data.DummyDataset()
+    dummy._metadata["trace_sampling_rate_hz"] = 20.0
+    dummy._metadata["trace_sampling_rate_hz"].values[:20] = 40.0
+    del dummy._data_format["sampling_rate"]
+    with caplog.at_level(logging.WARNING):
+        dummy._unify_sampling_rate()
+    assert (
+        "Data set contains mixed sampling rate, but no sampling rate was specified for the dataset."
+        in caplog.text
+    )
+
+    caplog.clear()
+    dummy = seisbench.data.DummyDataset()
+    dummy._metadata["trace_sampling_rate_hz"] = 20.0
+    del dummy._data_format["sampling_rate"]
+    with caplog.at_level(logging.WARNING):
+        dummy._unify_sampling_rate()
+    assert caplog.text == ""
+
+
+def test_resample():
+    dummy = seisbench.data.DummyDataset()
+    dummy._metadata["trace_sampling_rate_hz"] = 20.0
+    dummy._metadata["trace_sampling_rate_hz"].values[0] = np.nan
+
+    # NaN sampling rate raises no error if sampling rate is None, but raises error otherwise
+    dummy.get_waveforms(idx=0)
+    with pytest.raises(ValueError):
+        dummy.get_waveforms(idx=0, sampling_rate=20)
+
+    # Incorrect dimension order raises an issue if actual resampling is required
+    dummy = seisbench.data.DummyDataset()
+    dummy._metadata["trace_sampling_rate_hz"] = 20.0
+    dummy._data_format["dimension_order"] = dummy._data_format[
+        "dimension_order"
+    ].replace("W", "X")
+    dummy.get_waveforms(idx=0, sampling_rate=20)
+    with pytest.raises(ValueError):
+        dummy.get_waveforms(idx=0, sampling_rate=40)
+
+    # Correct cases have expected length
+    dummy = seisbench.data.DummyDataset()
+    dummy._metadata["trace_sampling_rate_hz"] = 20.0
+    wv20 = dummy.get_waveforms(idx=0, sampling_rate=20)
+    wv100 = dummy.get_waveforms(idx=0, sampling_rate=100)
+    wv10 = dummy.get_waveforms(idx=0, sampling_rate=10)
+    wv15 = dummy.get_waveforms(idx=0, sampling_rate=15)
+
+    assert wv20.shape[0] == wv100.shape[0] == wv10.shape[0] == wv15.shape[0]
+    assert wv20.shape[1] * 100 / 20 == wv100.shape[1]
+    assert wv20.shape[1] * 10 / 20 == wv10.shape[1]
+    assert wv20.shape[1] * 15 / 20 == wv15.shape[1]
+
+    # Data set sampling rate is overwritten by function argument sampling_rate
+    dummy.sampling_rate = 100
+    wv100 = dummy.get_waveforms(idx=0)
+    wv20 = dummy.get_waveforms(idx=0, sampling_rate=20)
+    assert wv20.shape[0] == wv100.shape[0]
+    assert wv20.shape[1] * 100 / 20 == wv100.shape[1]

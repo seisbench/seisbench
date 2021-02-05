@@ -10,6 +10,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import os
 import inspect
+import scipy.signal
 
 
 class WaveformDataset:
@@ -32,6 +33,7 @@ class WaveformDataset:
         lazyload=True,
         dimension_order=None,
         component_order=None,
+        sampling_rate=None,
         cache=False,
         chunks=None,  # Which chunks should be loaded. If None, load all chunks.
         **kwargs,
@@ -51,6 +53,7 @@ class WaveformDataset:
         self._dimension_mapping = None
         self._component_order = None
         self._component_mapping = None
+        self.sampling_rate = sampling_rate
 
         self._verify_dataset()
 
@@ -255,6 +258,15 @@ class WaveformDataset:
         ):
             seisbench.logger.warning("Found some traces with undefined sampling rates.")
 
+        elif self.sampling_rate is None:
+            sr = self.metadata["trace_sampling_rate_hz"].values
+            q = sr / sr[0]
+            if np.any(q < 1 - eps) or np.any(1 + eps < q):
+                seisbench.logger.warning(
+                    "Data set contains mixed sampling rate, but no sampling rate was specified for the dataset."
+                    "get_waveforms will return mixed sampling rate waveforms."
+                )
+
     @staticmethod
     def _get_order_mapping(source, target):
         source = list(source)
@@ -410,12 +422,13 @@ class WaveformDataset:
     def __len__(self):
         return len(self._metadata)
 
-    def get_waveforms(self, idx=None, split=None, mask=None):
+    def get_waveforms(self, idx=None, split=None, mask=None, sampling_rate=None):
         """
         Collects waveforms and returns them as an array.
         :param idx: Idx or list of idx to obtain waveforms for
         :param split: Split (train/dev/test) to obtain waveforms for
         :param mask: Binary mask on the metadata, indicating which traces should be returned. Can not be used jointly with split.
+        :param sampling_rate: Overwrites sampling rate for dataset
         :return: Waveform array with dimensions ordered according to dimension_order e.g. default 'NCW' (number of traces, number of components, record samples). If the number of components or record samples varies between different entries, all entries are padded to the maximum length.
         """
         squeeze = False
@@ -444,11 +457,19 @@ class WaveformDataset:
         waveforms = []
         chunks, metadata_paths, waveforms_path = self._chunks_with_paths()
         with LoadingContext(chunks, waveforms_path) as context:
-            for trace_name, chunk in zip(
-                load_metadata["trace_name"], load_metadata["trace_chunk"]
+            for trace_name, chunk, trace_sampling_rate in zip(
+                load_metadata["trace_name"],
+                load_metadata["trace_chunk"],
+                load_metadata["trace_sampling_rate_hz"],
             ):
                 waveforms.append(
-                    self._get_single_waveform(trace_name, chunk, context=context)
+                    self._get_single_waveform(
+                        trace_name,
+                        chunk,
+                        context=context,
+                        target_sampling_rate=sampling_rate,
+                        source_sampling_rate=trace_sampling_rate,
+                    )
                 )
 
         waveforms = self._pad_packed_sequence(waveforms)
@@ -465,7 +486,17 @@ class WaveformDataset:
 
         return waveforms
 
-    def _get_single_waveform(self, trace_name, chunk, context):
+    def _get_single_waveform(
+        self,
+        trace_name,
+        chunk,
+        context,
+        target_sampling_rate=None,
+        source_sampling_rate=None,
+    ):
+        if target_sampling_rate is None:
+            target_sampling_rate = self.sampling_rate
+
         if not self.cache or trace_name not in self._waveform_cache:
             g_data = context[chunk]["data"]
             waveform = g_data[str(trace_name)][()]
@@ -474,7 +505,44 @@ class WaveformDataset:
         else:
             waveform = self._waveform_cache[trace_name]
 
+        if target_sampling_rate is not None:
+            if np.isnan(source_sampling_rate):
+                raise ValueError("Tried resampling trace with unknown sampling rate.")
+            else:
+                waveform = self._resample(
+                    waveform, target_sampling_rate, source_sampling_rate
+                )
+
         return waveform
+
+    def _resample(self, waveform, target_sampling_rate, source_sampling_rate, eps=1e-4):
+        try:
+            sample_axis = list(self._data_format["dimension_order"]).index("W")
+        except KeyError:
+            # Dimension order not specified
+            sample_axis = None
+        except ValueError:
+            # W not in dimension order
+            sample_axis = None
+
+        if 1 - eps < target_sampling_rate / source_sampling_rate < 1 + eps:
+            return waveform
+        else:
+            if sample_axis is None:
+                raise ValueError(
+                    "Trace can not be resampled because of missing or incorrect dimension order."
+                )
+
+            if (source_sampling_rate % target_sampling_rate) < eps:
+                q = int(source_sampling_rate // target_sampling_rate)
+                return scipy.signal.decimate(waveform, q, axis=sample_axis)
+            else:
+                num = int(
+                    waveform.shape[sample_axis]
+                    * target_sampling_rate
+                    / source_sampling_rate
+                )
+                return scipy.signal.resample(waveform, num, axis=sample_axis)
 
     @staticmethod
     def _pad_packed_sequence(seq):
