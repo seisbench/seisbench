@@ -6,17 +6,15 @@ from pathlib import Path
 import os
 import torch
 import torch.nn as nn
-from collections import defaultdict, deque
+from collections import defaultdict
 from queue import PriorityQueue
 import json
 import numpy as np
-import time
 
 
 class SeisBenchModel(nn.Module):
-    def __init__(self, name, citation=None):
+    def __init__(self, citation=None):
         super().__init__()
-        self._name = name
         self._citation = citation
         self._weights_docstring = None
         self._weights_metadata = None
@@ -26,7 +24,11 @@ class SeisBenchModel(nn.Module):
 
     @property
     def name(self):
-        return self._name
+        return self._name_internal()
+
+    @classmethod
+    def _name_internal(cls):
+        return cls.__name__
 
     @property
     def citation(self):
@@ -36,36 +38,36 @@ class SeisBenchModel(nn.Module):
     def weights_docstring(self):
         return self._weights_docstring
 
-    def _model_path(self):
-        return Path(seisbench.cache_root, "models", self.name.lower())
+    @classmethod
+    def _model_path(cls):
+        return Path(seisbench.cache_root, "models", cls._name_internal().lower())
 
-    def _remote_path(self):
-        return os.path.join(seisbench.remote_root, "models", self.name.lower())
+    @classmethod
+    def _remote_path(cls):
+        return os.path.join(
+            seisbench.remote_root, "models", cls._name_internal().lower()
+        )
 
-    def _pretrained_path(self, name):
-        weight_path = self._model_path() / f"{name}.pt"
-        metadata_path = self._model_path() / f"{name}.json"
+    @classmethod
+    def _pretrained_path(cls, name):
+        weight_path = cls._model_path() / f"{name}.pt"
+        metadata_path = cls._model_path() / f"{name}.json"
 
         return weight_path, metadata_path
 
     @classmethod
     def from_pretrained(cls, name, force=False, wait_for_file=False):
-        dummy_instance = cls()  # Required to query the paths
-        weight_path, metadata_path = dummy_instance._pretrained_path(name)
+        weight_path, metadata_path = cls._pretrained_path(name)
 
         def download_weights_callback(weight_path):
             seisbench.logger.info(f"Weight file {name} not in cache. Downloading...")
             weight_path.parent.mkdir(exist_ok=True, parents=True)
 
-            remote_weight_path = os.path.join(
-                dummy_instance._remote_path(), f"{name}.pt"
-            )
+            remote_weight_path = os.path.join(cls._remote_path(), f"{name}.pt")
             util.download_http(remote_weight_path, weight_path)
 
         def download_metadata_callback(metadata_path):
-            remote_metadata_path = os.path.join(
-                dummy_instance._remote_path(), f"{name}.json"
-            )
+            remote_metadata_path = os.path.join(cls._remote_path(), f"{name}.json")
             try:
                 util.download_http(
                     remote_metadata_path, metadata_path, progress_bar=False
@@ -114,8 +116,8 @@ class WaveformModel(SeisBenchModel, ABC):
     Class does not inherit from SeisBenchModel to allow implementation of non-DL models with this interface.
     """
 
-    def __init__(self, name, component_order=None, *args, **kwargs):
-        super().__init__(name, *args, **kwargs)
+    def __init__(self, component_order=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
         if component_order is None:
             self._component_order = seisbench.config["component_order"]

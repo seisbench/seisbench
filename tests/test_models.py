@@ -102,7 +102,7 @@ def test_stream_to_arrays():
         "sampling_rate": 100,
         "starttime": t0,
     }
-    dummy = DummyWaveformModel(name="dummy", component_order="ZNE")
+    dummy = DummyWaveformModel(component_order="ZNE")
 
     trace_z = obspy.Trace(np.ones(1000), stats_z)
     trace_n = obspy.Trace(2 * np.ones(1000), stats_n)

@@ -19,7 +19,7 @@ class DummyDataset(BenchmarkDataset):
             "Magnitude scales, attenuation models and feature matrices for the IPOC catalog. "
             "V. 1.0. GFZ Data Services. https://doi.org/10.5880/GFZ.2.4.2019.004"
         )
-        super().__init__(name=self.__class__.__name__, citation=citation, **kwargs)
+        super().__init__(citation=citation, **kwargs)
 
     def _download_dataset(self, writer, trace_length=60, **kwargs):
         sampling_rate = 20
@@ -109,7 +109,6 @@ class ChunkedDummyDataset(BenchmarkDataset):
             "V. 1.0. GFZ Data Services. https://doi.org/10.5880/GFZ.2.4.2019.004"
         )
 
-        self._name = self.__class__.__name__  # Required for self.path to work
         # Write chunks to file
         chunks_path = self.path / "chunks"
         if not chunks_path.is_file():
@@ -117,7 +116,7 @@ class ChunkedDummyDataset(BenchmarkDataset):
             with open(chunks_path, "w") as f:
                 f.write("0\n1\n")
 
-        super().__init__(name=self.__class__.__name__, citation=citation, **kwargs)
+        super().__init__(citation=citation, **kwargs)
 
     def _download_dataset(self, writer, chunk, trace_length=60, **kwargs):
         sampling_rate = 20

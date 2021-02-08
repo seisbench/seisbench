@@ -15,7 +15,7 @@ class GPD(WaveformModel):
             "Generalized Seismic Phase Detection with Deep Learning. "
             "ArXiv:1805.01075 [Physics]. http://arxiv.org/abs/1805.01075"
         )
-        super().__init__(name="GPD", citation=citation)
+        super().__init__(citation=citation)
 
         self.in_channels = in_channels
         self.classes = classes

@@ -39,7 +39,7 @@ class Conv1dSame(nn.Module):
 
 class PhaseNet(WaveformModel):
     def __init__(self, in_channels=3, n_classes=3):
-        super().__init__(name="phasenet")
+        super().__init__()
         self.in_channels = in_channels
         self.n_classes = n_classes
         self.kernel_size = 7

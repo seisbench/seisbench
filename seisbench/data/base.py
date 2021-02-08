@@ -700,53 +700,14 @@ class BenchmarkDataset(WaveformDataset, ABC):
     """
 
     def __init__(
-        self,
-        name,
-        chunks=None,
-        citation=None,
-        force=False,
-        wait_for_file=False,
-        **kwargs,
+        self, chunks=None, citation=None, force=False, wait_for_file=False, **kwargs,
     ):
-        self._name = name
+        self._name = self._name_internal()
         self._citation = citation
         self.path.mkdir(exist_ok=True, parents=True)
 
         if chunks is None:
-            if (self.path / "metadata.csv").is_file() and (
-                self.path / "waveforms.hdf5"
-            ).is_file():
-                # If the data set is not chunked, do not search for a chunk file.
-                chunks = [""]
-            else:
-                # Search for chunk file in cache or remote repository.
-                # This is necessary, because otherwise it is unclear if datasets have been downloaded completely.
-                def chunks_callback(file):
-                    remote_chunks_path = os.path.join(self._remote_path(), "chunks")
-                    try:
-                        seisbench.util.download_http(
-                            remote_chunks_path, file, progress_bar=False
-                        )
-                    except ValueError:
-                        seisbench.logger.info(
-                            "Found no remote chunk file. Progressing."
-                        )
-
-                chunks_path = self.path / "chunks"
-                seisbench.util.callback_if_uncached(
-                    chunks_path,
-                    chunks_callback,
-                    force=force,
-                    wait_for_file=wait_for_file,
-                )
-
-                if chunks_path.is_file():
-                    with open(chunks_path, "r") as f:
-                        chunks = [x for x in f.read().split("\n") if x.strip()]
-                else:
-                    # Assume file is not chunked.
-                    # To write the conversion for a chunked file, simply write the chunks file before calling the super constructor.
-                    chunks = [""]
+            chunks = self.available_chunks(force=force, wait_for_file=wait_for_file)
 
         # TODO: Validate if cached dataset was downloaded with the same parameters
         for chunk in chunks:
@@ -754,13 +715,13 @@ class BenchmarkDataset(WaveformDataset, ABC):
             def download_callback(files):
                 chunk_str = f'Chunk "{chunk}" of ' if chunk != "" else ""
                 seisbench.logger.info(
-                    f"{chunk_str}Dataset {name} not in cache. Trying to download preprocessed version from SeisBench repository."
+                    f"{chunk_str}Dataset {self.name} not in cache. Trying to download preprocessed version from SeisBench repository."
                 )
                 try:
                     self._download_preprocessed(*files, chunk=chunk)
                 except ValueError:
                     seisbench.logger.info(
-                        f"{chunk_str}Dataset {name} not SeisBench repository. Starting download and conversion from source."
+                        f"{chunk_str}Dataset {self.name} not SeisBench repository. Starting download and conversion from source."
                     )
                     if (
                         "chunk"
@@ -781,18 +742,67 @@ class BenchmarkDataset(WaveformDataset, ABC):
                 files, download_callback, force=force, wait_for_file=wait_for_file
             )
 
-        super().__init__(path=None, name=name, chunks=chunks, **kwargs)
+        super().__init__(path=None, name=self._name_internal(), chunks=chunks, **kwargs)
 
     @property
     def citation(self):
         return self._citation
 
+    @classmethod
+    def _path_internal(cls):
+        return Path(seisbench.cache_root, "datasets", cls._name_internal().lower())
+
     @property
     def path(self):
-        return Path(seisbench.cache_root, "datasets", self.name.lower())
+        return self._path_internal()
 
-    def _remote_path(self):
-        return os.path.join(seisbench.remote_root, "datasets", self.name.lower())
+    @classmethod
+    def _name_internal(cls):
+        return cls.__name__
+
+    @property
+    def name(self):
+        return self._name_internal()
+
+    @classmethod
+    def _remote_path(cls):
+        return os.path.join(
+            seisbench.remote_root, "datasets", cls._name_internal().lower()
+        )
+
+    @classmethod
+    def available_chunks(cls, force=False, wait_for_file=False):
+        if (cls._path_internal() / "metadata.csv").is_file() and (
+            cls._path_internal() / "waveforms.hdf5"
+        ).is_file():
+            # If the data set is not chunked, do not search for a chunk file.
+            chunks = [""]
+        else:
+            # Search for chunk file in cache or remote repository.
+            # This is necessary, because otherwise it is unclear if datasets have been downloaded completely.
+            def chunks_callback(file):
+                remote_chunks_path = os.path.join(cls._remote_path(), "chunks")
+                try:
+                    seisbench.util.download_http(
+                        remote_chunks_path, file, progress_bar=False
+                    )
+                except ValueError:
+                    seisbench.logger.info("Found no remote chunk file. Progressing.")
+
+            chunks_path = cls._path_internal() / "chunks"
+            seisbench.util.callback_if_uncached(
+                chunks_path, chunks_callback, force=force, wait_for_file=wait_for_file,
+            )
+
+            if chunks_path.is_file():
+                with open(chunks_path, "r") as f:
+                    chunks = [x for x in f.read().split("\n") if x.strip()]
+            else:
+                # Assume file is not chunked.
+                # To write the conversion for a chunked file, simply write the chunks file before calling the super constructor.
+                chunks = [""]
+
+        return chunks
 
     def _download_preprocessed(self, metadata_path, waveforms_path, chunk):
         self.path.mkdir(parents=True, exist_ok=True)
