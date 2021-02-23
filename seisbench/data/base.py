@@ -700,7 +700,12 @@ class BenchmarkDataset(WaveformDataset, ABC):
     """
 
     def __init__(
-        self, chunks=None, citation=None, force=False, wait_for_file=False, **kwargs,
+        self,
+        chunks=None,
+        citation=None,
+        force=False,
+        wait_for_file=False,
+        **kwargs,
     ):
         self._name = self._name_internal()
         self._citation = citation
@@ -791,7 +796,10 @@ class BenchmarkDataset(WaveformDataset, ABC):
 
             chunks_path = cls._path_internal() / "chunks"
             seisbench.util.callback_if_uncached(
-                chunks_path, chunks_callback, force=force, wait_for_file=wait_for_file,
+                chunks_path,
+                chunks_callback,
+                force=force,
+                wait_for_file=wait_for_file,
             )
 
             if chunks_path.is_file():
