@@ -1,9 +1,6 @@
-from abc import abstractmethod, ABC
 import torch
-from copy import deepcopy
 import numpy as np
 from torch.utils.data import Dataset
-import matplotlib.pyplot as plt
 from collections import OrderedDict
 import inspect
 
@@ -20,7 +17,7 @@ class GenericGenerator(Dataset):
         """
         # Track augmentation methods and submitted params
         self._augmentations[f.__name__] = {"func": f, "params": {}}
-        
+
         # TODO: See whether simple check is required that state_dict is passed as first arg
         for param, value in inspect.signature(f).parameters.items():
             if param is not "state_dict":
