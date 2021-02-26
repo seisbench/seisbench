@@ -1,4 +1,4 @@
-from seisbench.generate import Normalize
+from seisbench.generate import Normalize, Filter
 
 import numpy as np
 import copy
@@ -69,3 +69,35 @@ def test_normalize():
     # Unknown normalization type
     with pytest.raises(ValueError):
         Normalize(amp_norm_type="Unknown normalization type")
+
+
+def test_filter():
+    np.random.seed(42)
+    base_state_dict = {
+        "X": 10 * np.random.rand(3, 1000),
+        "metadata": {"trace_sampling_rate_hz": 20},
+    }
+
+    # lowpass - forward_backward=False
+    filt = Filter(2, 1, "lowpass", forward_backward=False)
+    state_dict = copy.deepcopy(base_state_dict)
+    filt(state_dict)
+    sos = scipy.signal.butter(2, 1, "lowpass", output="sos", fs=20)
+    X_comp = scipy.signal.sosfilt(sos, base_state_dict["X"])
+    assert (state_dict["X"] == X_comp).all()
+
+    # lowpass - forward_backward=True
+    filt = Filter(2, 1, "lowpass", forward_backward=True)
+    state_dict = copy.deepcopy(base_state_dict)
+    filt(state_dict)
+    sos = scipy.signal.butter(2, 1, "lowpass", output="sos", fs=20)
+    X_comp = scipy.signal.sosfiltfilt(sos, base_state_dict["X"])
+    assert (state_dict["X"] == X_comp).all()
+
+    # bandpass - multiple frequencies
+    filt = Filter(1, (0.5, 2), "bandpass", forward_backward=True)
+    state_dict = copy.deepcopy(base_state_dict)
+    filt(state_dict)
+    sos = scipy.signal.butter(1, (0.5, 2), "bandpass", output="sos", fs=20)
+    X_comp = scipy.signal.sosfiltfilt(sos, base_state_dict["X"])
+    assert (state_dict["X"] == X_comp).all()

@@ -1,2 +1,2 @@
 from .generator import GenericGenerator
-from .augmentation import SlidingWindow, Normalize
+from .augmentation import SlidingWindow, Normalize, Filter

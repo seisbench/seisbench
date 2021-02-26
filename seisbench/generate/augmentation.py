@@ -109,3 +109,46 @@ class Normalize:
             desc = "no normalizations"
 
         return f"Normalize ({desc})"
+
+
+class Filter:
+    def __init__(
+        self, N, Wn, btype="low", analog=False, forward_backward=False, axis=-1, key="X"
+    ):
+        """
+        Implements a filter augmentation, closely based on scipy.signal.butter.
+        Please refer to the scipy documentation for more detailed description of the parameters
+        :param N: Filter order
+        :param Wn: The critical frequency or frequencies
+        :param btype: The filter type: ‘lowpass’, ‘highpass’, ‘bandpass’, ‘bandstop’
+        :param analog: When True, return an analog filter, otherwise a digital filter is returned.
+        :param forward_backward: If true, filters once forward and once backward.
+        This doubles the order of the filter and makes the filter zero-phase.
+        :param axis: Axis along which the filter is applied.
+        :param key: The key to extract from the state_dict for filtering
+        """
+        self.forward_backward = forward_backward
+        self.axis = axis
+        self.key = key
+        self._filt_args = (N, Wn, btype, analog)
+
+    def __call__(self, state_dict):
+        x = state_dict[self.key]
+        sampling_rate = state_dict["metadata"]["trace_sampling_rate_hz"]
+
+        sos = scipy.signal.butter(*self._filt_args, output="sos", fs=sampling_rate)
+        if self.forward_backward:
+            # Copy is required, because otherwise the stride of x is negative.T
+            # This can break the pytorch collate function.
+            x = scipy.signal.sosfiltfilt(sos, x, axis=self.axis).copy()
+        else:
+            x = scipy.signal.sosfilt(sos, x, axis=self.axis)
+
+        state_dict[self.key] = x
+
+    def __str__(self):
+        N, Wn, btype, analog = self._filt_args
+        return (
+            f"Filter ({btype}, order={N}, frequencies={Wn}, analog={analog}, "
+            f"forward_backward={self.forward_backward}, axis={self.axis})"
+        )
