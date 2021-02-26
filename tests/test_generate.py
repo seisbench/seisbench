@@ -1,4 +1,4 @@
-from seisbench.generate import Normalize, Filter, FixedWindow
+from seisbench.generate import Normalize, Filter, FixedWindow, SlidingWindow, FilterKeys
 
 import numpy as np
 import copy
@@ -209,3 +209,67 @@ def test_fixed_window():
     assert state_dict["X"].shape == (3, 300)
     assert (state_dict["X"] == state_dict["waveforms"][:, -300:]).all()
     assert state_dict["metadata"]["trace_p_arrival_sample"] == -200
+
+
+def test_filter_keys():
+    # No keys specified
+    with pytest.raises(ValueError) as e:
+        FilterKeys()
+    assert "Exactly one of include or exclude must be specified" in str(e)
+
+    # Include and exclude keys specified
+    with pytest.raises(ValueError) as e:
+        FilterKeys(include=["a"], exclude=["b"])
+    assert "Exactly one of include or exclude must be specified" in str(e)
+
+    # Include keys
+    filter = FilterKeys(include=["a", "b", "c"])
+    state_dict = {"a": 1, "b": 2, "c": 3, "d": 4}
+    filter(state_dict)
+    assert set(state_dict.keys()) == {"a", "b", "c"}
+
+    # Exclude keys
+    filter = FilterKeys(exclude=["a", "c"])
+    state_dict = {"a": 1, "b": 2, "c": 3, "d": 4}
+    filter(state_dict)
+    assert set(state_dict.keys()) == {"b", "d"}
+
+
+def test_sliding_window():
+    np.random.seed(42)
+    base_state_dict = {
+        "waveforms": 10 * np.random.rand(3, 1000),
+        "metadata": {"trace_sampling_rate_hz": 20, "trace_p_arrival_sample": 500},
+    }
+
+    # Zero windows
+    window = SlidingWindow(timestep=100, windowlen=1100)
+    state_dict = copy.deepcopy(base_state_dict)
+    window(state_dict)
+    assert state_dict["X"].shape == (0, 3, 1100)
+
+    # Fitting at the end
+    window = SlidingWindow(timestep=100, windowlen=200)
+    state_dict = copy.deepcopy(base_state_dict)
+    window(state_dict)
+    assert state_dict["X"].shape == (9, 3, 200)
+    for i in range(9):
+        assert (
+            state_dict["X"][i] == state_dict["waveforms"][:, i * 100 : 200 + i * 100]
+        ).all()
+    assert (
+        state_dict["metadata"]["trace_p_arrival_sample"] == np.arange(500, -400, -100)
+    ).all()
+
+    # Not fitting at the end
+    window = SlidingWindow(timestep=101, windowlen=200)
+    state_dict = copy.deepcopy(base_state_dict)
+    window(state_dict)
+    assert state_dict["X"].shape == (8, 3, 200)
+    for i in range(8):
+        assert (
+            state_dict["X"][i] == state_dict["waveforms"][:, i * 101 : 200 + i * 101]
+        ).all()
+    assert (
+        state_dict["metadata"]["trace_p_arrival_sample"] == np.arange(500, -300, -101)
+    ).all()

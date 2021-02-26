@@ -1,34 +1,6 @@
 import numpy as np
 import scipy.signal
-
-
-class SlidingWindow:
-    def __init__(self, windowlen=600, timestep=200):
-        self.windowlen = windowlen
-        self.timestep = timestep
-
-    def __call__(self, state_dict):
-        windowlen = self.windowlen
-        timestep = self.timestep
-
-        n_windows = (state_dict["waveforms"].shape[1] - windowlen) // timestep
-        X_windows = []
-        y_windows = []
-
-        for i in range(n_windows):
-            # Data is transformed to [N, C, W]
-            X_windows.append(
-                state_dict["waveforms"].T[i * timestep : i * timestep + windowlen].T
-            )
-            y_windows.append(
-                state_dict["waveforms"].T[i * timestep : i * timestep + windowlen].T
-            )
-        # Add sequential windows to state_dict
-        state_dict["X"] = np.array(X_windows)
-        state_dict["y"] = np.array(y_windows)
-
-    def __str__(self):
-        return f"SlidingWindow (windowlen={self.windowlen}, timestep={self.timestep})"
+import copy
 
 
 class FixedWindow:
@@ -124,7 +96,61 @@ class FixedWindow:
         return p0, windowlen
 
     def __str__(self):
-        return f"FixedWindow (p0={self.p0}, windowlen={self.windowlen})"
+        return f"FixedWindow (p0={self.p0}, windowlen={self.windowlen}, strategy={self.strategy}, axis={self.axis})"
+
+
+class SlidingWindow(FixedWindow):
+    def __init__(self, timestep, windowlen, **kwargs):
+        """
+        Generates sliding windows and adds a new axis for windows as first axis.
+        All metadata entries are converted to arrays of entries.
+        Only complete windows are returned and a possible remainder is truncated.
+        In particular, if the available data is shorter than the number of windows, an empty array is returned.
+        :param timestep: Difference between two consecutive window starts
+        :param windowlen: Length of the output window
+        :param kwargs: All kwargs are passed directly to FixedWindow
+        """
+        self.timestep = timestep
+        super().__init__(windowlen=windowlen, **kwargs)
+
+    def __call__(self, state_dict):
+        windowlen = self.windowlen
+        timestep = self.timestep
+
+        n_windows = (
+            state_dict[self.key[0]].shape[self.axis] - windowlen
+        ) // timestep + 1
+
+        if n_windows == 0:
+            target_shape = list(state_dict[self.key[0]].shape)
+            target_shape[self.axis] = windowlen
+            state_dict[self.key[1]] = np.zeros_like(
+                state_dict[self.key[0]], shape=[0] + target_shape
+            )
+            return
+
+        window_outputs = []
+        window_metadatas = []
+
+        for i in range(n_windows):
+            tmp_state_dict = {
+                self.key[0]: state_dict[self.key[0]].copy(),
+                "metadata": copy.deepcopy(state_dict["metadata"]),
+            }
+            super().__call__(tmp_state_dict, p0=i * timestep)
+            window_outputs.append(tmp_state_dict[self.key[1]])
+            window_metadatas.append(tmp_state_dict["metadata"])
+
+        state_dict[self.key[1]] = np.stack(window_outputs, axis=0)
+        collected_metadata = {}
+        for key in window_metadatas[0].keys():
+            collected_metadata[key] = np.array(
+                [window_metadata[key] for window_metadata in window_metadatas]
+            )
+        state_dict["metadata"] = collected_metadata
+
+    def __str__(self):
+        return f"SlidingWindow (windowlen={self.windowlen}, timestep={self.timestep})"
 
 
 class Normalize:
@@ -258,3 +284,36 @@ class Filter:
             f"Filter ({btype}, order={N}, frequencies={Wn}, analog={analog}, "
             f"forward_backward={self.forward_backward}, axis={self.axis})"
         )
+
+
+class FilterKeys:
+    def __init__(self, include=None, exclude=None):
+        """
+        Filters keys in the state dict.
+        Can be used to remove keys from the output that can not be collated by pytorch or are not required anymore.
+        Either included or excluded keys can be defined.
+        :param include:
+        :param exclude:
+        """
+        self.include = include
+        self.exclude = exclude
+
+        if (self.include is None and self.exclude is None) or (
+            self.include is not None and self.exclude is not None
+        ):
+            raise ValueError("Exactly one of include or exclude must be specified.")
+
+    def __call__(self, state_dict):
+        if self.exclude is not None:
+            for key in self.exclude:
+                del state_dict[key]
+
+        elif self.include is not None:
+            for key in set(state_dict.keys()) - set(self.include):
+                del state_dict[key]
+
+    def __str__(self):
+        if self.exclude is not None:
+            return f"Filter keys (excludes {', '.join(self.exclude)})"
+        if self.include is not None:
+            return f"Filter keys (includes {', '.join(self.include)})"
