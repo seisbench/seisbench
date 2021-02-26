@@ -15,6 +15,12 @@ class GenericGenerator(Dataset):
 
         return f
 
+    def __str__(self):
+        summary = f"GenericGenerator with {len(self._augmentations)} augmentations:\n"
+        for i, aug in enumerate(self._augmentations):
+            summary += f" {i + 1}.\t{str(aug)}\n"
+        return summary
+
     def __len__(self):
         return len(self.dataset)
 

@@ -26,6 +26,9 @@ class SlidingWindow:
         state_dict["X"] = np.array(X_windows)
         state_dict["y"] = np.array(y_windows)
 
+    def __str__(self):
+        return f"SlidingWindow (windowlen={self.windowlen}, timestep={self.timestep})"
+
 
 class Normalize:
     def __init__(self, norm_type="window"):
@@ -41,9 +44,12 @@ class Normalize:
                 [window / np.std(window) for window in state_dict["X"]], dtype=float
             )
 
+    def __str__(self):
+        return f"Normalize (norm_type={self.norm_type})"
+
 
 class Demean:
-    def __init__(self, axis=1, key="X"):
+    def __init__(self, axis=None, key="X"):
         self.axis = axis
         self.key = key
 
@@ -51,3 +57,6 @@ class Demean:
         state_dict[self.key] = state_dict[self.key].astype(float) - np.mean(
             state_dict[self.key], axis=self.axis, keepdims=True
         )
+
+    def __str__(self):
+        return f"Demean (axis={self.axis}, key='{self.key}')"
