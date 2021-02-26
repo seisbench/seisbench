@@ -409,3 +409,50 @@ def test_resample():
     wv20 = dummy.get_waveforms(idx=0, sampling_rate=20)
     assert wv20.shape[0] == wv100.shape[0]
     assert wv20.shape[1] * 100 / 20 == wv100.shape[1]
+
+
+def test_get_sample():
+    # Checks that the parameters are correctly overwritten, when the sampling_rate is changed
+    dummy = seisbench.data.DummyDataset()
+    dummy.sampling_rate = None
+
+    base_sampling_rate = dummy.metadata.iloc[0]["trace_sampling_rate_hz"]
+    base_arrival_sample = 500
+    dummy._metadata["trace_p_arrival_sample"] = base_arrival_sample
+    dummy._metadata["trace_dt_s"] = 1 / dummy._metadata["trace_sampling_rate_hz"]
+
+    # No resampling
+    state_dict = dummy.get_sample(0, sampling_rate=None)
+    assert state_dict["waveforms"].shape[-1] == state_dict["metadata"]["trace_npts"]
+    assert state_dict["metadata"]["trace_sampling_rate_hz"] == base_sampling_rate
+    assert state_dict["metadata"]["trace_dt_s"] == 1.0 / base_sampling_rate
+    assert state_dict["metadata"]["trace_p_arrival_sample"] == base_arrival_sample
+
+    # Different resampling rates
+    for factor in [0.1, 0.5, 1, 2, 5]:
+        state_dict = dummy.get_sample(0, sampling_rate=base_sampling_rate * factor)
+        assert state_dict["waveforms"].shape[-1] == state_dict["metadata"]["trace_npts"]
+        assert (
+            state_dict["metadata"]["trace_sampling_rate_hz"]
+            == base_sampling_rate * factor
+        )
+        assert state_dict["metadata"]["trace_dt_s"] == 1.0 / (
+            base_sampling_rate * factor
+        )
+        assert (
+            state_dict["metadata"]["trace_p_arrival_sample"]
+            == base_arrival_sample * factor
+        )
+
+    # Sampling rate defined globally for data set
+    factor = 0.5
+    dummy.sampling_rate = base_sampling_rate * factor
+    state_dict = dummy.get_sample(0)
+    assert state_dict["waveforms"].shape[-1] == state_dict["metadata"]["trace_npts"]
+    assert (
+        state_dict["metadata"]["trace_sampling_rate_hz"] == base_sampling_rate * factor
+    )
+    assert state_dict["metadata"]["trace_dt_s"] == 1.0 / (base_sampling_rate * factor)
+    assert (
+        state_dict["metadata"]["trace_p_arrival_sample"] == base_arrival_sample * factor
+    )

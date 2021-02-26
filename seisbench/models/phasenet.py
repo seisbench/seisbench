@@ -12,7 +12,7 @@ class Conv1dSame(nn.Module):
     Discussions regarding feature implementation:
     https://discuss.pytorch.org/t/converting-tensorflow-model-to-pytorch-issue-with-padding/84224
     https://github.com/pytorch/pytorch/issues/3867#issuecomment-598264120
-    
+
     """
 
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, dilation=1):

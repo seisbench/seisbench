@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 
+
 def gaussian_pick(onset, length, sigma):
     """
     Create probabilistic representation of pick in timeseries.
