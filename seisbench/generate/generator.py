@@ -22,10 +22,7 @@ class GenericGenerator(Dataset):
         return self
 
     def __getitem__(self, idx):
-        state_dict = {
-            "waveforms": self.dataset.get_waveforms(idx),
-            "metadata": self.dataset.metadata.iloc[idx].to_dict(),
-        }
+        state_dict = self.dataset.get_sample(idx)
 
         # Recursive application of augmentation processing methods
         for func in self._augmentations:

@@ -422,13 +422,50 @@ class WaveformDataset:
     def __len__(self):
         return len(self._metadata)
 
+    def get_sample(self, idx, sampling_rate=None):
+        """
+        Returns both waveforms and metadata of a traces.
+        Adjusts all metadata traces with sampling rate dependent values to the correct sampling rate,
+        e.g., p_pick_samples will still point to the right sample after this operation, even if the trace was resampled.
+        :param idx: Idx of sample to return
+        :param sampling_rate: Target sampling rate, overwrites sampling rate for dataset.
+        :return: Dict with the waveforms and the metadata of the sample.
+        """
+        metadata = self.metadata.iloc[idx].to_dict()
+
+        if sampling_rate is None:
+            sampling_rate = self.sampling_rate
+        if sampling_rate is not None:
+            source_sampling_rate = metadata["trace_sampling_rate_hz"]
+            if np.isnan(source_sampling_rate):
+                raise ValueError("Tried resampling trace with unknown sampling rate.")
+            else:
+                resampling_factor = sampling_rate / source_sampling_rate
+                # Rewrite all metadata keys in sample units to the new sampling rate
+                for key in metadata.keys():
+                    if key.endswith("_sample"):
+                        metadata[key] *= resampling_factor
+
+                metadata["trace_sampling_rate_hz"] = sampling_rate
+                metadata["trace_dt_s"] = 1.0 / sampling_rate
+
+        waveforms = self.get_waveforms(idx, sampling_rate=sampling_rate)
+
+        # Find correct dimension, but ignore batch dimension as this will be squeezed in get_waveforms
+        dimension_order = list(self.dimension_order)
+        del dimension_order[dimension_order.index("N")]
+        sample_dimension = dimension_order.index("W")
+        metadata["trace_npts"] = waveforms.shape[sample_dimension]
+
+        return {"waveforms": waveforms, "metadata": metadata}
+
     def get_waveforms(self, idx=None, split=None, mask=None, sampling_rate=None):
         """
         Collects waveforms and returns them as an array.
         :param idx: Idx or list of idx to obtain waveforms for
         :param split: Split (train/dev/test) to obtain waveforms for
         :param mask: Binary mask on the metadata, indicating which traces should be returned. Can not be used jointly with split.
-        :param sampling_rate: Overwrites sampling rate for dataset
+        :param sampling_rate: Target sampling rate, overwrites sampling rate for dataset
         :return: Waveform array with dimensions ordered according to dimension_order e.g. default 'NCW' (number of traces, number of components, record samples). If the number of components or record samples varies between different entries, all entries are padded to the maximum length.
         """
         squeeze = False
