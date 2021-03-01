@@ -446,3 +446,9 @@ def test_get_sample():
     assert metadata["trace_sampling_rate_hz"] == base_sampling_rate * factor
     assert metadata["trace_dt_s"] == 1.0 / (base_sampling_rate * factor)
     assert metadata["trace_p_arrival_sample"] == base_arrival_sample * factor
+
+
+def test_load_waveform_data_with_sampling_rate():
+    # Checks that preloading waveform data works with sampling rate specified
+    dummy = seisbench.data.DummyDataset(cache=True, lazyload=False, sampling_rate=20)
+    assert len(dummy._waveform_cache) == len(dummy.metadata)

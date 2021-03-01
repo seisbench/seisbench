@@ -491,6 +491,9 @@ class WaveformDataset:
             else:
                 load_metadata = self._metadata
 
+        if sampling_rate is None:
+            sampling_rate = self.sampling_rate
+
         waveforms = []
         chunks, metadata_paths, waveforms_path = self._chunks_with_paths()
         with LoadingContext(chunks, waveforms_path) as context:
@@ -531,9 +534,6 @@ class WaveformDataset:
         target_sampling_rate=None,
         source_sampling_rate=None,
     ):
-        if target_sampling_rate is None:
-            target_sampling_rate = self.sampling_rate
-
         if not self.cache or trace_name not in self._waveform_cache:
             g_data = context[chunk]["data"]
             waveform = g_data[str(trace_name)][()]
