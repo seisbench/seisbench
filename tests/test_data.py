@@ -422,37 +422,27 @@ def test_get_sample():
     dummy._metadata["trace_dt_s"] = 1 / dummy._metadata["trace_sampling_rate_hz"]
 
     # No resampling
-    state_dict = dummy.get_sample(0, sampling_rate=None)
-    assert state_dict["waveforms"].shape[-1] == state_dict["metadata"]["trace_npts"]
-    assert state_dict["metadata"]["trace_sampling_rate_hz"] == base_sampling_rate
-    assert state_dict["metadata"]["trace_dt_s"] == 1.0 / base_sampling_rate
-    assert state_dict["metadata"]["trace_p_arrival_sample"] == base_arrival_sample
+    waveforms, metadata = dummy.get_sample(0, sampling_rate=None)
+    assert waveforms.shape[-1] == metadata["trace_npts"]
+    assert metadata["trace_sampling_rate_hz"] == base_sampling_rate
+    assert metadata["trace_dt_s"] == 1.0 / base_sampling_rate
+    assert metadata["trace_p_arrival_sample"] == base_arrival_sample
 
     # Different resampling rates
     for factor in [0.1, 0.5, 1, 2, 5]:
-        state_dict = dummy.get_sample(0, sampling_rate=base_sampling_rate * factor)
-        assert state_dict["waveforms"].shape[-1] == state_dict["metadata"]["trace_npts"]
-        assert (
-            state_dict["metadata"]["trace_sampling_rate_hz"]
-            == base_sampling_rate * factor
+        waveforms, metadata = dummy.get_sample(
+            0, sampling_rate=base_sampling_rate * factor
         )
-        assert state_dict["metadata"]["trace_dt_s"] == 1.0 / (
-            base_sampling_rate * factor
-        )
-        assert (
-            state_dict["metadata"]["trace_p_arrival_sample"]
-            == base_arrival_sample * factor
-        )
+        assert waveforms.shape[-1] == metadata["trace_npts"]
+        assert metadata["trace_sampling_rate_hz"] == base_sampling_rate * factor
+        assert metadata["trace_dt_s"] == 1.0 / (base_sampling_rate * factor)
+        assert metadata["trace_p_arrival_sample"] == base_arrival_sample * factor
 
     # Sampling rate defined globally for data set
     factor = 0.5
     dummy.sampling_rate = base_sampling_rate * factor
-    state_dict = dummy.get_sample(0)
-    assert state_dict["waveforms"].shape[-1] == state_dict["metadata"]["trace_npts"]
-    assert (
-        state_dict["metadata"]["trace_sampling_rate_hz"] == base_sampling_rate * factor
-    )
-    assert state_dict["metadata"]["trace_dt_s"] == 1.0 / (base_sampling_rate * factor)
-    assert (
-        state_dict["metadata"]["trace_p_arrival_sample"] == base_arrival_sample * factor
-    )
+    waveforms, metadata = dummy.get_sample(0)
+    assert waveforms.shape[-1] == metadata["trace_npts"]
+    assert metadata["trace_sampling_rate_hz"] == base_sampling_rate * factor
+    assert metadata["trace_dt_s"] == 1.0 / (base_sampling_rate * factor)
+    assert metadata["trace_p_arrival_sample"] == base_arrival_sample * factor

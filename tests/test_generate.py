@@ -8,30 +8,29 @@ import pytest
 
 def test_normalize():
     np.random.seed(42)
-    base_state_dict = {"X": 10 * np.random.rand(3, 1000)}
+    base_state_dict = {"X": (10 * np.random.rand(3, 1000), None)}
 
     # No error on int
     norm = Normalize()
-    state_dict = {"X": np.random.randint(0, 10, 1000)}
+    state_dict = {"X": (np.random.randint(0, 10, 1000), None)}
     norm(state_dict)
-    assert state_dict["X"].dtype.char not in np.typecodes["AllInteger"]
 
     # Demean single axis
     norm = Normalize(demean_axis=-1)
     state_dict = copy.deepcopy(base_state_dict)
     norm(state_dict)
-    assert (np.mean(state_dict["X"], axis=-1) < 1e-10).all()
+    assert (np.mean(state_dict["X"][0], axis=-1) < 1e-10).all()
     # No std normalization has been applied. Data generation ensures std >> 1 is fulfilled.
-    assert not np.isclose(np.std(state_dict["X"], axis=-1), 1).all()
+    assert not np.isclose(np.std(state_dict["X"][0], axis=-1), 1).all()
 
     # Demean multiple axis
     norm = Normalize(demean_axis=(0, 1))
     state_dict = copy.deepcopy(base_state_dict)
     norm(state_dict)
     assert not (
-        np.mean(state_dict["X"], axis=-1) < 1e-10
+        np.mean(state_dict["X"][0], axis=-1) < 1e-10
     ).all()  # Axis are not individually
-    assert np.mean(state_dict["X"]) < 1e-10  # Axis are normalized jointly
+    assert np.mean(state_dict["X"][0]) < 1e-10  # Axis are normalized jointly
 
     # Detrend
     norm = Normalize(detrend_axis=-1)
@@ -39,32 +38,56 @@ def test_normalize():
     norm(state_dict)
     # Detrending was applied
     assert (
-        state_dict["X"] == scipy.signal.detrend(base_state_dict["X"], axis=-1)
+        state_dict["X"][0] == scipy.signal.detrend(base_state_dict["X"][0], axis=-1)
     ).all()
     # No std normalization has been applied. Data generation ensures std >> 1 is fulfilled.
-    assert not np.isclose(np.std(state_dict["X"], axis=-1), 1).all()
+    assert not np.isclose(np.std(state_dict["X"][0], axis=-1), 1).all()
 
     # Peak normalization
     norm = Normalize(demean_axis=-1, amp_norm_axis=-1, amp_norm_type="peak")
     state_dict = copy.deepcopy(base_state_dict)
     norm(state_dict)
-    assert (np.mean(state_dict["X"], axis=-1) < 1e-10).all()
-    assert np.isclose(np.max(state_dict["X"], axis=-1), 1).all()
+    assert (np.mean(state_dict["X"][0], axis=-1) < 1e-10).all()
+    assert np.isclose(np.max(state_dict["X"][0], axis=-1), 1).all()
 
     # std normalization
     norm = Normalize(demean_axis=-1, amp_norm_axis=-1, amp_norm_type="std")
     state_dict = copy.deepcopy(base_state_dict)
     norm(state_dict)
-    assert (np.mean(state_dict["X"], axis=-1) < 1e-10).all()
-    assert np.isclose(np.std(state_dict["X"], axis=-1), 1).all()
+    assert (np.mean(state_dict["X"][0], axis=-1) < 1e-10).all()
+    assert np.isclose(np.std(state_dict["X"][0], axis=-1), 1).all()
 
     # Different key
     norm = Normalize(demean_axis=-1, key="Y")
-    state_dict = {"Y": 10 * np.random.rand(3, 1000)}
+    state_dict = {"Y": (10 * np.random.rand(3, 1000), None)}
     norm(state_dict)
-    assert (np.mean(state_dict["Y"], axis=-1) < 1e-10).all()
+    assert (np.mean(state_dict["Y"][0], axis=-1) < 1e-10).all()
     # No std normalization has been applied. Data generation ensures std >> 1 is fulfilled.
-    assert not np.isclose(np.std(state_dict["Y"], axis=-1), 1).all()
+    assert not np.isclose(np.std(state_dict["Y"][0], axis=-1), 1).all()
+
+    # No inplace modification - demean
+    norm = Normalize(demean_axis=-1, key=("X", "Y"))
+    state_dict = copy.deepcopy(base_state_dict)
+    norm(state_dict)
+    assert (state_dict["X"][0] == base_state_dict["X"][0]).all()
+
+    # No inplace modification - detrend
+    norm = Normalize(detrend_axis=-1, key=("X", "Y"))
+    state_dict = copy.deepcopy(base_state_dict)
+    norm(state_dict)
+    assert (state_dict["X"][0] == base_state_dict["X"][0]).all()
+
+    # No inplace modification - peak normalization
+    norm = Normalize(amp_norm_axis=-1, amp_norm_type="peak", key=("X", "Y"))
+    state_dict = copy.deepcopy(base_state_dict)
+    norm(state_dict)
+    assert (state_dict["X"][0] == base_state_dict["X"][0]).all()
+
+    # No inplace modification - std normalization
+    norm = Normalize(amp_norm_axis=-1, amp_norm_type="std", key=("X", "Y"))
+    state_dict = copy.deepcopy(base_state_dict)
+    norm(state_dict)
+    assert (state_dict["X"][0] == base_state_dict["X"][0]).all()
 
     # Unknown normalization type
     with pytest.raises(ValueError):
@@ -74,8 +97,7 @@ def test_normalize():
 def test_filter():
     np.random.seed(42)
     base_state_dict = {
-        "X": 10 * np.random.rand(3, 1000),
-        "metadata": {"trace_sampling_rate_hz": 20},
+        "X": (10 * np.random.rand(3, 1000), {"trace_sampling_rate_hz": 20})
     }
 
     # lowpass - forward_backward=False
@@ -83,31 +105,33 @@ def test_filter():
     state_dict = copy.deepcopy(base_state_dict)
     filt(state_dict)
     sos = scipy.signal.butter(2, 1, "lowpass", output="sos", fs=20)
-    X_comp = scipy.signal.sosfilt(sos, base_state_dict["X"])
-    assert (state_dict["X"] == X_comp).all()
+    X_comp = scipy.signal.sosfilt(sos, base_state_dict["X"][0])
+    assert (state_dict["X"][0] == X_comp).all()
 
     # lowpass - forward_backward=True
     filt = Filter(2, 1, "lowpass", forward_backward=True)
     state_dict = copy.deepcopy(base_state_dict)
     filt(state_dict)
     sos = scipy.signal.butter(2, 1, "lowpass", output="sos", fs=20)
-    X_comp = scipy.signal.sosfiltfilt(sos, base_state_dict["X"])
-    assert (state_dict["X"] == X_comp).all()
+    X_comp = scipy.signal.sosfiltfilt(sos, base_state_dict["X"][0])
+    assert (state_dict["X"][0] == X_comp).all()
 
     # bandpass - multiple frequencies
     filt = Filter(1, (0.5, 2), "bandpass", forward_backward=True)
     state_dict = copy.deepcopy(base_state_dict)
     filt(state_dict)
     sos = scipy.signal.butter(1, (0.5, 2), "bandpass", output="sos", fs=20)
-    X_comp = scipy.signal.sosfiltfilt(sos, base_state_dict["X"])
-    assert (state_dict["X"] == X_comp).all()
+    X_comp = scipy.signal.sosfiltfilt(sos, base_state_dict["X"][0])
+    assert (state_dict["X"][0] == X_comp).all()
 
 
 def test_fixed_window():
     np.random.seed(42)
     base_state_dict = {
-        "waveforms": 10 * np.random.rand(3, 1000),
-        "metadata": {"trace_sampling_rate_hz": 20, "trace_p_arrival_sample": 500},
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {"trace_sampling_rate_hz": 20, "trace_p_arrival_sample": 500},
+        ),
     }
 
     # Hard coded selection
@@ -115,27 +139,27 @@ def test_fixed_window():
     state_dict = copy.deepcopy(base_state_dict)
     window(state_dict)
     assert "X" in state_dict
-    assert state_dict["X"].shape == (3, 600)
-    assert (state_dict["X"] == state_dict["waveforms"][:, :600]).all()
-    assert state_dict["metadata"]["trace_p_arrival_sample"] == 500
+    assert state_dict["X"][0].shape == (3, 600)
+    assert (state_dict["X"][0] == base_state_dict["X"][0][:, :600]).all()
+    assert state_dict["X"][1]["trace_p_arrival_sample"] == 500
 
     # p0 dynamic selection
     window = FixedWindow(windowlen=600)
     state_dict = copy.deepcopy(base_state_dict)
     window(state_dict, p0=100)
     assert "X" in state_dict
-    assert state_dict["X"].shape == (3, 600)
-    assert (state_dict["X"] == state_dict["waveforms"][:, 100:700]).all()
-    assert state_dict["metadata"]["trace_p_arrival_sample"] == 400
+    assert state_dict["X"][0].shape == (3, 600)
+    assert (state_dict["X"][0] == base_state_dict["X"][0][:, 100:700]).all()
+    assert state_dict["X"][1]["trace_p_arrival_sample"] == 400
 
     # p0 and windowlen dynamic selection
     window = FixedWindow()
     state_dict = copy.deepcopy(base_state_dict)
     window(state_dict, 200, 500)
     assert "X" in state_dict
-    assert state_dict["X"].shape == (3, 500)
-    assert (state_dict["X"] == state_dict["waveforms"][:, 200:700]).all()
-    assert state_dict["metadata"]["trace_p_arrival_sample"] == 300
+    assert state_dict["X"][0].shape == (3, 500)
+    assert (state_dict["X"][0] == base_state_dict["X"][0][:, 200:700]).all()
+    assert state_dict["X"][1]["trace_p_arrival_sample"] == 300
 
     # Insufficient selection - p0
     window = FixedWindow(windowlen=500)
@@ -174,26 +198,26 @@ def test_fixed_window():
     window = FixedWindow(p0=900, windowlen=600, strategy="pad")
     state_dict = copy.deepcopy(base_state_dict)
     window(state_dict)
-    assert state_dict["X"].shape == (3, 600)
-    assert (state_dict["X"][:, :100] == state_dict["waveforms"][:, 900:]).all()
-    assert (state_dict["X"][:, 100:] == 0).all()
-    assert state_dict["metadata"]["trace_p_arrival_sample"] == -400
+    assert state_dict["X"][0].shape == (3, 600)
+    assert (state_dict["X"][0][:, :100] == base_state_dict["X"][0][:, 900:]).all()
+    assert (state_dict["X"][0][:, 100:] == 0).all()
+    assert state_dict["X"][1]["trace_p_arrival_sample"] == -400
 
     # Strategy "pad" out of bounds p0
     window = FixedWindow(p0=1100, windowlen=600, strategy="pad")
     state_dict = copy.deepcopy(base_state_dict)
     window(state_dict)
-    assert state_dict["X"].shape == (3, 600)
-    assert (state_dict["X"] == 0).all()
-    assert state_dict["metadata"]["trace_p_arrival_sample"] == -500
+    assert state_dict["X"][0].shape == (3, 600)
+    assert (state_dict["X"][0] == 0).all()
+    assert state_dict["X"][1]["trace_p_arrival_sample"] == -500
 
     # Strategy "move"
     window = FixedWindow(p0=700, windowlen=600, strategy="move")
     state_dict = copy.deepcopy(base_state_dict)
     window(state_dict)
-    assert state_dict["X"].shape == (3, 600)
-    assert (state_dict["X"] == state_dict["waveforms"][:, -600:]).all()
-    assert state_dict["metadata"]["trace_p_arrival_sample"] == 100
+    assert state_dict["X"][0].shape == (3, 600)
+    assert (state_dict["X"][0] == base_state_dict["X"][0][:, -600:]).all()
+    assert state_dict["X"][1]["trace_p_arrival_sample"] == 100
 
     # Strategy "move" - total size too short
     window = FixedWindow(p0=0, windowlen=1200, strategy="move")
@@ -206,9 +230,9 @@ def test_fixed_window():
     window = FixedWindow(p0=700, windowlen=600, strategy="variable")
     state_dict = copy.deepcopy(base_state_dict)
     window(state_dict)
-    assert state_dict["X"].shape == (3, 300)
-    assert (state_dict["X"] == state_dict["waveforms"][:, -300:]).all()
-    assert state_dict["metadata"]["trace_p_arrival_sample"] == -200
+    assert state_dict["X"][0].shape == (3, 300)
+    assert (state_dict["X"][0] == base_state_dict["X"][0][:, -300:]).all()
+    assert state_dict["X"][1]["trace_p_arrival_sample"] == -200
 
 
 def test_filter_keys():
@@ -238,38 +262,40 @@ def test_filter_keys():
 def test_sliding_window():
     np.random.seed(42)
     base_state_dict = {
-        "waveforms": 10 * np.random.rand(3, 1000),
-        "metadata": {"trace_sampling_rate_hz": 20, "trace_p_arrival_sample": 500},
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {"trace_sampling_rate_hz": 20, "trace_p_arrival_sample": 500},
+        )
     }
 
     # Zero windows
     window = SlidingWindow(timestep=100, windowlen=1100)
     state_dict = copy.deepcopy(base_state_dict)
     window(state_dict)
-    assert state_dict["X"].shape == (0, 3, 1100)
+    assert state_dict["X"][0].shape == (0, 3, 1100)
 
     # Fitting at the end
     window = SlidingWindow(timestep=100, windowlen=200)
     state_dict = copy.deepcopy(base_state_dict)
     window(state_dict)
-    assert state_dict["X"].shape == (9, 3, 200)
+    assert state_dict["X"][0].shape == (9, 3, 200)
     for i in range(9):
         assert (
-            state_dict["X"][i] == state_dict["waveforms"][:, i * 100 : 200 + i * 100]
+            state_dict["X"][0][i] == base_state_dict["X"][0][:, i * 100 : 200 + i * 100]
         ).all()
     assert (
-        state_dict["metadata"]["trace_p_arrival_sample"] == np.arange(500, -400, -100)
+        state_dict["X"][1]["trace_p_arrival_sample"] == np.arange(500, -400, -100)
     ).all()
 
     # Not fitting at the end
     window = SlidingWindow(timestep=101, windowlen=200)
     state_dict = copy.deepcopy(base_state_dict)
     window(state_dict)
-    assert state_dict["X"].shape == (8, 3, 200)
+    assert state_dict["X"][0].shape == (8, 3, 200)
     for i in range(8):
         assert (
-            state_dict["X"][i] == state_dict["waveforms"][:, i * 101 : 200 + i * 101]
+            state_dict["X"][0][i] == base_state_dict["X"][0][:, i * 101 : 200 + i * 101]
         ).all()
     assert (
-        state_dict["metadata"]["trace_p_arrival_sample"] == np.arange(500, -300, -101)
+        state_dict["X"][1]["trace_p_arrival_sample"] == np.arange(500, -300, -101)
     ).all()

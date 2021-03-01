@@ -4,9 +4,7 @@ import copy
 
 
 class FixedWindow:
-    def __init__(
-        self, p0=None, windowlen=None, strategy="fail", axis=-1, key=("waveforms", "X")
-    ):
+    def __init__(self, p0=None, windowlen=None, strategy="fail", axis=-1, key="X"):
         """
         A simple windower that returns fixed windows.
         In addition, the windower rewrites all metadata ending in "_sample" to point to the correct sample after window selection.
@@ -43,7 +41,11 @@ class FixedWindow:
     def __call__(self, state_dict, p0=None, windowlen=None):
         p0, windowlen = self._validate_parameters(p0, windowlen)
 
-        x = state_dict[self.key[0]]
+        x, metadata = state_dict[self.key[0]]
+
+        if self.key[0] != self.key[1]:
+            # Ensure metadata is not modified inplace unless input and output key are anyhow identical
+            metadata = copy.deepcopy(metadata)
 
         padding = None
         if x.shape[self.axis] < p0 + windowlen:
@@ -73,11 +75,11 @@ class FixedWindow:
         if padding is not None:
             window = np.concatenate([window, padding], axis=self.axis)
 
-        for key in state_dict["metadata"].keys():
+        for key in metadata.keys():
             if key.endswith("_sample"):
-                state_dict["metadata"][key] -= p0
+                metadata[key] -= p0
 
-        state_dict[self.key[1]] = window
+        state_dict[self.key[1]] = (window, metadata)
 
     def _validate_parameters(self, p0, windowlen):
         if p0 is None:
@@ -117,37 +119,37 @@ class SlidingWindow(FixedWindow):
         windowlen = self.windowlen
         timestep = self.timestep
 
-        n_windows = (
-            state_dict[self.key[0]].shape[self.axis] - windowlen
-        ) // timestep + 1
+        x, metadata = state_dict[self.key[0]]
+
+        if self.key[0] != self.key[1]:
+            # Ensure metadata is not modified inplace unless input and output key are anyhow identical
+            metadata = copy.deepcopy(metadata)
+
+        n_windows = (x.shape[self.axis] - windowlen) // timestep + 1
 
         if n_windows == 0:
-            target_shape = list(state_dict[self.key[0]].shape)
+            target_shape = list(x.shape)
             target_shape[self.axis] = windowlen
-            state_dict[self.key[1]] = np.zeros_like(
-                state_dict[self.key[0]], shape=[0] + target_shape
-            )
+            x_out = np.zeros_like(x, shape=[0] + target_shape)
+            state_dict[self.key[1]] = (x_out, metadata)
             return
 
         window_outputs = []
         window_metadatas = []
 
         for i in range(n_windows):
-            tmp_state_dict = {
-                self.key[0]: state_dict[self.key[0]].copy(),
-                "metadata": copy.deepcopy(state_dict["metadata"]),
-            }
+            tmp_state_dict = {self.key[0]: (x, copy.deepcopy(metadata))}
             super().__call__(tmp_state_dict, p0=i * timestep)
-            window_outputs.append(tmp_state_dict[self.key[1]])
-            window_metadatas.append(tmp_state_dict["metadata"])
+            window_outputs.append(tmp_state_dict[self.key[1]][0])
+            window_metadatas.append(tmp_state_dict[self.key[1]][1])
 
-        state_dict[self.key[1]] = np.stack(window_outputs, axis=0)
+        x_out = np.stack(window_outputs, axis=0)
         collected_metadata = {}
         for key in window_metadatas[0].keys():
             collected_metadata[key] = np.array(
                 [window_metadata[key] for window_metadata in window_metadatas]
             )
-        state_dict["metadata"] = collected_metadata
+        state_dict[self.key[1]] = (x_out, collected_metadata)
 
     def __str__(self):
         return f"SlidingWindow (windowlen={self.windowlen}, timestep={self.timestep})"
@@ -164,7 +166,6 @@ class Normalize:
     ):
         """
         A normalization augmentation that allows demeaning, detrending and amplitude normalization (in this order).
-        It will also cast the input array to float if it is an int type to enable the normalization actions.
         :param demean_axis: The axis (single axis or tuple) which should be jointly demeaned. None indicates no demeaning.
         :param detrend_axis: The axis along with detrending should be applied.
         :param amp_norm: The axis (single axis or tuple) which should be jointly amplitude normalized. None indicates no normalization.
@@ -190,16 +191,13 @@ class Normalize:
             )
 
     def __call__(self, state_dict):
-        x = state_dict[self.key[0]]
-        if x.dtype.char in np.typecodes["AllInteger"]:
-            # Cast int types to float to ensure all operations are mathematically possible
-            x = x.astype(float)
+        x, metadata = state_dict[self.key[0]]
 
         x = self._demean(x)
         x = self._detrend(x)
         x = self._amp_norm(x)
 
-        state_dict[self.key[1]] = x
+        state_dict[self.key[1]] = (x, metadata)
 
     def _demean(self, x):
         if self.demean_axis is not None:
@@ -253,7 +251,6 @@ class Filter:
         This doubles the order of the filter and makes the filter zero-phase.
         :param axis: Axis along which the filter is applied.
         :param key: The keys for reading from and writing to the state dict.
-        If key is a single string, the corresponding entry in state dict is modified.
         Otherwise, a 2-tuple is expected, with the first string indicating the key to read from and the second one the key to write to.
         """
         self.forward_backward = forward_backward
@@ -265,8 +262,8 @@ class Filter:
         self._filt_args = (N, Wn, btype, analog)
 
     def __call__(self, state_dict):
-        x = state_dict[self.key[0]]
-        sampling_rate = state_dict["metadata"]["trace_sampling_rate_hz"]
+        x, metadata = state_dict[self.key[0]]
+        sampling_rate = metadata["trace_sampling_rate_hz"]
 
         sos = scipy.signal.butter(*self._filt_args, output="sos", fs=sampling_rate)
         if self.forward_backward:
@@ -276,7 +273,7 @@ class Filter:
         else:
             x = scipy.signal.sosfilt(sos, x, axis=self.axis)
 
-        state_dict[self.key[1]] = x
+        state_dict[self.key[1]] = (x, metadata)
 
     def __str__(self):
         N, Wn, btype, analog = self._filt_args
@@ -292,8 +289,8 @@ class FilterKeys:
         Filters keys in the state dict.
         Can be used to remove keys from the output that can not be collated by pytorch or are not required anymore.
         Either included or excluded keys can be defined.
-        :param include:
-        :param exclude:
+        :param include: Only these keys will be present in the output.
+        :param exclude: All keys except these keys will be present in the output.
         """
         self.include = include
         self.exclude = exclude

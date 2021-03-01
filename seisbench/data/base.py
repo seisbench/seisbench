@@ -429,7 +429,7 @@ class WaveformDataset:
         e.g., p_pick_samples will still point to the right sample after this operation, even if the trace was resampled.
         :param idx: Idx of sample to return
         :param sampling_rate: Target sampling rate, overwrites sampling rate for dataset.
-        :return: Dict with the waveforms and the metadata of the sample.
+        :return: Tuple with the waveforms and the metadata of the sample.
         """
         metadata = self.metadata.iloc[idx].to_dict()
 
@@ -457,7 +457,7 @@ class WaveformDataset:
         sample_dimension = dimension_order.index("W")
         metadata["trace_npts"] = waveforms.shape[sample_dimension]
 
-        return {"waveforms": waveforms, "metadata": metadata}
+        return waveforms, metadata
 
     def get_waveforms(self, idx=None, split=None, mask=None, sampling_rate=None):
         """
