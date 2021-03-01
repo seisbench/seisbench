@@ -7,4 +7,5 @@ from .augmentation import (
     WindowAroundSample,
     SlidingWindow,
     RandomWindow,
+    ChangeDtype,
 )

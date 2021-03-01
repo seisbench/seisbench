@@ -353,6 +353,7 @@ class Filter:
         This doubles the order of the filter and makes the filter zero-phase.
         :param axis: Axis along which the filter is applied.
         :param key: The keys for reading from and writing to the state dict.
+        If key is a single string, the corresponding entry in state dict is modified.
         Otherwise, a 2-tuple is expected, with the first string indicating the key to read from and the second one the key to write to.
         """
         self.forward_backward = forward_backward
@@ -416,3 +417,31 @@ class FilterKeys:
             return f"Filter keys (excludes {', '.join(self.exclude)})"
         if self.include is not None:
             return f"Filter keys (includes {', '.join(self.include)})"
+
+
+class ChangeDtype:
+    def __init__(self, dtype, key="X"):
+        """
+        Copies the data while changing the data type to the provided one
+        :param dtype: Target data type
+        :param key: The keys for reading from and writing to the state dict.
+        If key is a single string, the corresponding entry in state dict is modified.
+        Otherwise, a 2-tuple is expected, with the first string indicating the key to read from and the second one the key to write to.
+        """
+        if isinstance(key, str):
+            self.key = (key, key)
+        else:
+            self.key = key
+        self.dtype = dtype
+
+    def __call__(self, state_dict):
+        x, metadata = state_dict[self.key[0]]
+
+        if self.key[0] != self.key[1]:
+            metadata = copy.deepcopy(metadata)
+
+        x = x.astype(self.dtype)
+        state_dict[self.key[1]] = (x, metadata)
+
+    def __str__(self):
+        return f"ChangeDtype (dtype={self.dtype}, key={self.key})"

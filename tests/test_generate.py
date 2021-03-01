@@ -6,6 +6,7 @@ from seisbench.generate import (
     FilterKeys,
     WindowAroundSample,
     RandomWindow,
+    ChangeDtype,
 )
 
 import numpy as np
@@ -439,3 +440,19 @@ def test_random_window():
         assert (state_dict["X"][0] == base_state_dict["X"][0][:, 205:605]).all()
         assert state_dict["X"][1]["trace_p_arrival_sample"] == 95
         assert state_dict["X"][1]["trace_s_arrival_sample"] == 495
+
+
+def test_change_dtype():
+    change = ChangeDtype(dtype=np.float64)
+    state_dict = {"X": (np.ones(10, dtype=np.float32), {"A": 1})}
+    change(state_dict)
+    assert state_dict["X"][0].dtype == np.float64
+
+    change = ChangeDtype(dtype=np.float64, key=("X", "X2"))
+    state_dict = {"X": (np.ones(10, dtype=np.float32), {"A": 1})}
+    change(state_dict)
+    assert state_dict["X"][0].dtype == np.float32
+    assert state_dict["X2"][0].dtype == np.float64
+    assert (
+        state_dict["X"][1] is not state_dict["X2"][1]
+    )  # Metadata was copied and not only a pointer was copies
