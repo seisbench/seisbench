@@ -155,6 +155,58 @@ class SlidingWindow(FixedWindow):
         return f"SlidingWindow (windowlen={self.windowlen}, timestep={self.timestep})"
 
 
+class WindowAroundSample(FixedWindow):
+    def __init__(self, metadata_keys, samples_before=0, selection="first", **kwargs):
+        """
+        Creates a window around a sample defined in the metadata.
+        :param metadata_keys: Metadata key or list of metadata keys to use for window selection.
+        The corresponding metadata entries are assumed to be in sample units.
+        The generator will fail if for a sample all values are NaN.
+        :param samples_before: The number of samples to include before the target sample.
+        :param selection: Selection strategy in case multiple metadata keys are provided and have non-NaN values.
+        Options are:
+        - "first": use the first available key
+        - "random": use uniform random selection among the keys
+        :param kwargs: Parameters passed to the init method of FixedWindow.
+        """
+        if isinstance(metadata_keys, str):
+            self.metadata_keys = [metadata_keys]
+        else:
+            self.metadata_keys = metadata_keys
+        self.samples_before = samples_before
+        self.selection = selection
+
+        if selection not in ["first", "random"]:
+            raise ValueError(f"Unknown selection strategy '{self.selection}'")
+
+        super().__init__(**kwargs)
+
+    def __call__(self, state_dict, windowlen=None):
+        _, metadata = state_dict[self.key[0]]
+        cand = [
+            metadata[key] for key in self.metadata_keys if not np.isnan(metadata[key])
+        ]
+
+        if len(cand) == 0:
+            raise ValueError("Found no possible candidate for window selection")
+
+        if self.selection == "first":
+            p0 = cand[0]
+        elif self.selection == "random":
+            p0 = np.random.choice(cand)
+        else:
+            raise ValueError(f"Unknown selection strategy '{self.selection}'")
+
+        p0 -= self.samples_before
+
+        super(WindowAroundSample, self).__call__(
+            state_dict, p0=int(p0), windowlen=windowlen
+        )
+
+    def __str__(self):
+        return f"WindowAroundSample (metadata_keys={self.metadata_keys}, samples_before={self.samples_before}, selection={self.selection})"
+
+
 class Normalize:
     def __init__(
         self,
@@ -170,8 +222,8 @@ class Normalize:
         :param detrend_axis: The axis along with detrending should be applied.
         :param amp_norm: The axis (single axis or tuple) which should be jointly amplitude normalized. None indicates no normalization.
         :param amp_norm_type: Type of amplitude normalization. Supported types:
-        - "peak" - division by the absolute peak of the trace
-        - "std" - division by the standard deviation of the trace
+        - "peak": division by the absolute peak of the trace
+        - "std": division by the standard deviation of the trace
         :param key: The keys for reading from and writing to the state dict.
         If key is a single string, the corresponding entry in state dict is modified.
         Otherwise, a 2-tuple is expected, with the first string indicating the key to read from and the second one the key to write to.

@@ -1,9 +1,17 @@
-from seisbench.generate import Normalize, Filter, FixedWindow, SlidingWindow, FilterKeys
+from seisbench.generate import (
+    Normalize,
+    Filter,
+    FixedWindow,
+    SlidingWindow,
+    FilterKeys,
+    WindowAroundSample,
+)
 
 import numpy as np
 import copy
 import scipy.signal
 import pytest
+from unittest.mock import patch
 
 
 def test_normalize():
@@ -299,3 +307,82 @@ def test_sliding_window():
     assert (
         state_dict["X"][1]["trace_p_arrival_sample"] == np.arange(500, -300, -101)
     ).all()
+
+
+def test_window_around_sample():
+    np.random.seed(42)
+    base_state_dict = {
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {"trace_p_arrival_sample": 300, "trace_s_arrival_sample": 700},
+        )
+    }
+
+    # Unknown selection strategy
+    with pytest.raises(ValueError):
+        WindowAroundSample("trace_p_arrival_sample", selection="unknown")
+
+    # Single key, rewritten to list
+    window = WindowAroundSample(
+        "trace_p_arrival_sample", samples_before=100, windowlen=200
+    )
+    assert window.metadata_keys == ["trace_p_arrival_sample"]
+    state_dict = copy.deepcopy(base_state_dict)
+    window(state_dict)
+    assert (state_dict["X"][0] == base_state_dict["X"][0][:, 200:400]).all()
+
+    # Two key, both valid, strategy first
+    window = WindowAroundSample(
+        ["trace_p_arrival_sample", "trace_s_arrival_sample"],
+        samples_before=100,
+        windowlen=200,
+        selection="first",
+    )
+    state_dict = copy.deepcopy(base_state_dict)
+    window(state_dict)
+    assert (state_dict["X"][0] == base_state_dict["X"][0][:, 200:400]).all()
+
+    # Two keys, both valid, strategy random
+    window = WindowAroundSample(
+        ["trace_p_arrival_sample", "trace_s_arrival_sample"],
+        samples_before=100,
+        windowlen=200,
+        selection="random",
+    )
+    with patch("numpy.random.choice") as choice:
+        state_dict = copy.deepcopy(base_state_dict)
+        choice.return_value = 300
+        window(state_dict)
+        assert (state_dict["X"][0] == base_state_dict["X"][0][:, 200:400]).all()
+        choice.assert_called_once_with([300, 700])
+
+        choice.reset_mock()
+        state_dict = copy.deepcopy(base_state_dict)
+        choice.return_value = 700
+        window(state_dict)
+        assert (state_dict["X"][0] == base_state_dict["X"][0][:, 600:800]).all()
+        choice.assert_called_once_with([300, 700])
+
+    # Two keys, one valid
+    window = WindowAroundSample(
+        ["trace_p_arrival_sample", "trace_s_arrival_sample"],
+        samples_before=100,
+        windowlen=200,
+    )
+    state_dict = copy.deepcopy(base_state_dict)
+    state_dict["X"][1]["trace_p_arrival_sample"] = np.nan
+    window(state_dict)
+    assert (state_dict["X"][0] == base_state_dict["X"][0][:, 600:800]).all()
+
+    # Two keys, none valid
+    window = WindowAroundSample(
+        ["trace_p_arrival_sample", "trace_s_arrival_sample"],
+        samples_before=100,
+        windowlen=200,
+        selection="first",
+    )
+    state_dict = copy.deepcopy(base_state_dict)
+    state_dict["X"][1]["trace_p_arrival_sample"] = np.nan
+    state_dict["X"][1]["trace_s_arrival_sample"] = np.nan
+    with pytest.raises(ValueError):
+        window(state_dict)

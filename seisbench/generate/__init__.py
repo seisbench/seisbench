@@ -1,2 +1,9 @@
 from .generator import GenericGenerator
-from .augmentation import SlidingWindow, Normalize, Filter, FixedWindow, FilterKeys
+from .augmentation import (
+    Normalize,
+    Filter,
+    FilterKeys,
+    FixedWindow,
+    WindowAroundSample,
+    SlidingWindow,
+)
