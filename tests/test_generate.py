@@ -5,6 +5,7 @@ from seisbench.generate import (
     SlidingWindow,
     FilterKeys,
     WindowAroundSample,
+    RandomWindow,
 )
 
 import numpy as np
@@ -386,3 +387,49 @@ def test_window_around_sample():
     state_dict["X"][1]["trace_s_arrival_sample"] = np.nan
     with pytest.raises(ValueError):
         window(state_dict)
+
+
+def test_random_window():
+    np.random.seed(42)
+    base_state_dict = {
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {"trace_p_arrival_sample": 300, "trace_s_arrival_sample": 700},
+        )
+    }
+
+    # Fails on low >= high
+    with pytest.raises(ValueError):
+        RandomWindow(500, 100)
+    with pytest.raises(ValueError):
+        RandomWindow(100, 100)
+
+    # Works for high - low == windowlen
+    RandomWindow(100, 500, windowlen=400)
+    # Fails on high - low < windowlen
+    with pytest.raises(ValueError):
+        RandomWindow(100, 500, windowlen=401)
+    # Fails on high < windowlen
+    with pytest.raises(ValueError):
+        RandomWindow(None, 500, windowlen=501)
+
+    # Works if trace aligns with right side
+    window = RandomWindow(600, None, windowlen=400)
+    state_dict = copy.deepcopy(base_state_dict)
+    window(state_dict)
+    # Fails if trace too short
+    with pytest.raises(ValueError):
+        window = RandomWindow(600, None, windowlen=401)
+        state_dict = copy.deepcopy(base_state_dict)
+        window(state_dict)
+
+    # Works as expected
+    with patch("numpy.random.randint") as randint:
+        window = RandomWindow(100, None, windowlen=400)
+        randint.return_value = 205
+        state_dict = copy.deepcopy(base_state_dict)
+        window(state_dict)
+        randint.assert_called_with(100, 601)
+        assert (state_dict["X"][0] == base_state_dict["X"][0][:, 205:605]).all()
+        assert state_dict["X"][1]["trace_p_arrival_sample"] == 95
+        assert state_dict["X"][1]["trace_s_arrival_sample"] == 495

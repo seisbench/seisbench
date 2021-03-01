@@ -207,6 +207,53 @@ class WindowAroundSample(FixedWindow):
         return f"WindowAroundSample (metadata_keys={self.metadata_keys}, samples_before={self.samples_before}, selection={self.selection})"
 
 
+class RandomWindow(FixedWindow):
+    def __init__(self, low=None, high=None, windowlen=None, **kwargs):
+        """
+        Selects a window within the range [low, high) randomly with a uniform distribution.
+        :param low: The lowest allowed index for the start sample.
+        The sample at this position can be included in the output.
+        :param high: The highest allowed index for the end.
+        The sample at position high can *not* be included in the output
+        :param kwargs: Parameters passed to the init method of FixedWindow.
+        """
+        self.low = low
+        self.high = high
+
+        if high is not None:
+            if low is None:
+                low = 0  # Temporary value for validity check that is not stored
+
+            if windowlen is not None:
+                if high - low < windowlen:
+                    raise ValueError(
+                        "Difference between low and high must be at least window length."
+                    )
+            elif low >= high:
+                raise ValueError("Low value needs to be smaller than high value.")
+
+        super().__init__(windowlen=windowlen, **kwargs)
+
+    def __call__(self, state_dict, windowlen=None):
+        x, _ = state_dict[self.key[0]]
+        _, windowlen = self._validate_parameters(0, windowlen)
+
+        low, high = self.low, self.high
+        if high is None:
+            high = x.shape[self.axis] - windowlen + 1
+        if low is None:
+            low = 0
+
+        if high < low:
+            raise ValueError("No possible candidates for random window selection.")
+
+        p0 = np.random.randint(low, high)
+        super().__call__(state_dict, p0=p0, windowlen=windowlen)
+
+    def __str__(self):
+        return f"RandomWindow (low={self.low}, high={self.high})"
+
+
 class Normalize:
     def __init__(
         self,

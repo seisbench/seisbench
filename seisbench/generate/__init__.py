@@ -6,4 +6,5 @@ from .augmentation import (
     FixedWindow,
     WindowAroundSample,
     SlidingWindow,
+    RandomWindow,
 )
