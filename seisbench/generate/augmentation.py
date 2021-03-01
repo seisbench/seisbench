@@ -261,6 +261,7 @@ class Normalize:
         detrend_axis=None,
         amp_norm_axis=None,
         amp_norm_type="peak",
+        eps=1e-10,
         key="X",
     ):
         """
@@ -271,6 +272,7 @@ class Normalize:
         :param amp_norm_type: Type of amplitude normalization. Supported types:
         - "peak": division by the absolute peak of the trace
         - "std": division by the standard deviation of the trace
+        :param eps: Epsilon value added in amplitude normalization to avoid division by zero
         :param key: The keys for reading from and writing to the state dict.
         If key is a single string, the corresponding entry in state dict is modified.
         Otherwise, a 2-tuple is expected, with the first string indicating the key to read from and the second one the key to write to.
@@ -279,6 +281,7 @@ class Normalize:
         self.detrend_axis = detrend_axis
         self.amp_norm_axis = amp_norm_axis
         self.amp_norm_type = amp_norm_type
+        self.eps = eps
         if isinstance(key, str):
             self.key = (key, key)
         else:
@@ -311,9 +314,9 @@ class Normalize:
     def _amp_norm(self, x):
         if self.amp_norm_axis is not None:
             if self.amp_norm_type == "peak":
-                x = x / np.amax(x, axis=self.amp_norm_axis, keepdims=True)
+                x = x / (np.amax(x, axis=self.amp_norm_axis, keepdims=True) + self.eps)
             elif self.amp_norm_type == "std":
-                x = x / np.std(x, axis=self.amp_norm_axis, keepdims=True)
+                x = x / (np.std(x, axis=self.amp_norm_axis, keepdims=True) + self.eps)
         return x
 
     def __str__(self):

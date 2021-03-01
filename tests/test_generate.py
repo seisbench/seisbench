@@ -98,6 +98,12 @@ def test_normalize():
     norm(state_dict)
     assert (state_dict["X"][0] == base_state_dict["X"][0]).all()
 
+    # No NaN when normalizing zeros
+    norm = Normalize(amp_norm_axis=-1, key=("X", "Y"))
+    state_dict = {"X": (np.zeros((3, 1000)), None)}
+    norm(state_dict)
+    assert not (np.isnan(state_dict["X"][0])).any()
+
     # Unknown normalization type
     with pytest.raises(ValueError):
         Normalize(amp_norm_type="Unknown normalization type")
