@@ -445,3 +445,37 @@ class ChangeDtype:
 
     def __str__(self):
         return f"ChangeDtype (dtype={self.dtype}, key={self.key})"
+
+
+class SupervisedLabel:
+    """
+    Supervised classification labels.
+    Performs simple checks for standard supervised classification labels.
+    :param y: Label.
+    :param label_type: The type of label either: 'multi_label', 'multi_class', 'binary'.
+    :param dim: Dimension over which label function will be computed.
+    """
+
+    def __init__(self, y, label_type, dim):
+        self.y = y
+        self.label_type = label_type
+        self.dim = dim
+
+        if label_type not in ("multi_label", "multi_class", "binary"):
+            raise ValueError(
+                f"Unrecognized supervised classification label type '{self.label_type}'."
+                f"Available types are: 'multi_label', 'multi_class', 'binary'."
+            )
+
+        self._check_labels()
+
+    def _check_labels(self):
+        if self.label_type == "multi_class":
+            if (self.y.sum(self.dim) > 1).any():
+                raise ValueError(
+                    f"More than one label provided. For multi_class problems, only one label can be provided per input."
+                )
+
+        if self.label_type == "binary":
+            if (self.y.sum(self.dim) > 1).any():
+                raise ValueError(f"Binary labels should lie within 0-1 range.")
