@@ -359,14 +359,20 @@ class WaveformDataset:
             ):
                 self._get_single_waveform(trace_name, chunk, context=context)
 
-    def filter(self, mask):
+    def filter(self, mask, inplace=True):
         """
-        Filters dataset inplace, e.g. by distance/magnitude/..., using a binary mask
+        Filters dataset, e.g. by distance/magnitude/..., using a binary mask.
+        Default behaviour is to perform inplace filtering, directly changing the
+        metadata and waveforms to only keep the results of the masking query.
+        Setting inplace equal to false will return a dataframe of the filtered metadata.
         Example usage dataset.filter(dataset["p_status"] == "manual")
         :return:
         """
-        self._metadata = self._metadata[mask]
-        self._evict_cache()
+        if inplace:
+            self._metadata = self._metadata[mask]
+            self._evict_cache()
+        else:
+            return self._metadata[mask]
 
     # NOTE: lat/lon columns are specified to enhance generalisability as naming convention may
     # change between datasets and users may also want to filter as a function of  recievers/sources
