@@ -81,6 +81,9 @@ class DummyDataset(BenchmarkDataset):
         metadata["source_magnitude_type"] = "MA"
         metadata["source_magnitude_type2"] = "ML"
 
+        splits = 60 * ["train"] + 10 * ["dev"] + 30 * ["test"]
+        metadata["split"] = splits
+
         writer.set_total(len(metadata))
         for _, row in metadata.iterrows():
             time = row["time"]
@@ -182,6 +185,9 @@ class ChunkedDummyDataset(BenchmarkDataset):
         metadata["station_elevation_m"] = inv[0][0].elevation
         metadata["source_magnitude_type"] = "MA"
         metadata["source_magnitude_type2"] = "ML"
+
+        splits = 60 * ["train"] + 10 * ["dev"] + 30 * ["test"]
+        metadata["split"] = splits
 
         writer.set_total(len(metadata))
         for _, row in metadata.iterrows():

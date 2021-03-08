@@ -452,3 +452,56 @@ def test_load_waveform_data_with_sampling_rate():
     # Checks that preloading waveform data works with sampling rate specified
     dummy = seisbench.data.DummyDataset(cache=True, lazyload=False, sampling_rate=20)
     assert len(dummy._waveform_cache) == len(dummy.metadata)
+
+
+def test_copy():
+    dummy1 = seisbench.data.DummyDataset(cache=True, lazyload=False)
+    dummy2 = dummy1.copy()
+
+    # Metadata and waveforms are copied by value
+    assert dummy1._waveform_cache is not dummy2._waveform_cache
+    assert dummy1._metadata is not dummy2._metadata
+
+    # Cache entries were copied by reference
+    assert len(dummy1._waveform_cache) == len(dummy2._waveform_cache)
+    for key in dummy1._waveform_cache.keys():
+        assert dummy1._waveform_cache[key] is dummy2._waveform_cache[key]
+
+
+def test_filter_inplace():
+    dummy = seisbench.data.DummyDataset(cache=True, lazyload=False)
+    org_len = len(dummy)
+    mask = np.zeros(len(dummy), dtype=bool)
+    mask[50:] = True
+
+    dummy2 = dummy.filter(mask, inplace=False)
+    # dummy was not modified inplace
+    assert len(dummy) == org_len
+    assert len(dummy._waveform_cache) == org_len
+    # dummy2 has correct length and had correct cache eviction
+    assert len(dummy2) == np.sum(mask)
+    assert len(dummy2._waveform_cache) == np.sum(mask)
+
+    dummy.filter(mask, inplace=True)
+    # dummy was modified inplace
+    assert len(dummy) == np.sum(mask)
+    assert len(dummy._waveform_cache) == np.sum(mask)
+
+
+def test_splitting():
+    dummy = seisbench.data.DummyDataset()
+
+    if "split" in dummy._metadata.columns:
+        dummy._metadata.drop(columns="split", inplace=True)
+
+    # Fails if no split is defined
+    with pytest.raises(ValueError):
+        dummy.train()
+
+    # Test splitting works
+    splits = 60 * ["train"] + 10 * ["dev"] + 30 * ["test"]
+    dummy._metadata["split"] = splits
+    train, dev, test = dummy.train_dev_test()
+    assert len(train) == 60
+    assert len(dev) == 10
+    assert len(test) == 30

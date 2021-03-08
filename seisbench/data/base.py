@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import os
 import inspect
 import scipy.signal
+import copy
 
 
 class WaveformDataset:
@@ -86,6 +87,22 @@ class WaveformDataset:
 
     def __str__(self):
         return f"{self._name} - {len(self)} traces"
+
+    def copy(self):
+        """
+        Create a copy of the data set. All attributes are copied by value, except waveform cache entries.
+        The cache entries are copied by reference, as the waveforms will take up most of the memory.
+        This should be fine for most use cases, because the cache entries should anyhow never be modified.
+        Note that the cache dict itself is not shared, such that cache evictions and
+        inserts in one of the data sets do not affect the other one.
+        :return: Copy of the dataset
+        """
+
+        other = copy.copy(self)
+        other._metadata = self._metadata.copy()
+        other._waveform_cache = copy.copy(self._waveform_cache)
+
+        return other
 
     @property
     def metadata(self):
@@ -364,7 +381,8 @@ class WaveformDataset:
         Filters dataset, e.g. by distance/magnitude/..., using a binary mask.
         Default behaviour is to perform inplace filtering, directly changing the
         metadata and waveforms to only keep the results of the masking query.
-        Setting inplace equal to false will return a dataframe of the filtered metadata.
+        Setting inplace equal to false will return a filtered copy of the data set.
+        For details on the copy operation see :py:func:`~WaveformDataset.copy`.
         Example usage dataset.filter(dataset["p_status"] == "manual")
         :return:
         """
@@ -372,7 +390,9 @@ class WaveformDataset:
             self._metadata = self._metadata[mask]
             self._evict_cache()
         else:
-            return self._metadata[mask]
+            other = self.copy()
+            other.filter(mask, inplace=True)
+            return other
 
     # NOTE: lat/lon columns are specified to enhance generalisability as naming convention may
     # change between datasets and users may also want to filter as a function of  recievers/sources
@@ -403,6 +423,48 @@ class WaveformDataset:
         self.region_filter(
             domain, lat_col="station_latitude_deg", lon_col="station_longitude_deg"
         )
+
+    def get_split(self, split):
+        """
+        Returns a dataset with the
+        :param split: Split name to return. Usually one of "train", "dev", "test"
+        :return: Dataset filtered to the requested split.
+        """
+        if "split" not in self.metadata.columns:
+            raise ValueError("Split requested but no split defined in metadata")
+
+        mask = (self.metadata["split"] == split).values
+
+        return self.filter(mask, inplace=False)
+
+    def train(self):
+        """
+        Convenience method for get_split("train")
+        :return: Training dataset
+        """
+        return self.get_split("train")
+
+    def dev(self):
+        """
+        Convenience method for get_split("dev")
+        :return: Development dataset
+        """
+        return self.get_split("dev")
+
+    def test(self):
+        """
+        Convenience method for get_split("test")
+        :return: Test dataset
+        """
+        return self.get_split("test")
+
+    def train_dev_test(self):
+        """
+        Convenience method for returning training, development and test set. Equal to:
+        >>> self.train(), self.dev(), self.test()
+        :return: Training dataset, development dataset, test dataset
+        """
+        return self.train(), self.dev(), self.test()
 
     def _evict_cache(self):
         """
@@ -465,34 +527,25 @@ class WaveformDataset:
 
         return waveforms, metadata
 
-    def get_waveforms(self, idx=None, split=None, mask=None, sampling_rate=None):
+    def get_waveforms(self, idx=None, mask=None, sampling_rate=None):
         """
         Collects waveforms and returns them as an array.
         :param idx: Idx or list of idx to obtain waveforms for
-        :param split: Split (train/dev/test) to obtain waveforms for
         :param mask: Binary mask on the metadata, indicating which traces should be returned. Can not be used jointly with split.
         :param sampling_rate: Target sampling rate, overwrites sampling rate for dataset
         :return: Waveform array with dimensions ordered according to dimension_order e.g. default 'NCW' (number of traces, number of components, record samples). If the number of components or record samples varies between different entries, all entries are padded to the maximum length.
         """
         squeeze = False
         if idx is not None:
-            if split is not None or mask is not None:
-                raise ValueError("Split and mask can not be used jointly with idx.")
+            if mask is not None:
+                raise ValueError("Mask can not be used jointly with idx.")
             if isinstance(idx, int):
                 idx = [idx]
                 squeeze = True
 
             load_metadata = self._metadata.iloc[idx]
         else:
-            if split is not None and mask is not None:
-                raise ValueError("Split and mask can not be used jointly.")
-
-            if split is not None and split not in ["train", "dev", "test"]:
-                raise ValueError("Split must be one of 'train', 'dev', 'test' or None.")
-
-            if split is not None:
-                load_metadata = self._metadata["split"] == split
-            elif mask is not None:
+            if mask is not None:
                 load_metadata = self._metadata[mask]
             else:
                 load_metadata = self._metadata
