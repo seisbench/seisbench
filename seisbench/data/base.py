@@ -801,8 +801,20 @@ class BenchmarkDataset(WaveformDataset, ABC):
         citation=None,
         force=False,
         wait_for_file=False,
+        repository_lookup=False,
         **kwargs,
     ):
+        """
+
+        :param chunks: List of chunks to download
+        :param citation: Citation for the dataset. Should be set in the inheriting class.
+        :param force: Passed to :py:func:`~seisbench.util.callback_if_uncached`
+        :param wait_for_file: Passed to :py:func:`~seisbench.util.callback_if_uncached`
+        :param repository_lookup: Whether the data set should be search in the remote repository or directly use the building download function.
+        Should be set in the inheriting class.
+        Only needs to be set to true if the dataset is available in a repository, e.g., the SeisBench repository, for direct download.
+        :param kwargs: Keyword arguments passed to WaveformDataset
+        """
         self._name = self._name_internal()
         self._citation = citation
         self.path.mkdir(exist_ok=True, parents=True)
@@ -815,15 +827,21 @@ class BenchmarkDataset(WaveformDataset, ABC):
 
             def download_callback(files):
                 chunk_str = f'Chunk "{chunk}" of ' if chunk != "" else ""
-                seisbench.logger.info(
-                    f"{chunk_str}Dataset {self.name} not in cache. Trying to download preprocessed version from SeisBench repository."
-                )
-                try:
-                    self._download_preprocessed(*files, chunk=chunk)
-                except ValueError:
+                seisbench.logger.info(f"{chunk_str}Dataset {self.name} not in cache.")
+                successful_repository_download = False
+                if repository_lookup:
                     seisbench.logger.info(
-                        f"{chunk_str}Dataset {self.name} not SeisBench repository. Starting download and conversion from source."
+                        "Trying to download preprocessed version from SeisBench repository."
                     )
+                    try:
+                        self._download_preprocessed(*files, chunk=chunk)
+                        successful_repository_download = True
+                    except ValueError:
+                        seisbench.logger.info(
+                            f"{chunk_str}Dataset {self.name} not SeisBench repository. Starting download and conversion from source."
+                        )
+
+                if not successful_repository_download:
                     if (
                         "chunk"
                         not in inspect.signature(self._download_dataset).parameters

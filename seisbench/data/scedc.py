@@ -14,7 +14,7 @@ class SCEDC(BenchmarkDataset):
             "SCEDC (2013): Southern California Earthquake Center."
             "doi:10.7909/C3WD3xH1"
         )
-        super().__init__(citation=citation, **kwargs)
+        super().__init__(citation=citation, repository_lookup=True, **kwargs)
 
     def _download_dataset(self, writer, chunk, basepath=None, **kwargs):
         download_instructions = "SCEDC dataset currently unavailable for download at this point in dev. process."
