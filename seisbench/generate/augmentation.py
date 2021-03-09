@@ -1,6 +1,8 @@
 import numpy as np
 import scipy.signal
 import copy
+from abc import abstractmethod, ABC
+from seisbench.util.ml import gaussian_pick
 
 
 class FixedWindow:
@@ -519,7 +521,7 @@ class ChangeDtype:
         return f"ChangeDtype (dtype={self.dtype}, key={self.key})"
 
 
-class SupervisedLabel:
+class SupervisedLabeller(ABC):
     """
     Supervised classification labels.
     Performs simple checks for standard supervised classification labels.
@@ -528,26 +530,62 @@ class SupervisedLabel:
     :param dim: Dimension over which label function will be computed.
     """
 
-    def __init__(self, y, label_type, dim):
-        self.y = y
+    def __init__(self, label_type, dim):
         self.label_type = label_type
         self.dim = dim
 
-        if label_type not in ("multi_label", "multi_class", "binary"):
+        if self.label_type not in ("multi_label", "multi_class", "binary"):
             raise ValueError(
                 f"Unrecognized supervised classification label type '{self.label_type}'."
                 f"Available types are: 'multi_label', 'multi_class', 'binary'."
             )
 
-        self._check_labels()
+    @abstractmethod
+    def label(self, X, metadata):
+        # to be overwritten in subclasses
+        return y
 
-    def _check_labels(self):
+    def _check_labels(self, y):
         if self.label_type == "multi_class":
-            if (self.y.sum(self.dim) > 1).any():
+            if (y.sum(self.dim) > 1).any():
                 raise ValueError(
                     f"More than one label provided. For multi_class problems, only one label can be provided per input."
                 )
 
         if self.label_type == "binary":
-            if (self.y.sum(self.dim) > 1).any():
+            if (y.sum(self.dim) > 1).any():
                 raise ValueError(f"Binary labels should lie within 0-1 range.")
+
+    def __call__(self, state_dict):
+        X, metadata = state_dict["X"]
+        y = self.label(X, metadata)
+        self._check_labels(y)
+        state_dict["y"] = (y, copy.deepcopy(metadata))
+
+
+import torch
+
+
+class PickLabeller(SupervisedLabeller):
+    """
+    Create supervised labels from picks.
+    """
+
+    def __init__(self, label_type="multi_label", dim=1):
+        super().__init__(label_type, dim)
+
+    def label(self, X, metadata):
+        # Put dummy label generation code in here for now but in practice, label will come from the
+        # metadata
+        x = X.shape[2]
+        a = torch.Tensor(gaussian_pick(onset=300, length=x, sigma=10))
+        b = torch.Tensor(gaussian_pick(onset=500, length=x, sigma=10))
+        c = np.zeros(x)
+        c[250:550] = 1
+        c = torch.Tensor(c)
+
+        # Create label
+        return torch.vstack([a, b, c])
+
+    def __str__(self):
+        return f"PickLabeller (label_type={self.label_type}, dim={self.dim})"

@@ -8,4 +8,6 @@ from .augmentation import (
     SlidingWindow,
     RandomWindow,
     ChangeDtype,
+    SupervisedLabeller,
+    PickLabeller,
 )
