@@ -10,15 +10,20 @@ class FixedWindow:
         In addition, the windower rewrites all metadata ending in "_sample" to point to the correct sample after window selection.
         Window start and length can be set either at initialization or separately in each call.
         The later is primarily intended for more complicated windowers inheriting from FixedWindow.
-        :param p0: Start position of the trace
+        :param p0: Start position of the trace.
+        If p0 is negative, this will be treated as identifying a sample before the start of the trace.
+        This is in contrast to standard list indexing with negative indices in Python, which counts items from the end of the list.
+        Negative p0 is not possible with the strategy "fail".
         :param windowlen: Window length
         :param strategy: Strategy to mitigate insufficient data. Options are:
         - "fail": Raises a ValueError
-        - "pad": Adds zero padding to the right of the window
-        - "move": Moves the start to the left to achieve sufficient trace length.
-        The resulting trace will be aligned to the input trace on the right end.
+        - "pad": Adds zero padding to the window
+        - "move": Moves the start to the closest possible position to achieve sufficient trace length.
+        The resulting trace will be aligned to the input trace on one of the ends,
+        depending if parts before (left aligned) or after the trace (right aligned) were requested.
         Will fail if total trace length is shorter than requested window length.
-        - "variable": Returns shorter length window, resulting in possibly varying window size
+        - "variable": Returns shorter length window, resulting in possibly varying window size.
+        Might return empty window if requested window is completely outside target range.
         :param axis: Axis along which the window selection should be performed
         :param key: The keys for reading from and writing to the state dict.
         If key is a single string, the corresponding entry in state dict is modified.
@@ -47,7 +52,20 @@ class FixedWindow:
             # Ensure metadata is not modified inplace unless input and output key are anyhow identical
             metadata = copy.deepcopy(metadata)
 
-        padding = None
+        left_padding = None
+        p0_padding_offset = 0
+        right_padding = None
+
+        if p0 < 0 and self.strategy == "pad":
+            left_pad_shape = list(x.shape)
+            p0_padding_offset = max(-p0, 0)
+            left_pad_shape[self.axis] = min(p0_padding_offset, windowlen)
+            left_padding = np.zeros_like(x, shape=left_pad_shape)
+
+            windowlen += p0  # Shorten target window len
+            windowlen = max(0, windowlen)  # Windowlen needs to be positive
+            p0 = 0
+
         if x.shape[self.axis] < p0 + windowlen:
             if self.strategy == "fail":
                 raise ValueError(
@@ -57,9 +75,10 @@ class FixedWindow:
                 p0 = min(p0, x.shape[self.axis])
                 old_windowlen = windowlen
                 windowlen = x.shape[self.axis] - p0
-                pad_shape = list(x.shape)
-                pad_shape[self.axis] = old_windowlen - windowlen
-                padding = np.zeros_like(x, shape=pad_shape)
+
+                right_pad_shape = list(x.shape)
+                right_pad_shape[self.axis] = old_windowlen - windowlen
+                right_padding = np.zeros_like(x, shape=right_pad_shape)
             elif self.strategy == "move":
                 p0 = x.shape[self.axis] - windowlen
                 if p0 < 0:
@@ -72,8 +91,13 @@ class FixedWindow:
 
         window = np.take(x, range(p0, p0 + windowlen), axis=self.axis)
 
-        if padding is not None:
-            window = np.concatenate([window, padding], axis=self.axis)
+        if left_padding is not None:
+            window = np.concatenate([left_padding, window], axis=self.axis)
+        if right_padding is not None:
+            window = np.concatenate([window, right_padding], axis=self.axis)
+
+        if left_padding is not None:
+            p0 -= p0_padding_offset
 
         for key in metadata.keys():
             if key.endswith("_sample"):
@@ -92,8 +116,16 @@ class FixedWindow:
         if windowlen is None:
             raise ValueError("Window length must be set in either init or call.")
 
-        if p0 < 0:
-            raise ValueError("Negative indexing is not supported.")
+        if p0 < 0 and self.strategy == "fail":
+            raise ValueError("Negative indexing is not supported for strategy fail.")
+
+        if p0 < 0 and self.strategy == "move":
+            p0 = 0
+
+        if p0 < 0 and self.strategy == "variable":
+            windowlen += p0  # Shorten target window len
+            windowlen = max(0, windowlen)  # Windowlen needs to be positive
+            p0 = 0
 
         return p0, windowlen
 
@@ -211,12 +243,19 @@ class RandomWindow(FixedWindow):
     def __init__(self, low=None, high=None, windowlen=None, **kwargs):
         """
         Selects a window within the range [low, high) randomly with a uniform distribution.
+        If there are no candidates fulfilling the criteria, the window selection depends on the strategy.
+        For "fail" or "move" a ValueError is raise.
+        For "variable" only the part between low and high is returned. If high < low, this part will be empty.
+        For "pad" the same as for "variable" will be returned, but padded to the correct length.
+        The padding will be added randomly to both sides.
         :param low: The lowest allowed index for the start sample.
         The sample at this position can be included in the output.
         :param high: The highest allowed index for the end.
         The sample at position high can *not* be included in the output
         :param kwargs: Parameters passed to the init method of FixedWindow.
         """
+        super().__init__(windowlen=windowlen, **kwargs)
+
         self.low = low
         self.high = high
 
@@ -225,14 +264,12 @@ class RandomWindow(FixedWindow):
                 low = 0  # Temporary value for validity check that is not stored
 
             if windowlen is not None:
-                if high - low < windowlen:
+                if high - low < windowlen and self.strategy in ["fail", "move"]:
                     raise ValueError(
                         "Difference between low and high must be at least window length."
                     )
             elif low >= high:
                 raise ValueError("Low value needs to be smaller than high value.")
-
-        super().__init__(windowlen=windowlen, **kwargs)
 
     def __call__(self, state_dict, windowlen=None):
         x, _ = state_dict[self.key[0]]
@@ -240,14 +277,49 @@ class RandomWindow(FixedWindow):
 
         low, high = self.low, self.high
         if high is None:
-            high = x.shape[self.axis] - windowlen + 1
+            high = x.shape[self.axis]
         if low is None:
             low = 0
 
-        if high < low:
-            raise ValueError("No possible candidates for random window selection.")
+        if low > high - windowlen:
+            if self.strategy == "pad":
+                # Get larger interval around target window with random location
+                # The parent FixedWindow will handle possible cases in which the waveform is too short
+                p0 = np.random.randint(high - windowlen, low + 1)
+                super().__call__(state_dict, p0=p0, windowlen=windowlen)
+                # Get output and overwrite padded range with zeros
+                x, metadata = state_dict[self.key[1]]
 
-        p0 = np.random.randint(low, high)
+                def fill_range_with_zeros(a, b):
+                    # Fills range of array with zeros
+                    # Automatically selects the correct axis
+                    axis = self.axis
+                    if axis < 0:
+                        axis = x.ndim + axis
+
+                    ind = np.arange(a, b, dtype=int)
+                    for _ in range(axis):
+                        ind = np.expand_dims(ind, 0)
+                    for _ in range(axis + 1, x.ndim):
+                        ind = np.expand_dims(ind, -1)
+
+                    np.put_along_axis(x, ind, 0, axis)
+
+                fill_range_with_zeros(0, low - p0)
+                fill_range_with_zeros(high - p0, x.shape[self.axis])
+                return
+
+            elif self.strategy == "variable":
+                # Return interval between high and low
+                p0 = low
+                windowlen = max(0, high - low)
+                super().__call__(state_dict, p0=p0, windowlen=windowlen)
+                return
+
+            else:
+                raise ValueError("No possible candidates for random window selection.")
+
+        p0 = np.random.randint(low, high - windowlen + 1)
         super().__call__(state_dict, p0=p0, windowlen=windowlen)
 
     def __str__(self):

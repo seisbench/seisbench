@@ -191,8 +191,8 @@ def test_fixed_window():
         window(state_dict)
     assert "Window length" in str(e)
 
-    # p0 negative
-    window = FixedWindow(p0=-1, windowlen=600)
+    # p0 negative, strategy fail
+    window = FixedWindow(p0=-1, windowlen=600, strategy="fail")
     state_dict = copy.deepcopy(base_state_dict)
     with pytest.raises(ValueError) as e:
         window(state_dict)
@@ -219,7 +219,7 @@ def test_fixed_window():
     assert (state_dict["X"][0][:, 100:] == 0).all()
     assert state_dict["X"][1]["trace_p_arrival_sample"] == -400
 
-    # Strategy "pad" out of bounds p0
+    # Strategy "pad" p0 > trace_length
     window = FixedWindow(p0=1100, windowlen=600, strategy="pad")
     state_dict = copy.deepcopy(base_state_dict)
     window(state_dict)
@@ -227,7 +227,34 @@ def test_fixed_window():
     assert (state_dict["X"][0] == 0).all()
     assert state_dict["X"][1]["trace_p_arrival_sample"] == -500
 
-    # Strategy "move"
+    # Strategy "pad" p0 < 0, p0 + windowlen > 0
+    window = FixedWindow(p0=-100, windowlen=600, strategy="pad")
+    state_dict = copy.deepcopy(base_state_dict)
+    window(state_dict)
+    assert state_dict["X"][0].shape == (3, 600)
+    assert (state_dict["X"][0][:, :100] == 0).all()
+    assert (state_dict["X"][0][:, 100:] == base_state_dict["X"][0][:, :500]).all()
+    assert state_dict["X"][1]["trace_p_arrival_sample"] == 600
+
+    # Strategy "pad" p0 < 0, p0 + windowlen < 0
+    window = FixedWindow(p0=-700, windowlen=600, strategy="pad")
+    state_dict = copy.deepcopy(base_state_dict)
+    window(state_dict)
+    assert state_dict["X"][0].shape == (3, 600)
+    assert (state_dict["X"][0] == 0).all()
+    assert state_dict["X"][1]["trace_p_arrival_sample"] == 1200
+
+    # Strategy "pad" p0 < 0, p0 + windowlen > trace_length
+    window = FixedWindow(p0=-100, windowlen=1200, strategy="pad")
+    state_dict = copy.deepcopy(base_state_dict)
+    window(state_dict)
+    assert state_dict["X"][0].shape == (3, 1200)
+    assert (state_dict["X"][0][:, :100] == 0).all()
+    assert (state_dict["X"][0][:, 100:-100] == base_state_dict["X"][0]).all()
+    assert (state_dict["X"][0][:, -100:] == 0).all()
+    assert state_dict["X"][1]["trace_p_arrival_sample"] == 600
+
+    # Strategy "move" - right aligned
     window = FixedWindow(p0=700, windowlen=600, strategy="move")
     state_dict = copy.deepcopy(base_state_dict)
     window(state_dict)
@@ -235,8 +262,23 @@ def test_fixed_window():
     assert (state_dict["X"][0] == base_state_dict["X"][0][:, -600:]).all()
     assert state_dict["X"][1]["trace_p_arrival_sample"] == 100
 
+    # Strategy "move" - left aligned
+    window = FixedWindow(p0=-100, windowlen=600, strategy="move")
+    state_dict = copy.deepcopy(base_state_dict)
+    window(state_dict)
+    assert state_dict["X"][0].shape == (3, 600)
+    assert (state_dict["X"][0] == base_state_dict["X"][0][:, :600]).all()
+    assert state_dict["X"][1]["trace_p_arrival_sample"] == 500
+
     # Strategy "move" - total size too short
     window = FixedWindow(p0=0, windowlen=1200, strategy="move")
+    state_dict = copy.deepcopy(base_state_dict)
+    with pytest.raises(ValueError) as e:
+        window(state_dict)
+    assert "Total trace length" in str(e)
+
+    # Strategy "move" - total size too short - p0 negative
+    window = FixedWindow(p0=-300, windowlen=1200, strategy="move")
     state_dict = copy.deepcopy(base_state_dict)
     with pytest.raises(ValueError) as e:
         window(state_dict)
@@ -249,6 +291,29 @@ def test_fixed_window():
     assert state_dict["X"][0].shape == (3, 300)
     assert (state_dict["X"][0] == base_state_dict["X"][0][:, -300:]).all()
     assert state_dict["X"][1]["trace_p_arrival_sample"] == -200
+
+    # Strategy "variable" - p0 negative - non-empty output
+    window = FixedWindow(p0=-100, windowlen=600, strategy="variable")
+    state_dict = copy.deepcopy(base_state_dict)
+    window(state_dict)
+    assert state_dict["X"][0].shape == (3, 500)
+    assert (state_dict["X"][0] == base_state_dict["X"][0][:, :500]).all()
+    assert state_dict["X"][1]["trace_p_arrival_sample"] == 500
+
+    # Strategy "variable" - p0 negative - empty output
+    window = FixedWindow(p0=-700, windowlen=600, strategy="variable")
+    state_dict = copy.deepcopy(base_state_dict)
+    window(state_dict)
+    assert state_dict["X"][0].shape == (3, 0)
+    assert state_dict["X"][1]["trace_p_arrival_sample"] == 500
+
+    # Strategy "variable" - p0 negative - p0 + windowlen > trace_length
+    window = FixedWindow(p0=-100, windowlen=1200, strategy="variable")
+    state_dict = copy.deepcopy(base_state_dict)
+    window(state_dict)
+    assert state_dict["X"][0].shape == (3, 1000)
+    assert (state_dict["X"][0] == base_state_dict["X"][0]).all()
+    assert state_dict["X"][1]["trace_p_arrival_sample"] == 500
 
 
 def test_filter_keys():
@@ -424,6 +489,7 @@ def test_random_window():
     window = RandomWindow(600, None, windowlen=400)
     state_dict = copy.deepcopy(base_state_dict)
     window(state_dict)
+
     # Fails if trace too short
     with pytest.raises(ValueError):
         window = RandomWindow(600, None, windowlen=401)
@@ -440,6 +506,30 @@ def test_random_window():
         assert (state_dict["X"][0] == base_state_dict["X"][0][:, 205:605]).all()
         assert state_dict["X"][1]["trace_p_arrival_sample"] == 95
         assert state_dict["X"][1]["trace_s_arrival_sample"] == 495
+
+    # Strategy pad, low > high - windowlen
+    with patch("numpy.random.randint") as randint:
+        window = RandomWindow(100, 300, windowlen=400, strategy="pad")
+        randint.return_value = -40
+        state_dict = copy.deepcopy(base_state_dict)
+        window(state_dict)
+        randint.assert_called_with(-100, 101)
+        assert (state_dict["X"][0][:, :140] == 0).all()
+        assert (
+            state_dict["X"][0][:, 140:340] == base_state_dict["X"][0][:, 100:300]
+        ).all()
+        assert (state_dict["X"][0][:, 340:] == 0).all()
+        assert state_dict["X"][1]["trace_p_arrival_sample"] == 340
+        assert state_dict["X"][1]["trace_s_arrival_sample"] == 740
+
+    # Strategy variable, low > high - windowlen
+    window = RandomWindow(100, 300, windowlen=400, strategy="variable")
+    state_dict = copy.deepcopy(base_state_dict)
+    window(state_dict)
+    assert state_dict["X"][0].shape == (3, 200)
+    assert (state_dict["X"][0] == base_state_dict["X"][0][:, 100:300]).all()
+    assert state_dict["X"][1]["trace_p_arrival_sample"] == 200
+    assert state_dict["X"][1]["trace_s_arrival_sample"] == 600
 
 
 def test_change_dtype():
