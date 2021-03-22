@@ -5,7 +5,11 @@ import numpy as np
 def gaussian_pick(onset, length, sigma):
     """
     Create probabilistic representation of pick in timeseries.
-    Gaussian(onset, sigma).
+    PDF function given by:
+
+    .. math::
+        \mathcal{N}(\mu,\,\sigma^{2})
+
     :param onset: The nearest sample to pick onset
     :param length: The length of the trace timeseries in samples
     :param sigma: The variance of the Gaussian distribution in samples
@@ -23,15 +27,16 @@ def soft_assign_crossentropy(
     Compute Negative-Log-Likelihood for multiple classes (Categorical-Cross-Entropy).
     This is just the soft-assignment version of torch.nn.CrossEntropyLoss().
 
-    Expects inputs in the form  (minibatch, C) or (minibatch, C, d_1, d_2, ..., d_K)
-    with K > 1 for the K-dimensional case.
+    Expects inputs in the form :math:`(minibatch, C)` or
+    :math:`(minibatch, C, d_1, d_2, ..., d_K)`
+    with :math:`K \geq 1` for the `K`-dimensional case.
 
     :param y_true: Ground truth labels for all classes across n-samples (N, C, ...)
     :param y_pred: Predicted probabilities (N, C, ...)
     :param from_logits: Flag for whether tensor logits (no softmax already applied)
     :param reduction: Apply reducion function across batch dim - available ops = ('none', 'mean', 'sum')
     :param eps: Clipping output precision, range [eps, 1 - eps]. Improves float numerical stability
-    :return loss: NLL of softmax(C), averaged across all samples
+    :return loss: NLL of :math:`Softmax(C)`, averaged across all samples
     """
     if len(y_pred.size()) < 2:
         raise ValueError(

@@ -75,15 +75,16 @@ def callback_if_uncached(
     Please note that the callback is executed if *at least one* file is not cached.
     If one of the files does not exists, but file.partial does, the behaviour depends on force and wait_for_file.
 
-    WARNING: While making concurrent callbacks unlikely, they can still happen, if the function is called twice in short time,
-    i.e., the second starts before the first created a .partial file.
+    .. warning::
+        While making concurrent callbacks unlikely, they can still happen, if the function is called twice in short time,
+        i.e., the second starts before the first created a .partial file.
+
     :param files: A list of files to check.
-    :param callback: A callback, taking one parameter, a list of target file names.
-    Will be called if a file is missing.
-    The callback will be given the same parameter as provided in files, just with files renamed to file.partial.
-    The function will move the files afterwards, but will ignore empty files.
+    :param callback: A callback, taking one parameter, a list of target file names. Will be called if a file is missing.
+        The callback will be given the same parameter as provided in files, just with files renamed to file.partial.
+        The function will move the files afterwards, but will ignore empty files.
     :param force: If true, and not all files exist, ignore and remove all partial files and execute callback.
-    Only use this parameter if no other instance of callback_if_uncached is currently requesting the same file.
+        Only use this parameter if no other instance of callback_if_uncached is currently requesting the same file.
     :param wait_for_file: If true, not all files exist, but partial files exist, sleep until files exists or no partial files exist.
     :param test_interval: Sleep interval for wait_for_file.
     :return: None

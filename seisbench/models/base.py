@@ -13,6 +13,13 @@ import numpy as np
 
 
 class SeisBenchModel(nn.Module):
+    """
+    Base SeisBench model interface for processing waveforms.
+
+    :param citation: Citation reference, defaults to None.
+    :type citation: str, optional
+    """
+
     def __init__(self, citation=None):
         super().__init__()
         self._citation = citation
@@ -57,6 +64,18 @@ class SeisBenchModel(nn.Module):
 
     @classmethod
     def from_pretrained(cls, name, force=False, wait_for_file=False):
+        """
+        Load pretrained model with weights.
+
+        :param name: Model name prefix.
+        :type name: str
+        :param force: Force execution of download callback, defaults to False
+        :type force: bool, optional
+        :param wait_for_file: Whether to wait on partially downloaded files, defaults to False
+        :type wait_for_file: bool, optional
+        :return: PyTorch model instance
+        :rtype: torch.nn.Module
+        """
         weight_path, metadata_path = cls._pretrained_path(name)
 
         def download_weights_callback(weight_path):
@@ -114,9 +133,15 @@ class WaveformModel(SeisBenchModel, ABC):
     Abstract interface for models processing waveforms.
     Additionally implements functions commonly required to apply models to waveforms.
     Class does not inherit from SeisBenchModel to allow implementation of non-DL models with this interface.
+
+    :param component_order: Specify component order (e.g. ['ZNE']), defaults to None
+    :type component_order: list, optional
+    :param args:
+    :param kwargs:
     """
 
     def __init__(self, component_order=None, *args, **kwargs):
+
         super().__init__(*args, **kwargs)
 
         if component_order is None:
@@ -134,8 +159,10 @@ class WaveformModel(SeisBenchModel, ABC):
     @abstractmethod
     def annotate(self, stream, *args, **kwargs):
         """
-        Annotates a stream
+        Annotates a stream.
+
         :param stream: Obspy stream to annotate
+        :type stream: obspy.core.Stream
         :param args:
         :param kwargs:
         :return: Obspy stream of annotations
@@ -145,11 +172,13 @@ class WaveformModel(SeisBenchModel, ABC):
     @abstractmethod
     def classify(self, stream, *args, **kwargs):
         """
-        Classifies the stream. As there are no
+        Classifies the stream.
+
         :param stream: Obspy stream to classify
+        :type stream: obspy.core.Stream
         :param args:
         :param kwargs:
-        :return: A classification for the full stream, e.g., signal/noise or source magnitude
+        :return: A classification for the full stream, e.g., signal/noise or source magnitude.
         """
         pass
 
@@ -161,6 +190,14 @@ class WaveformModel(SeisBenchModel, ABC):
 
     @staticmethod
     def resample(stream, sampling_rate):
+        """
+        Perform inplace resampling of stream to a given sampling rate.
+
+        :param stream: Input stream
+        :type stream: obspy.core.Stream
+        :param sampling_rate: Sampling rate (sps) to resample to
+        :type sampling_rate: int
+        """
         for trace in stream:
             if trace.stats.sampling_rate == sampling_rate:
                 return
@@ -169,8 +206,17 @@ class WaveformModel(SeisBenchModel, ABC):
             else:
                 trace.resample(sampling_rate)
 
+    # TODO: unit test static method
     @staticmethod
     def groups_stream_by_instrument(stream):
+        """
+        Perform instrument-based grouping of input stream.
+
+        :param stream: Input stream
+        :type stream: obspy.core.Stream
+        :return: List of traces grouped by instrument.
+        :rtype: list
+        """
         groups = defaultdict(list)
         for trace in stream:
             groups[trace.id[:-1]].append(trace)
@@ -180,9 +226,12 @@ class WaveformModel(SeisBenchModel, ABC):
     @staticmethod
     def has_mismatching_records(stream):
         """
-        Detects if for any id the stream contains overlapping traces that do not match
-        :param stream:
-        :return:
+        Detects if for any id the stream contains overlapping traces that do not match.
+
+        :param stream: Input stream
+        :type stream: obspy.core.Stream
+        :return: Flag whether there are mismatching records
+        :rtype: bool
         """
         stream.merge(-1)  # Ensures overlapping matching traces are merged
 
@@ -210,17 +259,19 @@ class WaveformModel(SeisBenchModel, ABC):
 
     def stream_to_arrays(self, stream, strict=True):
         """
-        Converts streams into a list of start times and numpy arrays
+        Converts streams into a list of start times and numpy arrays.
         Assumes:
-        - all traces in the stream are from the same instrument and only differ in the components
-        - no overlapping traces of the same component exist
-        - all traces have the same sampling rate
-        :param stream:
-        :param component_order:
-        :param strict: If true, only annotate if recordings for all components are available, otherwise impute missing
-        data with zeros.
-        :return: times: Start times for each array
-        :return: data: Arrays with waveforms
+
+        - All traces in the stream are from the same instrument and only differ in the components
+        - No overlapping traces of the same component exist
+        - All traces have the same sampling rate
+
+        :param stream: Input stream
+        :type stream: obspy.core.Stream
+        :param strict: If true, only annotate if recordings for all components are available, otherwise impute missing data with zeros.
+        :type strict: bool, default True
+        :return: output_times: Start times for each array
+        :return: output_data: Arrays with waveforms
         """
         seqnum = 0  # Obspy raises an error when trying to compare traces. The seqnum hack guarantees that no two tuples reach comparison of the traces.
         if len(stream) == 0:
