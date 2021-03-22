@@ -458,7 +458,8 @@ class WaveformDataset:
 
     def get_split(self, split):
         """
-        Returns a dataset with the
+        Returns a dataset with the requested split.
+
         :param split: Split name to return. Usually one of "train", "dev", "test"
         :return: Dataset filtered to the requested split.
         """
@@ -471,21 +472,24 @@ class WaveformDataset:
 
     def train(self):
         """
-        Convenience method for get_split("train")
+        Convenience method for get_split("train").
+
         :return: Training dataset
         """
         return self.get_split("train")
 
     def dev(self):
         """
-        Convenience method for get_split("dev")
+        Convenience method for get_split("dev").
+
         :return: Development dataset
         """
         return self.get_split("dev")
 
     def test(self):
         """
-        Convenience method for get_split("test")
+        Convenience method for get_split("test").
+
         :return: Test dataset
         """
         return self.get_split("test")
@@ -493,7 +497,9 @@ class WaveformDataset:
     def train_dev_test(self):
         """
         Convenience method for returning training, development and test set. Equal to:
+
         >>> self.train(), self.dev(), self.test()
+
         :return: Training dataset, development dataset, test dataset
         """
         return self.train(), self.dev(), self.test()
