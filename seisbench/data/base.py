@@ -18,12 +18,32 @@ class WaveformDataset:
     This class is the base class for waveform datasets.
 
     Description for chunked data sets:
+
     As data sets can become too large to handle, one can chunk datasets.
     Instead of one metadata.csv and one waveforms.hdf5 file, a chunked data set consists of multiple chunks.
     Each chunk has one metadata{chunk}.csv and waveforms{chunk}.hdf5 file.
+
     Optionally, but recommended, a chunks file can be added to the dataset, which lists all chunk identifiers seperated by linebreaks.
     If no chunks file is available, chunks are derived from the file names.
     The data_format needs to be specified in each chunk and needs to be consistent across chunks.
+
+    :param path: Path to dataset.
+    :type path: pathlib.Path
+    :param name: Dataset name, default is None.
+    :type name: str, optional
+    :param lazyload: Pre-loading of waveforms, defaults to true.
+    :type lazyload: bool, optional
+    :param dimension_order: Dimension order e.g. 'CHW', if not specified will be assumed from config file, defaults to None.
+    :type dimension_order: str, optional
+    :param component_order: Component order e.g. 'ZNE', if not specified will be assumed from config file, defaults to None.
+    :type component_order: str, optional
+    :param sampling_rate: Common sampling rate of waveforms in dataset, sampling rate can also be specified as a metadata column if not common across dataset.
+    :type sampling_rate: int, optional
+    :param cache: Flag whether dataset is stored in cache, defaults to false.
+    :type cache: bool, optional
+    :param chunks: Speicfy particular chunk prefixes to load, defaults to None.
+    :type chunks: list, optional
+    :param kwargs:
     """
 
     def __init__(
@@ -196,12 +216,15 @@ class WaveformDataset:
 
     def _unify_sampling_rate(self, eps=1e-4):
         """
-        The sampling rate can be specified in three ways:
+        Unify sampling rate to common base. Operation is performed inplace. The sampling rate can be specified in three ways:
         - as trace_sampling_rate_hz in the metadata
         - as trace_dt_s in the metadata
         - as sampling_rate in the data format group, indicating identical sampling rate for all traces
         This function writes the sampling rate into trace_sampling_rate_hz in the metadata for unified access in the later processing.
         If the sampling rate is specified in multiple ways and inconsistencies are detected, a warning is logged.
+
+        :param eps: floating precision, defaults to 1e-4.
+        :type eps: float, optional
         :return: None
         """
         if "trace_sampling_rate_hz" in self.metadata.columns:
@@ -350,7 +373,6 @@ class WaveformDataset:
     def _load_waveform_data(self):
         """
         Loads waveform data from hdf5 file into cache
-        :return:
         """
         chunks, metadata_paths, waveforms_path = self._chunks_with_paths()
         with LoadingContext(chunks, waveforms_path) as context:
@@ -361,9 +383,17 @@ class WaveformDataset:
 
     def filter(self, mask):
         """
-        Filters dataset inplace, e.g. by distance/magnitude/..., using a binary mask
-        Example usage dataset.filter(dataset["p_status"] == "manual")
-        :return:
+        Filters dataset inplace, e.g. by distance/magnitude/..., using a binary mask.
+
+        :param mask: Boolean mask to apple to metadata.
+        :type mask: masked-array
+
+        Example usage:
+
+        .. code:: python
+
+            dataset.filter(dataset["p_status"] == "manual")
+
         """
         self._metadata = self._metadata[mask]
         self._evict_cache()
@@ -374,6 +404,7 @@ class WaveformDataset:
         """
         In place filtering of dataset based on predefined region or geometry.
         See also convenience functions region_filter_[source|receiver]
+
         :param domain: The domain filter
         :type domain: obspy.core.fdsn.mass_downloader.domain:
         :param lat_col: Name of latitude coordinate column
@@ -401,6 +432,7 @@ class WaveformDataset:
     def _evict_cache(self):
         """
         Remove all traces from cache that do not have any reference in metadata anymore
+
         :return:
         """
         existing_keys = set(self._metadata["trace_name"])
@@ -427,6 +459,7 @@ class WaveformDataset:
         Returns both waveforms and metadata of a traces.
         Adjusts all metadata traces with sampling rate dependent values to the correct sampling rate,
         e.g., p_pick_samples will still point to the right sample after this operation, even if the trace was resampled.
+
         :param idx: Idx of sample to return
         :param sampling_rate: Target sampling rate, overwrites sampling rate for dataset.
         :return: Dict with the waveforms and the metadata of the sample.
@@ -462,6 +495,7 @@ class WaveformDataset:
     def get_waveforms(self, idx=None, split=None, mask=None, sampling_rate=None):
         """
         Collects waveforms and returns them as an array.
+
         :param idx: Idx or list of idx to obtain waveforms for
         :param split: Split (train/dev/test) to obtain waveforms for
         :param mask: Binary mask on the metadata, indicating which traces should be returned. Can not be used jointly with split.
@@ -601,10 +635,13 @@ class WaveformDataset:
     def plot_map(self, res="110m", connections=False, **kwargs):
         """
         Plots the dataset onto a map using the Mercator projection. Requires a cartopy installation.
-        :param res: Resolution for cartopy features
-        :param connections: If true, plots lines connecting sources and stations
-        :param kwargs: Plotting kwargs that will be passed to matplotlib plot. Args need to be prefixed with 'sta_', 'ev_' and 'conn_' to address stations, events or connections.
-        :return: A figure handle for the created figure
+
+        :param res: Resolution for cartopy features, defaults to 110m.
+        :type res: str, optional
+        :param connections: If true, plots lines connecting sources and stations. Defaults to false.
+        :type connections: bool, optional
+        :param kwargs: Plotting kwargs that will be passed to matplotlib plot. Args need to be prefixed with `sta_`, `ev_` and `conn_` to address stations, events or connections.
+        :return: A figure handle for the created figure.
         """
         fig = plt.figure(figsize=(15, 10))
         try:
@@ -868,6 +905,7 @@ class BenchmarkDataset(WaveformDataset, ABC):
         """
         Download and convert the dataset to the standard seisbench format.
         The metadata must contain at least the columns 'trace_name' and 'split'.
+
         :param writer: A WaveformDataWriter instance
         :param chunk: The chunk to be downloaded. Can be ignored if unchunked data set is created.
         :param kwargs:

@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="10.546344mm"
+   height="10.546344mm"
+   viewBox="0 0 10.546344 10.546344"
+   version="1.1"
+   id="svg4555"
+   inkscape:version="0.92.4 (5da689c313, 2019-01-14)"
+   sodipodi:docname="seisbench_logo_mini.svg">
+  <defs
+     id="defs4549">
+    <meshgradient
+       inkscape:collect="always"
+       id="meshgradient5120"
+       gradientUnits="userSpaceOnUse"
+       x="22.117659"
+       y="141.01263">
+      <meshrow
+         id="meshrow5134">
+        <meshpatch
+           id="meshpatch5136">
+          <stop
+             path="c 3.86887,0  7.73775,0  11.6066,0"
+             style="stop-color:#ffffff;stop-opacity:1"
+             id="stop5138" />
+          <stop
+             path="c 0,3.86887  0,7.73775  0,11.6066"
+             style="stop-color:#ff4949;stop-opacity:1"
+             id="stop5140" />
+          <stop
+             path="c -3.86887,0  -7.73775,0  -11.6066,0"
+             style="stop-color:#ffffff;stop-opacity:1"
+             id="stop5142" />
+          <stop
+             path="c 14.9406,-9.65024  0,-7.73775  0,-11.6066"
+             style="stop-color:#ff4949;stop-opacity:1"
+             id="stop5144" />
+        </meshpatch>
+      </meshrow>
+    </meshgradient>
+    <meshgradient
+       inkscape:collect="always"
+       id="meshgradient9282"
+       gradientUnits="userSpaceOnUse"
+       x="22.117659"
+       y="141.01263">
+      <meshrow
+         id="meshrow9294">
+        <meshpatch
+           id="meshpatch9292">
+          <stop
+             id="stop9284"
+             style="stop-color:#ffffff;stop-opacity:1"
+             path="c 3.86887,0  7.73775,0  11.6066,0" />
+          <stop
+             id="stop9286"
+             style="stop-color:#ff4949;stop-opacity:1"
+             path="c 0,3.86887  0,7.73775  0,11.6066" />
+          <stop
+             id="stop9288"
+             style="stop-color:#ffffff;stop-opacity:1"
+             path="c -3.86887,0  -7.73775,0  -11.6066,0" />
+          <stop
+             id="stop9290"
+             style="stop-color:#ff4949;stop-opacity:1"
+             path="c 14.9406,-9.65024  0,-7.73775  0,-11.6066" />
+        </meshpatch>
+      </meshrow>
+    </meshgradient>
+  </defs>
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageopacity="0.0"
+     inkscape:pageshadow="2"
+     inkscape:zoom="22.4"
+     inkscape:cx="16.990472"
+     inkscape:cy="15.544056"
+     inkscape:document-units="mm"
+     inkscape:current-layer="g9280"
+     showgrid="false"
+     fit-margin-top="0"
+     fit-margin-left="0"
+     fit-margin-right="0"
+     fit-margin-bottom="0"
+     inkscape:window-width="2880"
+     inkscape:window-height="1541"
+     inkscape:window-x="2869"
+     inkscape:window-y="-11"
+     inkscape:window-maximized="1" />
+  <metadata
+     id="metadata4552">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(-77.847652,-82.454786)">
+    <g
+       id="g859"
+       transform="matrix(2.0572108,0,0,2.0572108,40.514963,-200.00447)"
+       inkscape:export-filename="C:\Users\jwool\Documents\Liverpool\AutoPicking\seisbench\docs\_static\seisbench_logo.png"
+       inkscape:export-xdpi="300"
+       inkscape:export-ydpi="300"
+       style="fill:url(#meshgradient5120);fill-opacity:1">
+      <g
+         id="g9280"
+         style="fill:url(#meshgradient9282)"
+         transform="matrix(0.43561087,0,0,0.43561087,11.68878,78.938461)">
+        <circle
+           r="3.3594508"
+           style="opacity:1;fill:#ffffff;fill-opacity:1;stroke:#000000;stroke-width:0.09376186;stroke-miterlimit:8;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
+           id="path830"
+           cx="20.710499"
+           cy="139.86531"
+           inkscape:export-xdpi="300"
+           inkscape:export-ydpi="300" />
+        <path
+           style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:0.16032043;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1.0"
+           d="m 18.001117,139.81225 h 1.504685 l 0.405108,-0.77163 0.0096,1.54327 0.877733,-2.29561 -0.0096,3.15405 0.935605,-2.81647 -0.01929,2.45959 0.906669,-1.72653 v 0.51121 h 0.733052"
+           id="path832-2"
+           inkscape:connector-curvature="0"
+           inkscape:export-xdpi="300"
+           inkscape:export-ydpi="300" />
+      </g>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="101.27625mm"
+   height="57.85371mm"
+   viewBox="0 0 101.27625 57.853712"
+   version="1.1"
+   id="svg9873"
+   inkscape:version="0.92.4 (5da689c313, 2019-01-14)"
+   sodipodi:docname="dataset_format.svg">
+  <defs
+     id="defs9867" />
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageopacity="0.0"
+     inkscape:pageshadow="2"
+     inkscape:zoom="0.98994949"
+     inkscape:cx="5.9774148"
+     inkscape:cy="132.55722"
+     inkscape:document-units="mm"
+     inkscape:current-layer="layer1"
+     showgrid="false"
+     fit-margin-top="0"
+     fit-margin-left="0"
+     fit-margin-right="0"
+     fit-margin-bottom="0"
+     inkscape:window-width="1920"
+     inkscape:window-height="1000"
+     inkscape:window-x="-11"
+     inkscape:window-y="-11"
+     inkscape:window-maximized="1" />
+  <metadata
+     id="metadata9870">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(-53.785701,-54.749427)">
+    <rect
+       style="opacity:1;fill:#ffeeee;fill-opacity:1;stroke:#000000;stroke-width:0.51475662;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
+       id="rect10418"
+       width="46.695782"
+       height="20.969864"
+       x="82.746841"
+       y="55.006805"
+       ry="5.6207886" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:6.05315638px;line-height:1.25;font-family:Arial;-inkscape-font-specification:Arial;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.15132891"
+       x="105.95877"
+       y="63.876476"
+       id="text10422"><tspan
+         sodipodi:role="line"
+         id="tspan10420"
+         x="106.79817"
+         y="63.876476"
+         style="text-align:center;text-anchor:middle;stroke-width:0.15132891">SeisBench </tspan><tspan
+         sodipodi:role="line"
+         x="105.95877"
+         y="71.442924"
+         style="text-align:center;text-anchor:middle;stroke-width:0.15132891"
+         id="tspan10424">Dataset</tspan></text>
+    <rect
+       style="opacity:1;fill:#ffeeee;fill-opacity:1;stroke:#000000;stroke-width:0.51475662;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
+       id="rect10418-4"
+       width="44.556274"
+       height="20.009068"
+       x="54.043079"
+       y="91.924141"
+       ry="5.3632555" />
+    <rect
+       style="opacity:1;fill:#ffeeee;fill-opacity:1;stroke:#000000;stroke-width:0.51475662;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
+       id="rect10418-4-0"
+       width="44.556274"
+       height="20.009068"
+       x="110.2483"
+       y="92.336693"
+       ry="5.3632555" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:5.6496129px;line-height:1.25;font-family:Arial;-inkscape-font-specification:Arial;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.15132891"
+       x="76.157173"
+       y="104.05969"
+       id="text10422-5"><tspan
+         sodipodi:role="line"
+         x="76.157173"
+         y="104.05969"
+         style="font-size:5.6496129px;text-align:center;text-anchor:middle;stroke-width:0.15132891"
+         id="tspan10424-6">metadata.csv</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:5.6496129px;line-height:1.25;font-family:Arial;-inkscape-font-specification:Arial;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.15132891"
+       x="132.64023"
+       y="104.50771"
+       id="text10422-5-7"><tspan
+         sodipodi:role="line"
+         x="132.64023"
+         y="104.50771"
+         style="font-size:5.6496129px;text-align:center;text-anchor:middle;stroke-width:0.15132891"
+         id="tspan10424-6-9">waveforms.hdf5</tspan></text>
+    <path
+       style="fill:none;stroke:#000000;stroke-width:0.60912871;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       d="m 76.417976,91.649662 v -6.802505 h 28.815104 v -8.636889 8.636889 l 28.58581,-0.07643 v 7.413966"
+       id="path10497"
+       inkscape:connector-curvature="0"
+       sodipodi:nodetypes="ccccccc" />
+  </g>
+</svg>

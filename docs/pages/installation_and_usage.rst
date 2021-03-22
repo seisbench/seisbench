@@ -1,11 +1,7 @@
+.. _installation_and_usage:
+
 Installation and usage
 ======================
-
-
-Installing from source
-----------------------
-The models are extendable...
-
 
 Installing via pip
 ------------------
