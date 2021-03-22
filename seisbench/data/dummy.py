@@ -19,7 +19,7 @@ class DummyDataset(BenchmarkDataset):
             "Magnitude scales, attenuation models and feature matrices for the IPOC catalog. "
             "V. 1.0. GFZ Data Services. https://doi.org/10.5880/GFZ.2.4.2019.004"
         )
-        super().__init__(citation=citation, **kwargs)
+        super().__init__(citation=citation, repository_lookup=True, **kwargs)
 
     def _download_dataset(self, writer, trace_length=60, **kwargs):
         sampling_rate = 20
@@ -81,6 +81,9 @@ class DummyDataset(BenchmarkDataset):
         metadata["source_magnitude_type"] = "MA"
         metadata["source_magnitude_type2"] = "ML"
 
+        splits = 60 * ["train"] + 10 * ["dev"] + 30 * ["test"]
+        metadata["split"] = splits
+
         writer.set_total(len(metadata))
         for _, row in metadata.iterrows():
             time = row["time"]
@@ -116,7 +119,7 @@ class ChunkedDummyDataset(BenchmarkDataset):
             with open(chunks_path, "w") as f:
                 f.write("0\n1\n")
 
-        super().__init__(citation=citation, **kwargs)
+        super().__init__(citation=citation, repository_lookup=True, **kwargs)
 
     def _download_dataset(self, writer, chunk, trace_length=60, **kwargs):
         sampling_rate = 20
@@ -182,6 +185,9 @@ class ChunkedDummyDataset(BenchmarkDataset):
         metadata["station_elevation_m"] = inv[0][0].elevation
         metadata["source_magnitude_type"] = "MA"
         metadata["source_magnitude_type2"] = "ML"
+
+        splits = 60 * ["train"] + 10 * ["dev"] + 30 * ["test"]
+        metadata["split"] = splits
 
         writer.set_total(len(metadata))
         for _, row in metadata.iterrows():

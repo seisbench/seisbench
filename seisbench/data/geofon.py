@@ -20,7 +20,7 @@ class GEOFON(BenchmarkDataset):
     def __init__(self, **kwargs):
         # TODO: Add citation
         citation = "GEOFON dataset"
-        super().__init__(citation=citation, **kwargs)
+        super().__init__(citation=citation, repository_lookup=True, **kwargs)
 
     def _download_dataset(
         self, writer, basepath=None, time_before=60, time_after=60, **kwargs

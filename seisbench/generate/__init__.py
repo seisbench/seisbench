@@ -1,2 +1,13 @@
 from .generator import GenericGenerator
-from .augmentation import SlidingWindow, Normalize, Demean
+from .augmentation import (
+    Normalize,
+    Filter,
+    FilterKeys,
+    FixedWindow,
+    WindowAroundSample,
+    SlidingWindow,
+    RandomWindow,
+    ChangeDtype,
+    SupervisedLabeller,
+    PickLabeller,
+)

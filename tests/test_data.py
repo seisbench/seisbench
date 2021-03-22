@@ -422,37 +422,86 @@ def test_get_sample():
     dummy._metadata["trace_dt_s"] = 1 / dummy._metadata["trace_sampling_rate_hz"]
 
     # No resampling
-    state_dict = dummy.get_sample(0, sampling_rate=None)
-    assert state_dict["waveforms"].shape[-1] == state_dict["metadata"]["trace_npts"]
-    assert state_dict["metadata"]["trace_sampling_rate_hz"] == base_sampling_rate
-    assert state_dict["metadata"]["trace_dt_s"] == 1.0 / base_sampling_rate
-    assert state_dict["metadata"]["trace_p_arrival_sample"] == base_arrival_sample
+    waveforms, metadata = dummy.get_sample(0, sampling_rate=None)
+    assert waveforms.shape[-1] == metadata["trace_npts"]
+    assert metadata["trace_sampling_rate_hz"] == base_sampling_rate
+    assert metadata["trace_dt_s"] == 1.0 / base_sampling_rate
+    assert metadata["trace_p_arrival_sample"] == base_arrival_sample
 
     # Different resampling rates
     for factor in [0.1, 0.5, 1, 2, 5]:
-        state_dict = dummy.get_sample(0, sampling_rate=base_sampling_rate * factor)
-        assert state_dict["waveforms"].shape[-1] == state_dict["metadata"]["trace_npts"]
-        assert (
-            state_dict["metadata"]["trace_sampling_rate_hz"]
-            == base_sampling_rate * factor
+        waveforms, metadata = dummy.get_sample(
+            0, sampling_rate=base_sampling_rate * factor
         )
-        assert state_dict["metadata"]["trace_dt_s"] == 1.0 / (
-            base_sampling_rate * factor
-        )
-        assert (
-            state_dict["metadata"]["trace_p_arrival_sample"]
-            == base_arrival_sample * factor
-        )
+        assert waveforms.shape[-1] == metadata["trace_npts"]
+        assert metadata["trace_sampling_rate_hz"] == base_sampling_rate * factor
+        assert metadata["trace_dt_s"] == 1.0 / (base_sampling_rate * factor)
+        assert metadata["trace_p_arrival_sample"] == base_arrival_sample * factor
 
     # Sampling rate defined globally for data set
     factor = 0.5
     dummy.sampling_rate = base_sampling_rate * factor
-    state_dict = dummy.get_sample(0)
-    assert state_dict["waveforms"].shape[-1] == state_dict["metadata"]["trace_npts"]
-    assert (
-        state_dict["metadata"]["trace_sampling_rate_hz"] == base_sampling_rate * factor
-    )
-    assert state_dict["metadata"]["trace_dt_s"] == 1.0 / (base_sampling_rate * factor)
-    assert (
-        state_dict["metadata"]["trace_p_arrival_sample"] == base_arrival_sample * factor
-    )
+    waveforms, metadata = dummy.get_sample(0)
+    assert waveforms.shape[-1] == metadata["trace_npts"]
+    assert metadata["trace_sampling_rate_hz"] == base_sampling_rate * factor
+    assert metadata["trace_dt_s"] == 1.0 / (base_sampling_rate * factor)
+    assert metadata["trace_p_arrival_sample"] == base_arrival_sample * factor
+
+
+def test_load_waveform_data_with_sampling_rate():
+    # Checks that preloading waveform data works with sampling rate specified
+    dummy = seisbench.data.DummyDataset(cache=True, lazyload=False, sampling_rate=20)
+    assert len(dummy._waveform_cache) == len(dummy.metadata)
+
+
+def test_copy():
+    dummy1 = seisbench.data.DummyDataset(cache=True, lazyload=False)
+    dummy2 = dummy1.copy()
+
+    # Metadata and waveforms are copied by value
+    assert dummy1._waveform_cache is not dummy2._waveform_cache
+    assert dummy1._metadata is not dummy2._metadata
+
+    # Cache entries were copied by reference
+    assert len(dummy1._waveform_cache) == len(dummy2._waveform_cache)
+    for key in dummy1._waveform_cache.keys():
+        assert dummy1._waveform_cache[key] is dummy2._waveform_cache[key]
+
+
+def test_filter_inplace():
+    dummy = seisbench.data.DummyDataset(cache=True, lazyload=False)
+    org_len = len(dummy)
+    mask = np.zeros(len(dummy), dtype=bool)
+    mask[50:] = True
+
+    dummy2 = dummy.filter(mask, inplace=False)
+    # dummy was not modified inplace
+    assert len(dummy) == org_len
+    assert len(dummy._waveform_cache) == org_len
+    # dummy2 has correct length and had correct cache eviction
+    assert len(dummy2) == np.sum(mask)
+    assert len(dummy2._waveform_cache) == np.sum(mask)
+
+    dummy.filter(mask, inplace=True)
+    # dummy was modified inplace
+    assert len(dummy) == np.sum(mask)
+    assert len(dummy._waveform_cache) == np.sum(mask)
+
+
+def test_splitting():
+    dummy = seisbench.data.DummyDataset()
+
+    if "split" in dummy._metadata.columns:
+        dummy._metadata.drop(columns="split", inplace=True)
+
+    # Fails if no split is defined
+    with pytest.raises(ValueError):
+        dummy.train()
+
+    # Test splitting works
+    splits = 60 * ["train"] + 10 * ["dev"] + 30 * ["test"]
+    dummy._metadata["split"] = splits
+    train, dev, test = dummy.train_dev_test()
+    assert len(train) == 60
+    assert len(dev) == 10
+    assert len(test) == 30
