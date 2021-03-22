@@ -9,6 +9,25 @@ seisbench.data
     :undoc-members:
     :show-inheritance:
 
+.. automodule:: seisbench.data.dummy
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. automodule:: seisbench.data.geofon
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. automodule:: seisbench.data.scedc
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. automodule:: seisbench.data.stead
+    :members:
+    :undoc-members:
+    :show-inheritance:
 
 seisbench.generate
 -----------------------------------
