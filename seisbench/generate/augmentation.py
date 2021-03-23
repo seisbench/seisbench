@@ -6,31 +6,35 @@ from seisbench.util.ml import gaussian_pick
 
 
 class FixedWindow:
-    def __init__(self, p0=None, windowlen=None, strategy="fail", axis=-1, key="X"):
-        """
-        A simple windower that returns fixed windows.
-        In addition, the windower rewrites all metadata ending in "_sample" to point to the correct sample after window selection.
-        Window start and length can be set either at initialization or separately in each call.
-        The later is primarily intended for more complicated windowers inheriting from FixedWindow.
-        :param p0: Start position of the trace.
-        If p0 is negative, this will be treated as identifying a sample before the start of the trace.
-        This is in contrast to standard list indexing with negative indices in Python, which counts items from the end of the list.
-        Negative p0 is not possible with the strategy "fail".
-        :param windowlen: Window length
-        :param strategy: Strategy to mitigate insufficient data. Options are:
+    """
+    A simple windower that returns fixed windows.
+    In addition, the windower rewrites all metadata ending in "_sample" to point to the correct sample after window selection.
+    Window start and length can be set either at initialization or separately in each call.
+    The later is primarily intended for more complicated windowers inheriting from FixedWindow.
+    :param p0: Start position of the trace.
+    If p0 is negative, this will be treated as identifying a sample before the start of the trace.
+    This is in contrast to standard list indexing with negative indices in Python, which counts items from the end of the list.
+    Negative p0 is not possible with the strategy "fail".
+
+    :param windowlen: Window length
+    :param strategy: Strategy to mitigate insufficient data. Options are:
+
         - "fail": Raises a ValueError
         - "pad": Adds zero padding to the window
         - "move": Moves the start to the closest possible position to achieve sufficient trace length.
-        The resulting trace will be aligned to the input trace on one of the ends,
-        depending if parts before (left aligned) or after the trace (right aligned) were requested.
-        Will fail if total trace length is shorter than requested window length.
+          The resulting trace will be aligned to the input trace on one of the ends,
+          depending if parts before (left aligned) or after the trace (right aligned) were requested.
+          Will fail if total trace length is shorter than requested window length.
         - "variable": Returns shorter length window, resulting in possibly varying window size.
-        Might return empty window if requested window is completely outside target range.
-        :param axis: Axis along which the window selection should be performed
-        :param key: The keys for reading from and writing to the state dict.
+          Might return empty window if requested window is completely outside target range.
+
+    :param axis: Axis along which the window selection should be performed
+    :param key: The keys for reading from and writing to the state dict.
         If key is a single string, the corresponding entry in state dict is modified.
         Otherwise, a 2-tuple is expected, with the first string indicating the key to read from and the second one the key to write to.
-        """
+    """
+
+    def __init__(self, p0=None, windowlen=None, strategy="fail", axis=-1, key="X"):
         self.p0 = p0
         self.windowlen = windowlen
         self.strategy = strategy
@@ -136,16 +140,19 @@ class FixedWindow:
 
 
 class SlidingWindow(FixedWindow):
+    """
+    Generates sliding windows and adds a new axis for windows as first axis.
+    All metadata entries are converted to arrays of entries.
+    Only complete windows are returned and a possible remainder is truncated.
+    In particular, if the available data is shorter than the number of windows, an empty array is returned.
+
+    :param timestep: Difference between two consecutive window starts
+    :param windowlen: Length of the output window
+    :param kwargs: All kwargs are passed directly to FixedWindow
+
+    """
+
     def __init__(self, timestep, windowlen, **kwargs):
-        """
-        Generates sliding windows and adds a new axis for windows as first axis.
-        All metadata entries are converted to arrays of entries.
-        Only complete windows are returned and a possible remainder is truncated.
-        In particular, if the available data is shorter than the number of windows, an empty array is returned.
-        :param timestep: Difference between two consecutive window starts
-        :param windowlen: Length of the output window
-        :param kwargs: All kwargs are passed directly to FixedWindow
-        """
         self.timestep = timestep
         super().__init__(windowlen=windowlen, **kwargs)
 
@@ -190,19 +197,22 @@ class SlidingWindow(FixedWindow):
 
 
 class WindowAroundSample(FixedWindow):
-    def __init__(self, metadata_keys, samples_before=0, selection="first", **kwargs):
-        """
-        Creates a window around a sample defined in the metadata.
-        :param metadata_keys: Metadata key or list of metadata keys to use for window selection.
-        The corresponding metadata entries are assumed to be in sample units.
-        The generator will fail if for a sample all values are NaN.
-        :param samples_before: The number of samples to include before the target sample.
-        :param selection: Selection strategy in case multiple metadata keys are provided and have non-NaN values.
+    """
+    Creates a window around a sample defined in the metadata.
+    :param metadata_keys: Metadata key or list of metadata keys to use for window selection.
+    The corresponding metadata entries are assumed to be in sample units.
+    The generator will fail if for a sample all values are NaN.
+
+    :param samples_before: The number of samples to include before the target sample.
+    :param selection: Selection strategy in case multiple metadata keys are provided and have non-NaN values.
         Options are:
         - "first": use the first available key
         - "random": use uniform random selection among the keys
-        :param kwargs: Parameters passed to the init method of FixedWindow.
-        """
+    :param kwargs: Parameters passed to the init method of FixedWindow.
+
+    """
+
+    def __init__(self, metadata_keys, samples_before=0, selection="first", **kwargs):
         if isinstance(metadata_keys, str):
             self.metadata_keys = [metadata_keys]
         else:
@@ -242,20 +252,22 @@ class WindowAroundSample(FixedWindow):
 
 
 class RandomWindow(FixedWindow):
-    def __init__(self, low=None, high=None, windowlen=None, **kwargs):
-        """
-        Selects a window within the range [low, high) randomly with a uniform distribution.
-        If there are no candidates fulfilling the criteria, the window selection depends on the strategy.
-        For "fail" or "move" a ValueError is raise.
-        For "variable" only the part between low and high is returned. If high < low, this part will be empty.
-        For "pad" the same as for "variable" will be returned, but padded to the correct length.
-        The padding will be added randomly to both sides.
-        :param low: The lowest allowed index for the start sample.
+    """
+    Selects a window within the range [low, high) randomly with a uniform distribution.
+    If there are no candidates fulfilling the criteria, the window selection depends on the strategy.
+    For "fail" or "move" a ValueError is raise.
+    For "variable" only the part between low and high is returned. If high < low, this part will be empty.
+    For "pad" the same as for "variable" will be returned, but padded to the correct length.
+    The padding will be added randomly to both sides.
+
+    :param low: The lowest allowed index for the start sample.
         The sample at this position can be included in the output.
-        :param high: The highest allowed index for the end.
+    :param high: The highest allowed index for the end.
         The sample at position high can *not* be included in the output
-        :param kwargs: Parameters passed to the init method of FixedWindow.
-        """
+    :param kwargs: Parameters passed to the init method of FixedWindow.
+    """
+
+    def __init__(self, low=None, high=None, windowlen=None, **kwargs):
         super().__init__(windowlen=windowlen, **kwargs)
 
         self.low = low
@@ -329,6 +341,21 @@ class RandomWindow(FixedWindow):
 
 
 class Normalize:
+    """
+    A normalization augmentation that allows demeaning, detrending and amplitude normalization (in this order).
+
+    :param demean_axis: The axis (single axis or tuple) which should be jointly demeaned. None indicates no demeaning.
+    :param detrend_axis: The axis along with detrending should be applied.
+    :param amp_norm: The axis (single axis or tuple) which should be jointly amplitude normalized. None indicates no normalization.
+    :param amp_norm_type: Type of amplitude normalization. Supported types:
+        - "peak": division by the absolute peak of the trace
+        - "std": division by the standard deviation of the trace
+    :param eps: Epsilon value added in amplitude normalization to avoid division by zero
+    :param key: The keys for reading from and writing to the state dict.
+        If key is a single string, the corresponding entry in state dict is modified.
+        Otherwise, a 2-tuple is expected, with the first string indicating the key to read from and the second one the key to write to.
+    """
+
     def __init__(
         self,
         demean_axis=None,
@@ -338,19 +365,6 @@ class Normalize:
         eps=1e-10,
         key="X",
     ):
-        """
-        A normalization augmentation that allows demeaning, detrending and amplitude normalization (in this order).
-        :param demean_axis: The axis (single axis or tuple) which should be jointly demeaned. None indicates no demeaning.
-        :param detrend_axis: The axis along with detrending should be applied.
-        :param amp_norm: The axis (single axis or tuple) which should be jointly amplitude normalized. None indicates no normalization.
-        :param amp_norm_type: Type of amplitude normalization. Supported types:
-        - "peak": division by the absolute peak of the trace
-        - "std": division by the standard deviation of the trace
-        :param eps: Epsilon value added in amplitude normalization to avoid division by zero
-        :param key: The keys for reading from and writing to the state dict.
-        If key is a single string, the corresponding entry in state dict is modified.
-        Otherwise, a 2-tuple is expected, with the first string indicating the key to read from and the second one the key to write to.
-        """
         self.demean_axis = demean_axis
         self.detrend_axis = detrend_axis
         self.amp_norm_axis = amp_norm_axis
@@ -413,23 +427,26 @@ class Normalize:
 
 
 class Filter:
+    """
+    Implements a filter augmentation, closely based on scipy.signal.butter.
+    Please refer to the scipy documentation for more detailed description of the parameters
+
+    :param N: Filter order
+    :param Wn: The critical frequency or frequencies
+    :param btype: The filter type: ‘lowpass’, ‘highpass’, ‘bandpass’, ‘bandstop’
+    :param analog: When True, return an analog filter, otherwise a digital filter is returned.
+    :param forward_backward: If true, filters once forward and once backward.
+        This doubles the order of the filter and makes the filter zero-phase.
+    :param axis: Axis along which the filter is applied.
+    :param key: The keys for reading from and writing to the state dict.
+        If key is a single string, the corresponding entry in state dict is modified.
+        Otherwise, a 2-tuple is expected, with the first string indicating the key to read from and the second one the key to write to.
+
+    """
+
     def __init__(
         self, N, Wn, btype="low", analog=False, forward_backward=False, axis=-1, key="X"
     ):
-        """
-        Implements a filter augmentation, closely based on scipy.signal.butter.
-        Please refer to the scipy documentation for more detailed description of the parameters
-        :param N: Filter order
-        :param Wn: The critical frequency or frequencies
-        :param btype: The filter type: ‘lowpass’, ‘highpass’, ‘bandpass’, ‘bandstop’
-        :param analog: When True, return an analog filter, otherwise a digital filter is returned.
-        :param forward_backward: If true, filters once forward and once backward.
-        This doubles the order of the filter and makes the filter zero-phase.
-        :param axis: Axis along which the filter is applied.
-        :param key: The keys for reading from and writing to the state dict.
-        If key is a single string, the corresponding entry in state dict is modified.
-        Otherwise, a 2-tuple is expected, with the first string indicating the key to read from and the second one the key to write to.
-        """
         self.forward_backward = forward_backward
         self.axis = axis
         if isinstance(key, str):
@@ -461,14 +478,17 @@ class Filter:
 
 
 class FilterKeys:
+    """
+    Filters keys in the state dict.
+    Can be used to remove keys from the output that can not be collated by pytorch or are not required anymore.
+    Either included or excluded keys can be defined.
+
+    :param include: Only these keys will be present in the output.
+    :param exclude: All keys except these keys will be present in the output.
+
+    """
+
     def __init__(self, include=None, exclude=None):
-        """
-        Filters keys in the state dict.
-        Can be used to remove keys from the output that can not be collated by pytorch or are not required anymore.
-        Either included or excluded keys can be defined.
-        :param include: Only these keys will be present in the output.
-        :param exclude: All keys except these keys will be present in the output.
-        """
         self.include = include
         self.exclude = exclude
 
@@ -494,14 +514,16 @@ class FilterKeys:
 
 
 class ChangeDtype:
-    def __init__(self, dtype, key="X"):
-        """
-        Copies the data while changing the data type to the provided one
-        :param dtype: Target data type
-        :param key: The keys for reading from and writing to the state dict.
+    """
+    Copies the data while changing the data type to the provided one
+
+    :param dtype: Target data type
+    :param key: The keys for reading from and writing to the state dict.
         If key is a single string, the corresponding entry in state dict is modified.
         Otherwise, a 2-tuple is expected, with the first string indicating the key to read from and the second one the key to write to.
-        """
+    """
+
+    def __init__(self, dtype, key="X"):
         if isinstance(key, str):
             self.key = (key, key)
         else:
@@ -525,9 +547,11 @@ class SupervisedLabeller(ABC):
     """
     Supervised classification labels.
     Performs simple checks for standard supervised classification labels.
+
     :param y: Label.
     :param label_type: The type of label either: 'multi_label', 'multi_class', 'binary'.
     :param dim: Dimension over which label function will be computed.
+
     """
 
     def __init__(self, label_type, dim):
