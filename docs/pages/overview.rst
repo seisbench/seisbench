@@ -17,7 +17,7 @@ general comparison functionality.
 
 Getting started
 -------------------------------------
-Here is a quick run-through of the general structure of the SeisBench API. A :py:class:`seisbench.data.base.WaveformDataset` 
+Here is a quick run-through of the general structure of the SeisBench API. A :py:class:`~seisbench.data.base.WaveformDataset`
 reads the metadata provided in metadata.csv as a ``pandas.DataFrame``. The metadata can then be easily
 filtered based on users' preferences, and the corresponding raw waveforms obtained. 
 
@@ -41,7 +41,7 @@ please see the :ref:`installation<installation_and_usage>` page.
     print(waveforms.shape)
 
 The example uses one of the pre-compiled :ref:`benchmark datasets<benchmark_datasets>`. These are downloadable, publicly available waveform datasets for machine learning in seismology. 
-Any :py:class:`seisbench.data.base.BenchmarkDataset` are cached on download and placed in the configurable cache path ``SEISBENCH_CACHE_ROOT`` which by default is :code:`$HOME/.seisbench`.
+Any :py:class:`~seisbench.data.base.BenchmarkDataset` are cached on download and placed in the configurable cache path ``SEISBENCH_CACHE_ROOT`` which by default is :code:`$HOME/.seisbench`.
 
 Metadata naming schema
 -----------------------
