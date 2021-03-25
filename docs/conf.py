@@ -41,6 +41,8 @@ templates_path = ["_templates"]
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
+# Do not add module names in the doc to hide the internal package structure of SeisBench
+add_module_names = False
 
 # -- Options for HTML output -------------------------------------------------
 

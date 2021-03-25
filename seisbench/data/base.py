@@ -29,10 +29,12 @@ class WaveformDataset:
     The data_format needs to be specified in each chunk and needs to be consistent across chunks.
 
     :param path: Path to dataset.
-    :type path: pathlib.Path
+    :type path: pathlib.Path, str
     :param name: Dataset name, default is None.
     :type name: str, optional
-    :param lazyload: Pre-loading of waveforms, defaults to true.
+    :param lazyload: If true, only loads waveforms once they are first requested.
+                     Defaults to true.
+                     If cache==false, lazyload will always be set to true.
     :type lazyload: bool, optional
     :param dimension_order: Dimension order e.g. 'CHW', if not specified will be assumed from config file, defaults to None.
     :type dimension_order: str, optional
@@ -40,9 +42,11 @@ class WaveformDataset:
     :type component_order: str, optional
     :param sampling_rate: Common sampling rate of waveforms in dataset, sampling rate can also be specified as a metadata column if not common across dataset.
     :type sampling_rate: int, optional
-    :param cache: Flag whether dataset is stored in cache, defaults to false.
+    :param cache: If true, each waveform is loaded only once from disk and then stored in memory.
+                  Default to false to reduce memory consumption.
+                  By setting lazyload to false, the cache can automatically be populated on initialization of the dataset.
     :type cache: bool, optional
-    :param chunks: Speicfy particular chunk prefixes to load, defaults to None.
+    :param chunks: Specify particular chunk prefixes to load, defaults to None.
     :type chunks: list, optional
     :param kwargs:
     """
@@ -115,6 +119,7 @@ class WaveformDataset:
         This should be fine for most use cases, because the cache entries should anyhow never be modified.
         Note that the cache dict itself is not shared, such that cache evictions and
         inserts in one of the data sets do not affect the other one.
+
         :return: Copy of the dataset
         """
 

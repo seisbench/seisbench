@@ -32,16 +32,15 @@ seisbench.data
 seisbench.generate
 -----------------------------------
 
-.. automodule:: seisbench.generate.augmentation
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
 .. automodule:: seisbench.generate.generator
     :members:
     :undoc-members:
     :show-inheritance:
 
+.. automodule:: seisbench.generate.augmentation
+    :members:
+    :undoc-members:
+    :show-inheritance:
 
 seisbench.models
 -----------------------------------
