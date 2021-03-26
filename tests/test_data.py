@@ -281,7 +281,7 @@ def test_download_dataset_chunk_arg(tmp_path):
     """
     Test ensures that datasets with/out chunking are accordingly called with/out chunks in _download_dataset
     """
-    seisbench.remote_root = tmp_path  # Ensure test does not modify SeisBench cache
+    seisbench.cache_root = tmp_path  # Ensure test does not modify SeisBench cache
 
     class MockDataset(seisbench.data.BenchmarkDataset):
         def __init__(self, **kwargs):
