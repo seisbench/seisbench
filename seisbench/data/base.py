@@ -896,16 +896,21 @@ class BenchmarkDataset(WaveformDataset, ABC):
                         )
 
                 if not successful_repository_download:
-                    if (
-                        "chunk"
-                        not in inspect.signature(self._download_dataset).parameters
-                        and chunk != ""
-                    ):
+                    download_dataset_parameters = inspect.signature(
+                        self._download_dataset
+                    ).parameters
+                    if "chunk" not in download_dataset_parameters and chunk != "":
                         raise ValueError(
                             "Data set seems not to support chunking, but chunk provided."
                         )
+
+                    # Pass chunk parameter to _download_dataset through download_kwargs
+                    tmp_download_args = copy.copy(download_kwargs)
+                    if "chunk" in download_dataset_parameters:
+                        tmp_download_args["chunk"] = chunk
+
                     with WaveformDataWriter(*files) as writer:
-                        self._download_dataset(writer, chunk=chunk, **download_kwargs)
+                        self._download_dataset(writer, **tmp_download_args)
 
             files = [
                 self.path / f"metadata{chunk}.csv",

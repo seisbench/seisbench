@@ -277,6 +277,37 @@ def test_chunked_loading():
     assert wv.shape[0] == len(chunk01)
 
 
+def test_download_dataset_chunk_arg(tmp_path):
+    """
+    Test ensures that datasets with/out chunking are accordingly called with/out chunks in _download_dataset
+    """
+    seisbench.remote_root = tmp_path  # Ensure test does not modify SeisBench cache
+
+    class MockDataset(seisbench.data.BenchmarkDataset):
+        def __init__(self, **kwargs):
+            super().__init__(citation="", **kwargs)
+
+        def _download_dataset(self, writer):
+            raise ValueError("Called without chunks")
+
+    class ChunkedMockDataset(seisbench.data.BenchmarkDataset):
+        def __init__(self, **kwargs):
+            super().__init__(citation="", **kwargs)
+
+        def _download_dataset(self, writer, chunk):
+            raise ValueError("Called with chunks")
+
+    # Note: This would raise a TypeError when called with the chunk parameter
+    with pytest.raises(ValueError) as e:
+        MockDataset()
+    assert "Called without chunks" in str(e)
+
+    # Note: This would raise a TypeError when called without the chunk parameter
+    with pytest.raises(ValueError) as e:
+        ChunkedMockDataset()
+    assert "Called with chunks" in str(e)
+
+
 def test_unify_sampling_rate(caplog):
     dummy = seisbench.data.DummyDataset()
     del dummy._metadata["trace_sampling_rate_hz"]
