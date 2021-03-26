@@ -851,6 +851,7 @@ class BenchmarkDataset(WaveformDataset, ABC):
         force=False,
         wait_for_file=False,
         repository_lookup=False,
+        download_kwargs=None,
         **kwargs,
     ):
         """
@@ -862,11 +863,15 @@ class BenchmarkDataset(WaveformDataset, ABC):
         :param repository_lookup: Whether the data set should be search in the remote repository or directly use the building download function.
         Should be set in the inheriting class.
         Only needs to be set to true if the dataset is available in a repository, e.g., the SeisBench repository, for direct download.
+        :param download_kwargs: Dict of arguments passed to the download_dataset function, in case the dataset is loaded from scratch.
         :param kwargs: Keyword arguments passed to WaveformDataset
         """
         self._name = self._name_internal()
         self._citation = citation
         self.path.mkdir(exist_ok=True, parents=True)
+
+        if download_kwargs is None:
+            download_kwargs = {}
 
         if chunks is None:
             chunks = self.available_chunks(force=force, wait_for_file=wait_for_file)
@@ -900,7 +905,7 @@ class BenchmarkDataset(WaveformDataset, ABC):
                             "Data set seems not to support chunking, but chunk provided."
                         )
                     with WaveformDataWriter(*files) as writer:
-                        self._download_dataset(writer, chunk=chunk, **kwargs)
+                        self._download_dataset(writer, chunk=chunk, **download_kwargs)
 
             files = [
                 self.path / f"metadata{chunk}.csv",
