@@ -43,7 +43,7 @@ Exceptions regarding capitalization can be made where common, e.g., seismometer 
 |trace_channel|Channel from which the data was obtained without the component identifier, e.g., `HH`, `HN`, `BH`. If you're planning to build a dataset with multiple channels for each trace, please get in touch with the developers.|
 |trace_category|e.g. earthquake, noise, mine blast|
 |trace_p_arrival_sample||
-|trace_p_status|e.g. manual/automatic|
+|trace_p_status|e.g. manual (hand-picked), automatic (from an autopicker), estimated (inferred from source parameters and velocity model)|
 |trace_p_weight||
 |trace_p_uncertainty_s||
 |trace_s_arrival_sample||
