@@ -7,6 +7,8 @@ from seisbench.generate import (
     WindowAroundSample,
     RandomWindow,
     ChangeDtype,
+    PickLabeller,
+    SupervisedLabeller,
 )
 
 import numpy as np
@@ -546,3 +548,93 @@ def test_change_dtype():
     assert (
         state_dict["X"][1] is not state_dict["X2"][1]
     )  # Metadata was copied and not only a pointer was copies
+
+
+def test_pick_labeller():
+    np.random.seed(42)
+    state_dict = {
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {
+                "trace_p_arrival_sample": 500,
+                "trace_s_arrival_sample": 700,
+            },
+        )
+    }
+
+    # Assumes standard config['dimension_order'] = 'NCW'
+
+    # Test label construction for single window
+    labeller = PickLabeller(label_type="multi_class", dim=0)
+    labeller(state_dict)
+
+    assert state_dict["y"][0].shape == (3, 1000)
+    assert np.argmax(state_dict["y"][0], axis=1)[0] == 499
+    assert np.argmax(state_dict["y"][0], axis=1)[1] == 699
+
+    # Fails when multi_class specified and channel dim sum > 1
+    with pytest.raises(ValueError):
+        labeller = PickLabeller(label_type="multi_class", dim=1)
+        labeller(state_dict)
+
+    # Test label construction for multiple windows
+    state_dict = {
+        "X": (
+            10 * np.random.rand(5, 3, 1000),
+            {
+                "trace_p_arrival_sample": np.array([500] * 5),
+                "trace_s_arrival_sample": np.array([700] * 5),
+            },
+        )
+    }
+    labeller = PickLabeller(label_type="multi_class", dim=1)
+    labeller(state_dict)
+
+    assert state_dict["y"][0].shape == (5, 3, 1000)
+    assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[0] == 499
+    assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[1] == 699
+
+    # Fails if single sample provided for multiple windows
+    state_dict = {
+        "X": (
+            10 * np.random.rand(5, 3, 1000),
+            {
+                "trace_p_arrival_sample": 500,
+                "trace_s_arrival_sample": 700,
+            },
+        )
+    }
+    with pytest.raises(ValueError):
+        labeller = PickLabeller(label_type="multi_class", dim=1)
+        labeller(state_dict)
+
+    state_dict["X"] = np.random.rand(10, 5, 3, 1000)
+
+    # Fails if non-compatible input data dimensions are provided
+    with pytest.raises(ValueError):
+        labeller = PickLabeller(label_type="multi_class", dim=1)
+        labeller(state_dict)
+
+
+def test_swap_dimension_order():
+
+    arr = np.zeros((6, 3, 100))
+    assert PickLabeller._swap_dimension_order(
+        arr, current_dim="NCW", expected_dim="CNW"
+    ).shape == (3, 6, 100)
+    assert PickLabeller._swap_dimension_order(
+        arr, current_dim="NCW", expected_dim="WCN"
+    ).shape == (100, 3, 6)
+    assert PickLabeller._swap_dimension_order(
+        arr, current_dim="NCW", expected_dim="CWN"
+    ).shape == (3, 100, 6)
+
+    arr = np.zeros((6, 3, 100, 5))
+    assert PickLabeller._swap_dimension_order(
+        arr, current_dim="abcd", expected_dim="cabd"
+    ).shape == (100, 6, 3, 5)
+
+    arr = np.zeros((100, 3))
+    assert PickLabeller._swap_dimension_order(
+        arr, current_dim="CW", expected_dim="WC"
+    ).shape == (3, 100)

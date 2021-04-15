@@ -3,6 +3,7 @@ import scipy.signal
 import copy
 from abc import abstractmethod, ABC
 from seisbench.util.ml import gaussian_pick
+from seisbench import config
 
 
 class FixedWindow:
@@ -595,21 +596,111 @@ class PickLabeller(SupervisedLabeller):
     Create supervised labels from picks.
     """
 
-    def __init__(self, label_type="multi_label", dim=1):
+    def __init__(self, label_type="multi_label", dim=1, sigma=10):
+        self.sigma = sigma
         super().__init__(label_type, dim)
 
-    def label(self, X, metadata):
-        # Put dummy label generation code in here for now but in practice, label will come from the
-        # metadata
-        x = X.shape[2]
-        a = torch.Tensor(gaussian_pick(onset=300, length=x, sigma=10))
-        b = torch.Tensor(gaussian_pick(onset=500, length=x, sigma=10))
-        c = np.zeros(x)
-        c[250:550] = 1
-        c = torch.Tensor(c)
+    @staticmethod
+    def _swap_dimension_order(arr, current_dim, expected_dim):
+        config_dim = tuple(current_dim.find(d) for d in (expected_dim))
+        return np.transpose(arr, (config_dim))
 
+    # NOTE: Non-compatible phase onsets are still passed through generator (e.g. p onset at sample -100)
+    # however current interface does not raise error. It just will not construct a P-/S-phase
+    # label for this example.
+    def _construct_softassign_softmax_label(self, X, metadata):
+
+        y = np.zeros(shape=X.shape)
+        ndim = len(y.shape)
+
+        # Map through appropriate dimensions to labels
+        if ndim == 3:
+            sample_dim = config["dimension_order"].find("N")
+            channel_dim = config["dimension_order"].find("C")
+            width_dim = config["dimension_order"].find("W")
+        elif ndim == 2:
+            channel_dim = config["dimension_order"].find("C")
+            width_dim = config["dimension_order"].find("W")
+            channel_dim = 0 if channel_dim < width_dim else 1
+            width_dim = 1 if channel_dim < width_dim else 0
+        else:
+            raise ValueError(
+                f"PickLabeller only supports labelling of data with 3 dimensions (NCW) "
+                f"or 2 dimensions (CW)."
+            )
+
+        if (
+            isinstance(metadata["trace_p_arrival_sample"], (int, np.integer))
+            or isinstance(metadata["trace_s_arrival_sample"], (int, np.integer))
+        ) and ndim == 3:
+            raise ValueError(
+                f"Only provided single arrival in metadata *_sample column  to multiple windows. Check augmentation workflow."
+            )
+
+        # Construct labels, handling cases for both single window and multiple windows
+        # P label
+        if "trace_p_arrival_sample" in metadata:
+            if isinstance(metadata["trace_p_arrival_sample"], (int, np.integer)):
+                p_onset = metadata["trace_p_arrival_sample"]
+                y[0, :] = gaussian_pick(
+                    onset=p_onset, length=X.shape[width_dim], sigma=self.sigma
+                )
+            else:
+                for i in range(X.shape[sample_dim]):
+                    p_onset = metadata["trace_p_arrival_sample"][i]
+                    y[i, 0, :] = gaussian_pick(
+                        onset=p_onset, length=X.shape[width_dim], sigma=self.sigma
+                    )
+        else:
+            if isinstance(metadata["trace_p_arrival_sample"], (int, np.integer)):
+                p_onset = metadata["trace_p_arrival_sample"]
+                y[0, :] = gaussian_pick(
+                    onset=p_onset, length=X.shape[width_dim], sigma=self.sigma
+                )
+            else:
+                y[i, 0, :] = np.zeros(shape=(X.shape[channel_dim], X.shape[width_dim]))
+
+        # S label
+        if "trace_s_arrival_sample" in metadata:
+            if isinstance(metadata["trace_s_arrival_sample"], (int, np.integer)):
+                s_onset = metadata["trace_s_arrival_sample"]
+                y[1, :] = gaussian_pick(
+                    onset=s_onset, length=X.shape[width_dim], sigma=self.sigma
+                )
+            else:
+                for i in range(X.shape[sample_dim]):
+                    s_onset = metadata["trace_s_arrival_sample"][i]
+                    y[i, 1, :] = gaussian_pick(
+                        onset=s_onset, length=X.shape[width_dim], sigma=self.sigma
+                    )
+        else:
+            if isinstance(metadata["trace_s_arrival_sample"], (int, np.integer)):
+                s_onset = metadata["trace_s_arrival_sample"]
+                y[1, :] = gaussian_pick(
+                    onset=s_onset, length=X.shape[width_dim], sigma=self.sigma
+                )
+            else:
+                y[i, 1, :] = np.zeros(shape=(X.shape[channel_dim], X.shape[width_dim]))
+
+        # Noise label
+        if ndim == 2:
+            y[2, :] = 1 - (y[0, :] + y[1, :])
+            y = self._swap_dimension_order(
+                y,
+                current_dim="CW",
+                expected_dim=config["dimension_order"].replace("N", ""),
+            )
+        elif ndim == 3:
+            for i in range(X.shape[sample_dim]):
+                y[i, 2, :] = 1 - (y[i, 0, :] + y[i, 1, :])
+            y = self._swap_dimension_order(
+                y, current_dim="NCW", expected_dim=config["dimension_order"]
+            )
+        return y
+
+    def label(self, X, metadata):
         # Create label
-        return torch.vstack([a, b, c])
+        return self._construct_softassign_softmax_label(X, metadata)
 
     def __str__(self):
         return f"PickLabeller (label_type={self.label_type}, dim={self.dim})"
