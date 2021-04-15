@@ -21,7 +21,9 @@ def download_http(url, target, progress_bar=True, desc="Downloading"):
     content_length = req.headers.get("Content-Length")
     total = int(content_length) if content_length is not None else None
     if progress_bar:
-        pbar = tqdm(unit="B", total=total, desc=desc)
+        pbar = tqdm(
+            unit="B", total=total, desc=desc, unit_scale=True, unit_divisor=1024
+        )
     else:
         pbar = None
 
@@ -53,7 +55,9 @@ def download_ftp(
         total = ftp.size(file)
 
         if progress_bar:
-            pbar = tqdm(unit="B", total=total, desc=desc)
+            pbar = tqdm(
+                unit="B", total=total, desc=desc, unit_scale=True, unit_divisor=1024
+            )
 
         def callback(chunk):
             if progress_bar:
