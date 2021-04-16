@@ -35,6 +35,7 @@ class GEOFON(BenchmarkDataset):
 
         component_order = "ZNE"
 
+        writer.blocksize = 2 ** 16
         writer.data_format = {
             "dimension_order": "CW",
             "component_order": component_order,

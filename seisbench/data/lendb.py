@@ -47,6 +47,7 @@ class LenDB(BenchmarkDataset):
             path_original, callback_download_original, force=True
         )
 
+        writer.blocksize = 2 ** 16
         writer.data_format = {
             "dimension_order": "CW",
             "component_order": "ZNE",

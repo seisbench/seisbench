@@ -1014,6 +1014,16 @@ class BenchmarkDataset(WaveformDataset, ABC):
 
 
 class WaveformDataWriter:
+    """
+    .. warning::
+        Writing many datasets into the same hdf5 group can significantly slow down writing.
+        To mitigate this, you can introduce subgroups using trace_names with slashes.
+        For example trace_name could be "block1/trace1".
+        This would create the dataset "trace1" insight the subgroup "block1".
+        To automatically use blocks set the blocksize parameter of the writer.
+        For details on the issue see https://github.com/h5py/h5py/issues/1055.
+    """
+
     def __init__(self, metadata_path, waveforms_path):
         self.metadata_path = Path(metadata_path)
         self.waveforms_path = Path(waveforms_path)
@@ -1026,6 +1036,7 @@ class WaveformDataWriter:
         self._metadata = []
         self._waveform_file = None
         self._pbar = None
+        self._blocksize = None
 
     def __enter__(self):
         return self
@@ -1046,11 +1057,21 @@ class WaveformDataWriter:
             )
 
     def add_trace(self, metadata, waveform):
-        self._metadata.append(metadata)
         trace_name = str(metadata["trace_name"])
+        if self.blocksize is not None:
+            block_name = f"block{len(self._metadata) // self._blocksize}"
+            trace_name = f"{block_name}/{trace_name}"
+            metadata["trace_name"] = trace_name
+
+        self._metadata.append(metadata)
 
         if self._waveform_file is None:
-            self._waveform_file = h5py.File(self.waveforms_path, "w")
+            # Using libver="latest" reduces slow down of write caused by the internal structure of hdf5 files
+            # For details say:
+            # https://stackoverflow.com/questions/45023488/inserting-many-hdf5-datasets-very-slow/45026048
+            # or
+            # https://github.com/h5py/h5py/issues/1055
+            self._waveform_file = h5py.File(self.waveforms_path, "w", libver="latest")
             self._waveform_file.create_group("data")
         if self._pbar is None:
             self._pbar = tqdm(desc="Traces converted")
@@ -1062,6 +1083,31 @@ class WaveformDataWriter:
         if self._pbar is None:
             self._pbar = tqdm(desc="Traces converted")
         self._pbar.total = n
+
+        if n > 2 ** 16 and self.blocksize is None:
+            seisbench.logger.warning(
+                "It appears you are writing a large data set without using blocks. "
+                "Set writer.blocksize to use blocks. "
+                "For further information, see the documentation of WaveformDataWriter."
+            )
+
+    @property
+    def blocksize(self):
+        """
+        Defines the size of the output blocks. Defaults to None, i.e., no use of blocks.
+        Suggested value is 2**16.
+        Please note, this will change the trace names in the metadata.
+        """
+        return self._blocksize
+
+    @blocksize.setter
+    def blocksize(self, value):
+        if len(self._metadata) > 0:
+            raise AttributeError(
+                "blocksize can only be set before the first trace is written."
+            )
+
+        self._blocksize = value
 
     def _finalize(self):
         if len(self._metadata) == 0:
