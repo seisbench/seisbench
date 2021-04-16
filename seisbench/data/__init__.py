@@ -4,3 +4,4 @@ from .stead import STEAD
 from .geofon import GEOFON
 from .lendb import LenDB
 from .neic import NEIC
+from .scedc import SCEDC, Ross2018JGRFM, Ross2018JGRPick
