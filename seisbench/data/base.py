@@ -841,13 +841,14 @@ class LoadingContext:
 class BenchmarkDataset(WaveformDataset, ABC):
     """
     This class is the base class for benchmark waveform datasets.
-    It adds functionality to download the dataset to cache and to annotate it with a citation.
+    It adds functionality to download the dataset to cache and to annotate it with a citation and a license.
     """
 
     def __init__(
         self,
         chunks=None,
         citation=None,
+        license=None,
         force=False,
         wait_for_file=False,
         repository_lookup=False,
@@ -858,6 +859,7 @@ class BenchmarkDataset(WaveformDataset, ABC):
 
         :param chunks: List of chunks to download
         :param citation: Citation for the dataset. Should be set in the inheriting class.
+        :param license: License associated with the dataset. Should be set in the inherenting class.
         :param force: Passed to :py:func:`~seisbench.util.callback_if_uncached`
         :param wait_for_file: Passed to :py:func:`~seisbench.util.callback_if_uncached`
         :param repository_lookup: Whether the data set should be search in the remote repository or directly use the building download function.
@@ -868,6 +870,7 @@ class BenchmarkDataset(WaveformDataset, ABC):
         """
         self._name = self._name_internal()
         self._citation = citation
+        self._license = license
         self.path.mkdir(exist_ok=True, parents=True)
 
         if download_kwargs is None:
@@ -925,6 +928,10 @@ class BenchmarkDataset(WaveformDataset, ABC):
     @property
     def citation(self):
         return self._citation
+
+    @property
+    def license(self):
+        return self._license
 
     @classmethod
     def _path_internal(cls):
