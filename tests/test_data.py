@@ -5,6 +5,8 @@ import numpy as np
 import pytest
 import logging
 from pathlib import Path
+import h5py
+import pandas as pd
 
 
 def test_get_order_mapping():
@@ -536,3 +538,116 @@ def test_splitting():
     assert len(train) == 60
     assert len(dev) == 10
     assert len(test) == 30
+
+
+def test_bucketer_type(tmp_path: Path):
+    data_path = tmp_path / "bucketer_type"
+    writer = seisbench.data.WaveformDataWriter(
+        data_path / "metadata.csv", data_path / "waveforms.hdf5"
+    )
+
+    with pytest.raises(TypeError):
+        writer.bucketer = 10
+
+    # Don't use a bucketer
+    writer.bucketer = None
+
+    # Use a Geometric bucketer
+    writer.bucketer = seisbench.data.GeometricBucketer()
+
+    with pytest.raises(ValueError):
+        writer.bucket_size = 0
+
+    writer.bucket_size = 1024
+
+
+def test_geometric_bucketer():
+    # Split is false
+    bucketer = seisbench.data.GeometricBucketer(
+        minbucket=100, factor=1.2, splits=False, axis=-1
+    )
+
+    # Minimum bucket
+    assert "0" == bucketer.get_bucket({}, np.ones((3, 99)))
+
+    # First bucket
+    assert "1" == bucketer.get_bucket({}, np.ones((3, 101)))
+
+    # Later bucket
+    assert "10" == bucketer.get_bucket({}, np.ones((3, int(100 * 1.2 ** 9 + 1))))
+
+    # Ignores split
+    assert "0" == bucketer.get_bucket({"split": "train"}, np.ones((3, 99)))
+
+    # Split is true
+    bucketer = seisbench.data.GeometricBucketer(
+        minbucket=100, factor=1.2, splits=True, axis=-1
+    )
+
+    # Minimum bucket
+    assert "train0" == bucketer.get_bucket({"split": "train"}, np.ones((3, 99)))
+
+    # First bucket
+    assert "dev1" == bucketer.get_bucket({"split": "dev"}, np.ones((3, 101)))
+
+    # Later bucket
+    assert "test10" == bucketer.get_bucket(
+        {"split": "test"}, np.ones((3, int(100 * 1.2 ** 9 + 1)))
+    )
+
+    # Ignores missing split
+    assert "0" == bucketer.get_bucket({}, np.ones((3, 99)))
+
+
+def test_pack_arrays():
+    arrays = [np.random.rand(5, 2, 3), np.random.rand(4, 4, 2)]
+    output, locations = seisbench.data.WaveformDataWriter._pack_arrays(arrays)
+
+    assert output.shape == (2, 5, 4, 3)
+    assert (output[0, :5, :2, :3] == arrays[0]).all()
+    assert (output[1, :4, :4, :2] == arrays[1]).all()
+    assert locations[0] == "0,:5,:2,:3"
+    assert locations[1] == "1,:4,:4,:2"
+
+
+def test_bucketer_cache(tmp_path: Path):
+    data_path = tmp_path / "bucketer_cache"
+    with seisbench.data.WaveformDataWriter(
+        data_path / "metadata.csv", data_path / "waveforms.hdf5"
+    ) as writer:
+        writer.bucket_size = 10
+
+        # Traces are kept in bucket
+        for i in range(9):
+            writer.add_trace({"split": "test"}, np.ones((3, 12)))
+
+        assert len(writer._cache) == 1
+        assert len(writer._cache["test0"]) == 9
+
+        # Traces are kept in bucket
+        for i in range(9):
+            writer.add_trace({"split": "train"}, np.ones((3, 12)))
+
+        assert len(writer._cache) == 2
+        assert len(writer._cache["test0"]) == 9
+        assert len(writer._cache["train0"]) == 9
+
+        # Traces are written out
+        writer.add_trace({"split": "train"}, np.ones((3, 12)))
+        assert len(writer._cache["test0"]) == 9
+        assert len(writer._cache["train0"]) == 0
+
+        # Remaining traces are written out
+        writer.flush_hdf5()
+        assert len(writer._cache["test0"]) == 0
+
+    # Inspect output files
+    with h5py.File(data_path / "waveforms.hdf5", "r") as f:
+        assert len(f["data"].keys()) == 2
+        assert f["data/bucket0"].shape == (10, 3, 12)
+        assert f["data/bucket1"].shape == (9, 3, 12)
+
+    metadata = pd.read_csv(data_path / "metadata.csv")
+    for trace_name in metadata["trace_name"].values:
+        assert trace_name.startswith("bucket")
+        assert trace_name[7] == "$"

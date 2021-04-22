@@ -12,6 +12,7 @@ import os
 import inspect
 import scipy.signal
 import copy
+from collections import defaultdict
 
 
 class WaveformDataset:
@@ -1020,8 +1021,73 @@ class BenchmarkDataset(WaveformDataset, ABC):
         pass
 
 
+class Bucketer(ABC):
+    """
+    This is the abstract bucketer class that needs to be provided to the WaveformDataWriter.
+    It offers one public function, :py:func:`get_bucket`, to assign a bucket to each trace.
+    """
+
+    @abstractmethod
+    def get_bucket(self, metadata, waveform):
+        """
+        Calculates the bucket for the trace given its metadata and waveforms
+
+        :param metadata: Metadata as given to the WaveformDataWriter.
+        :param waveform: Waveforms as given to the WaveformDataWriter.
+        :return: A hashable object denoting the bucket this sample belongs to.
+        """
+        return ""
+
+
+class GeometricBucketer(Bucketer):
+    """
+    A simple bucketer that uses the length of the traces and optionally the assigned split to determine buckets.
+    Only takes into account the length along one fixed axis.
+    Bucket edges are create with a geometric spacing above a minimum bucket.
+    The first bucket is [0, minbucket), the second one [minbucket, minbucket * factor) and so on.
+    There is no maximum bucket.
+    This bucketer ensures that the overhead from padding is at most factor - 1, as long as only few traces with length < minbucket exist.
+    Note that this can even be significantly reduced by passing the input traces ordered by their length.
+
+    :param minbucket: Upper limit of the lowest bucket and start of the geometric spacing.
+    :param factor: Factor for the geometric spacing.
+    :param splits: If true, returns separate buckets for each split. Defaults to true.
+                   If no split is defined in the metadata, this parameter is ignored.
+    :param axis: Axis to take into account for determining the length of the trace.
+    """
+
+    def __init__(self, minbucket=100, factor=1.2, splits=True, axis=-1):
+        self.minbucket = minbucket
+        self.factor = factor
+        self.split = splits
+        self.axis = axis
+
+    def get_bucket(self, metadata, waveform):
+        length = waveform.shape[self.axis]
+
+        if self.split and "split" in metadata:
+            split_str = str(metadata["split"])
+        else:
+            split_str = ""
+
+        if length < self.minbucket:
+            bucket_id = 0
+        else:
+            bucket_id = int(np.log(length / self.minbucket) / np.log(self.factor) + 1)
+
+        return split_str + str(bucket_id)
+
+
 class WaveformDataWriter:
-    """"""
+    """
+    The WaveformDataWriter for writing datasets in SeisBench format.
+
+    To improve reading performance when using the datasets, the writer groups traces into blocks and writes them into joint arrays in the hdf5 file.
+    The exact behaviour is controlled by the :py:attr:`bucketer` and the :py:attr:`bucket_size`.
+    For details see their documentations.
+    This packing is necessary, due to limitations in the hdf5 performance.
+    Reading many small datasets from a hdf5 file causes the overhead of the hdf5 structure to define the read times.
+    """
 
     def __init__(self, metadata_path, waveforms_path):
         self.metadata_path = Path(metadata_path)
@@ -1035,6 +1101,49 @@ class WaveformDataWriter:
         self._metadata = []
         self._waveform_file = None
         self._pbar = None
+
+        self._bucketer = GeometricBucketer()
+        self._bucket_size = 1024
+        self._cache = defaultdict(list)  # Cache used for the bucketing
+        self._bucket_counter = 0  # Bucket counter to generate bucket names
+
+    @property
+    def bucketer(self):
+        """
+        The currently used bucketer, which sorts traces into buckets.
+        If the bucketer is None, no buckets are used and all traces are written separately.
+        By default uses the :py:class:`GeometricBucketer` with default parameters.
+        Please check that this suits your needs.
+        In particular, make sure that the default axis matches your sample axis.
+
+        :return: Returns the current bucketer.
+        """
+        return self._bucketer
+
+    @bucketer.setter
+    def bucketer(self, value):
+        if not isinstance(value, Bucketer) and not value is None:
+            raise TypeError("The bucketer needs to be an instance of Bucketer or None.")
+
+        self._bucketer = value
+
+    @property
+    def bucket_size(self):
+        """
+        The maximum size of a bucket.
+        Once adding another trace would overload the bucket, the bucket is written to disk.
+        Defaults to 1024.
+
+        :return: Bucket size
+        """
+        return self._bucket_size
+
+    @bucket_size.setter
+    def bucket_size(self, value):
+        if value < 1:
+            raise ValueError("Bucket size needs to be at least one")
+
+        self._bucket_size = value
 
     def __enter__(self):
         return self
@@ -1055,17 +1164,97 @@ class WaveformDataWriter:
             )
 
     def add_trace(self, metadata, waveform):
-        trace_name = str(metadata["trace_name"])
-        self._metadata.append(metadata)
+        self._metadata.append(
+            metadata
+        )  # Note that this is only a reference to the metadata. This is later used to modify the trace_name attribute.
+
+        if self.bucketer is None:
+            self._write_bucket([metadata, waveform])
+        else:
+            bucket = self.bucketer.get_bucket(metadata, waveform)
+            self._cache[bucket].append((metadata, waveform))
+
+            if len(self._cache[bucket]) + 1 > self.bucket_size:
+                self._write_bucket(self._cache[bucket])  # Write out bucket
+                self._cache[bucket] = []  # Remove bucket from cache
+
+        if self._pbar is None:
+            self._pbar = tqdm(desc="Traces converted")
+
+        self._pbar.update()
+
+    def _write_bucket(self, bucket):
+        if len(bucket) == 0:
+            # Empty buckets don't need to be written out
+            return
 
         if self._waveform_file is None:
             self._waveform_file = h5py.File(self.waveforms_path, "w")
             self._waveform_file.create_group("data")
-        if self._pbar is None:
-            self._pbar = tqdm(desc="Traces converted")
 
-        self._waveform_file["data"].create_dataset(trace_name, data=waveform)
-        self._pbar.update()
+        elif len(bucket) == 1:
+            metadata, waveform = bucket[0]
+            # Use trace name as bucket name
+            trace_name = str(metadata["trace_name"])
+            trace_name = trace_name.replace(
+                "$", "_"
+            )  # As $ will be interpreted as a control sequence to remove padding
+            metadata["trace_name"] = trace_name
+
+            self._waveform_file["data"].create_dataset(trace_name, data=waveform)
+
+        else:
+            bucket_id = self._bucket_counter
+            self._bucket_counter += 1
+            bucket_name = f"bucket{bucket_id}"
+
+            bucket_waveforms, locations = self._pack_arrays([x[1] for x in bucket])
+            self._waveform_file["data"].create_dataset(
+                bucket_name, data=bucket_waveforms
+            )  # Write data to hdf5 file
+
+            # Set correct trace_names
+            for i, location in enumerate(locations):
+                metadata = bucket[i][0]
+                if "trace_name" in metadata:
+                    metadata["trace_name_original"] = metadata[
+                        "trace_name"
+                    ]  # Keep original trace_name in the metadata
+
+                metadata["trace_name"] = f"{bucket_name}${location}"
+
+    @staticmethod
+    def _pack_arrays(arrays):
+        """
+        Packs a list of arrays into one large array.
+        Requires all arrays to have the same ndim and dtype.
+
+        :param arrays: List of arrays to pack into
+        :return: Packed array, location identifiers for each input trace.
+        """
+
+        assert all(x.ndim == arrays[0].ndim for x in arrays)
+        assert all(x.dtype == arrays[0].dtype for x in arrays)
+
+        output_shape = tuple(
+            [len(arrays)]
+            + [max(x.shape[i] for x in arrays) for i in range(arrays[0].ndim)]
+        )
+        output = np.zeros(output_shape, dtype=arrays[0].dtype)
+        locations = []
+
+        for i, x in enumerate(arrays):
+            location_str = ",".join([str(i)] + [f":{s}" for s in x.shape])
+            locations.append(location_str)
+
+            pad_width = [
+                (0, output_shape[i + 1] - x.shape[i])
+                for i in range(len(output_shape) - 1)
+            ]
+            x = np.pad(x, pad_width, mode="constant", constant_values=0)
+            output[i] = x
+
+        return output, locations
 
     def set_total(self, n):
         if self._pbar is None:
@@ -1073,6 +1262,8 @@ class WaveformDataWriter:
         self._pbar.total = n
 
     def _finalize(self):
+        self.flush_hdf5()
+
         if len(self._metadata) == 0:
             return
 
@@ -1088,3 +1279,15 @@ class WaveformDataWriter:
             metadata.rename(columns=self.metadata_dict, inplace=True)
 
         metadata.to_csv(self.metadata_path, index=False)
+
+    def flush_hdf5(self):
+        """
+        Writes out all traces currently in the cache to the hdf5 file.
+        Should be called if no more traces for the existing buckets will be added, e.g., after finishing a split.
+        Does not write the metadata to csv.
+        """
+        buckets = list(self._cache.keys())
+
+        for bucket in buckets:
+            self._write_bucket(self._cache[bucket])
+            del self._cache[bucket]
