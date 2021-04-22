@@ -130,7 +130,6 @@ class NEIC(BenchmarkDataset):
         train_ids = np.unique(train_ids)
         dev_ids = set(train_ids[::10])
 
-        writer.blocksize = 2 ** 16
         writer.set_total(total_samples)
 
         # TODO: Verify that these are unrestituted counts
