@@ -183,6 +183,9 @@ class Ross2018JGRFM(BenchmarkDataset):
 
                     writer.add_trace(metadata, wf)
 
+            # Write out all data from the current split
+            writer.flush_hdf5()
+
         if cleanup:
             shutil.rmtree(path_original)
 
@@ -328,6 +331,9 @@ class Ross2018JGRPick(BenchmarkDataset):
                     }
 
                     writer.add_trace(metadata, wf)
+
+            # Write out all data from the current split
+            writer.flush_hdf5()
 
         if cleanup:
             shutil.rmtree(path_original)

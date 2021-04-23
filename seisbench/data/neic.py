@@ -145,6 +145,10 @@ class NEIC(BenchmarkDataset):
         eq_counts = defaultdict(lambda: 0)
 
         for wavetype, split in groups:
+            # Flush cache after train/dev is complete
+            if wavetype == "P" and split == "Test":
+                writer.flush_hdf5()
+
             azimuth = np.load(path_unpacked / f"{wavetype}Azi_{split}.npy")
             distance = np.load(path_unpacked / f"{wavetype}Dist_{split}.npy")
             event_id = np.load(path_unpacked / f"{wavetype}EID_{split}.npy")
