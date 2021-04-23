@@ -45,15 +45,28 @@ def test_pad_packed_sequence():
 
 
 def test_lazyload():
-    dummy = seisbench.data.DummyDataset(lazyload=True, cache=True)
+    dummy = seisbench.data.DummyDataset(lazyload=True, cache="trace")
     assert len(dummy._waveform_cache) == 0
 
-    dummy = seisbench.data.DummyDataset(lazyload=False, cache=True)
+    dummy = seisbench.data.DummyDataset(lazyload=False, cache="trace")
     assert len(dummy._waveform_cache) == len(dummy)
 
 
 def test_filter_and_cache_evict():
-    dummy = seisbench.data.DummyDataset(lazyload=False, cache=True)
+    # Block caching
+    dummy = seisbench.data.DummyDataset(lazyload=False, cache="full")
+    blocks = set(dummy.metadata["trace_name"].apply(lambda x: x.split("$")[0]))
+    assert len(dummy._waveform_cache) == len(blocks)
+
+    mask = np.arange(len(dummy)) < len(dummy) / 2
+    dummy.filter(mask)
+
+    assert len(dummy) == np.sum(mask)  # Correct metadata length
+    blocks = set(dummy.metadata["trace_name"].apply(lambda x: x.split("$")[0]))
+    assert len(dummy._waveform_cache) == len(blocks)  # Correct cache eviction
+
+    # Trace caching
+    dummy = seisbench.data.DummyDataset(lazyload=False, cache="trace")
     assert len(dummy._waveform_cache) == len(dummy)
 
     mask = np.arange(len(dummy)) < len(dummy) / 2
@@ -103,45 +116,47 @@ def test_region_filter():
 
 
 def test_get_waveforms_dimensions():
-    dummy = seisbench.data.DummyDataset()
+    for cache in ["full", "trace", None]:
+        dummy = seisbench.data.DummyDataset(cache=cache)
 
-    waveforms = dummy.get_waveforms()
-    assert waveforms.shape == (len(dummy), 3, 1200)
+        waveforms = dummy.get_waveforms()
+        assert waveforms.shape == (len(dummy), 3, 1200)
 
-    dummy.component_order = "ZEN"
-    waveforms_zen = dummy.get_waveforms()
-    assert (waveforms[:, 1] == waveforms_zen[:, 2]).all()
-    assert (waveforms[:, 2] == waveforms_zen[:, 1]).all()
-    assert (waveforms[:, 0] == waveforms_zen[:, 0]).all()
+        dummy.component_order = "ZEN"
+        waveforms_zen = dummy.get_waveforms()
+        assert (waveforms[:, 1] == waveforms_zen[:, 2]).all()
+        assert (waveforms[:, 2] == waveforms_zen[:, 1]).all()
+        assert (waveforms[:, 0] == waveforms_zen[:, 0]).all()
 
-    mask = np.arange(len(dummy)) < len(dummy) / 2
-    assert dummy.get_waveforms(mask=mask).shape[0] == np.sum(mask)
+        mask = np.arange(len(dummy)) < len(dummy) / 2
+        assert dummy.get_waveforms(mask=mask).shape[0] == np.sum(mask)
 
-    dummy.dimension_order = "CWN"
-    waveforms = dummy.get_waveforms()
+        dummy.dimension_order = "CWN"
+        waveforms = dummy.get_waveforms()
 
-    assert waveforms.shape == (3, 1200, len(dummy))
+        assert waveforms.shape == (3, 1200, len(dummy))
 
 
 def test_get_waveforms_select():
-    dummy = seisbench.data.DummyDataset()
+    for cache in ["full", "trace", None]:
+        dummy = seisbench.data.DummyDataset(cache=cache)
 
-    waveforms_full = dummy.get_waveforms()
-    assert waveforms_full.shape == (len(dummy), 3, 1200)
+        waveforms_full = dummy.get_waveforms()
+        assert waveforms_full.shape == (len(dummy), 3, 1200)
 
-    waveforms_ind = dummy.get_waveforms(idx=5)
-    assert waveforms_ind.shape == (3, 1200)
-    assert (waveforms_ind == waveforms_full[5]).all()
+        waveforms_ind = dummy.get_waveforms(idx=5)
+        assert waveforms_ind.shape == (3, 1200)
+        assert (waveforms_ind == waveforms_full[5]).all()
 
-    waveforms_list = dummy.get_waveforms(idx=[10])
-    assert waveforms_list.shape == (1, 3, 1200)
-    assert (waveforms_list[0] == waveforms_full[10]).all()
+        waveforms_list = dummy.get_waveforms(idx=[10])
+        assert waveforms_list.shape == (1, 3, 1200)
+        assert (waveforms_list[0] == waveforms_full[10]).all()
 
-    mask = np.zeros(len(dummy), dtype=bool)
-    mask[15] = True
-    waveforms_mask = dummy.get_waveforms(mask=mask)
-    assert waveforms_mask.shape == (1, 3, 1200)
-    assert (waveforms_mask[0] == waveforms_full[15]).all()
+        mask = np.zeros(len(dummy), dtype=bool)
+        mask[15] = True
+        waveforms_mask = dummy.get_waveforms(mask=mask)
+        assert waveforms_mask.shape == (1, 3, 1200)
+        assert (waveforms_mask[0] == waveforms_full[15]).all()
 
 
 def test_lazyload_cache(caplog):
@@ -483,7 +498,7 @@ def test_get_sample():
 
 def test_load_waveform_data_with_sampling_rate():
     # Checks that preloading waveform data works with sampling rate specified
-    dummy = seisbench.data.DummyDataset(cache=True, lazyload=False, sampling_rate=20)
+    dummy = seisbench.data.DummyDataset(cache="trace", lazyload=False, sampling_rate=20)
     assert len(dummy._waveform_cache) == len(dummy.metadata)
 
 
@@ -502,7 +517,7 @@ def test_copy():
 
 
 def test_filter_inplace():
-    dummy = seisbench.data.DummyDataset(cache=True, lazyload=False)
+    dummy = seisbench.data.DummyDataset(cache="trace", lazyload=False)
     org_len = len(dummy)
     mask = np.zeros(len(dummy), dtype=bool)
     mask[50:] = True
@@ -651,3 +666,29 @@ def test_bucketer_cache(tmp_path: Path):
     for trace_name in metadata["trace_name"].values:
         assert trace_name.startswith("bucket")
         assert trace_name[7] == "$"
+
+
+def test_parse_location():
+    x = np.random.rand(100, 90, 70)
+    assert (x[0] == x[seisbench.data.WaveformDataset._parse_location("0")]).all()
+
+    assert (x[:5] == x[seisbench.data.WaveformDataset._parse_location(":5")]).all()
+
+    assert (x[1:] == x[seisbench.data.WaveformDataset._parse_location("1:")]).all()
+
+    assert (x[3:10] == x[seisbench.data.WaveformDataset._parse_location("3:10")]).all()
+
+    assert (x[-10] == x[seisbench.data.WaveformDataset._parse_location("-10")]).all()
+
+    assert (
+        x[1:99:3] == x[seisbench.data.WaveformDataset._parse_location("1:99:3")]
+    ).all()
+
+    assert (
+        x[0, 1:10, :-5]
+        == x[seisbench.data.WaveformDataset._parse_location("0, 1:10, :-5")]
+    ).all()
+
+    assert (
+        x[0, 1, 2] == x[seisbench.data.WaveformDataset._parse_location("0,1,2")]
+    ).all()

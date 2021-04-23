@@ -19,6 +19,10 @@ class WaveformDataset:
     """
     This class is the base class for waveform datasets.
 
+    A key consideration should be if the cache is enabled.
+    If sufficient memory is available to keep the full data set in memory, activating the cache will yield strong performance gains.
+    For details on the cache strategies, see the documentation of the ``cache`` parameter.
+
     Description for chunked data sets:
 
     As data sets can become too large to handle, one can chunk datasets.
@@ -43,10 +47,25 @@ class WaveformDataset:
     :type component_order: str, optional
     :param sampling_rate: Common sampling rate of waveforms in dataset, sampling rate can also be specified as a metadata column if not common across dataset.
     :type sampling_rate: int, optional
-    :param cache: If true, each waveform is loaded only once from disk and then stored in memory.
-                  Default to false to reduce memory consumption.
+    :param cache: Defines the behaviour of the waveform cache. Provides three options:
+
+                  - "full": When a trace is queried, the full block containing the trace is loaded into the cache and stored in memory.
+                    This causes the highest memory consumption, but also best performance when using large parts of the dataset.
+                  - "trace": When a trace is queried, only the trace itself is loaded and stored in memory.
+                    This is particularly useful when only a subset of traces is queried, but these are queried multiple times.
+                    In this case the performance of this strategy might outperform "full".
+                  - None: When a trace is queried, it is always loaded from disk.
+                    This mode leads to low memory consumption but high IO load.
+                    It is most likely not usable for model training.
+
+                  Note that for datasets without blocks, i.e., each trace in a single array in the hdf5 file,
+                  the strategies "full" and "trace" are identical.
+                  The default cache strategy is None.
+
                   By setting lazyload to false, the cache can automatically be populated on initialization of the dataset.
-    :type cache: bool, optional
+                  Alternatively use :py:func:`get_waveforms` without any arguments to populate the cache.
+                  Note that using lazyload is in general more efficient.
+    :type cache: str, optional
     :param chunks: Specify particular chunk prefixes to load, defaults to None.
     :type chunks: list, optional
     :param kwargs:
@@ -60,7 +79,7 @@ class WaveformDataset:
         dimension_order=None,
         component_order=None,
         sampling_rate=None,
-        cache=False,
+        cache=None,
         chunks=None,  # Which chunks should be loaded. If None, load all chunks.
         **kwargs,
     ):
@@ -516,7 +535,16 @@ class WaveformDataset:
 
         :return:
         """
-        existing_keys = set(self._metadata["trace_name"])
+        if self.cache == "full":
+            # Extract block names
+            existing_keys = set(
+                self._metadata["trace_name"].apply(lambda x: x.split("$")[0])
+            )
+        elif self.cache == "trace":
+            existing_keys = set(self._metadata["trace_name"])
+        else:
+            existing_keys = set()
+
         delete_keys = []
         for key in self._waveform_cache.keys():
             if key not in existing_keys:
@@ -640,13 +668,49 @@ class WaveformDataset:
         target_sampling_rate=None,
         source_sampling_rate=None,
     ):
-        if not self.cache or trace_name not in self._waveform_cache:
-            g_data = context[chunk]["data"]
-            waveform = g_data[str(trace_name)][()]
-            if self.cache:
-                self._waveform_cache[trace_name] = waveform
-        else:
+        """
+        Returns waveforms for single traces while handling caching and resampling.
+
+        :param trace_name: Name of trace to load
+        :param chunk: Chunk containing the trace
+        :param context: A LoadingContext instance holding the pointers to the hdf5 files
+        :param target_sampling_rate: Sampling rate for the output. If None keeps input sampling rate.
+        :param source_sampling_rate: Sampling rate of the original trace
+        :return: Array with trace waveforms at target_sampling_rate
+        """
+        trace_name = str(trace_name)
+
+        if trace_name in self._waveform_cache:
+            # Cache hit on trace level
             waveform = self._waveform_cache[trace_name]
+
+        else:
+            # Cache miss on trace level
+            if trace_name.find("$") != -1:
+                # Trace is part of a block
+                block_name, location = trace_name.split("$")
+            else:
+                # Trace is not part of a block
+                block_name, location = trace_name, ":"
+
+            location = self._parse_location(location)
+
+            if block_name in self._waveform_cache:
+                # Cache hit on block level
+                waveform = self._waveform_cache[block_name][location]
+
+            else:
+                # Cache miss on block level - Load from hdf5 file required
+                g_data = context[chunk]["data"]
+                block = g_data[block_name]
+                if self.cache == "full":
+                    block = block[()]  # Explicit load from hdf5 file
+                    self._waveform_cache[block_name] = block
+                    waveform = block[location]
+                else:
+                    waveform = block[location]  # Implies the load from hdf5 file
+                    if self.cache == "trace":
+                        self._waveform_cache[trace_name] = waveform
 
         if target_sampling_rate is not None:
             if np.isnan(source_sampling_rate):
@@ -657,6 +721,44 @@ class WaveformDataset:
                 )
 
         return waveform
+
+    @staticmethod
+    def _parse_location(location):
+        """
+        Parses the location string and returns the associated tuple of slice objects
+        :param location: Location identifier in numpy format as string, e.g., "5,1:7,:".
+                         Allows omission of numbers and negative indexing, e.g., ":-5".
+        :return: tuple of slice objects
+        """
+        location = location.replace(" ", "")  # Remove whitespace
+
+        slices = []
+        dim_slices = location.split(",")
+
+        def int_or_none(s):
+            if s == "":
+                return None
+            else:
+                return int(s)
+
+        for dim_slice in dim_slices:
+            parts = dim_slice.split(":")
+            if len(parts) == 1:
+                idx = int_or_none(parts[0])
+                slices.append(idx)
+            elif len(parts) == 2:
+                start = int_or_none(parts[0])
+                stop = int_or_none(parts[1])
+                slices.append(slice(start, stop))
+            elif len(parts) == 3:
+                start = int_or_none(parts[0])
+                stop = int_or_none(parts[1])
+                step = int_or_none(parts[2])
+                slices.append(slice(start, stop, step))
+            else:
+                raise ValueError(f"Invalid location string {location}")
+
+        return tuple(slices)
 
     def _resample(self, waveform, target_sampling_rate, source_sampling_rate, eps=1e-4):
         try:
@@ -1192,7 +1294,7 @@ class WaveformDataWriter:
             self._waveform_file = h5py.File(self.waveforms_path, "w")
             self._waveform_file.create_group("data")
 
-        elif len(bucket) == 1:
+        if len(bucket) == 1:
             metadata, waveform = bucket[0]
             # Use trace name as bucket name
             trace_name = str(metadata["trace_name"])
