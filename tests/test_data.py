@@ -692,3 +692,31 @@ def test_parse_location():
     assert (
         x[0, 1, 2] == x[seisbench.data.WaveformDataset._parse_location("0,1,2")]
     ).all()
+
+
+def test_writer_padding_reader_unpadding(tmp_path: Path):
+    trace1 = np.random.rand(3, 50)
+    trace2 = np.random.rand(3, 60)
+    trace3 = np.random.rand(3, 200)
+    trace4 = np.random.rand(3, 201)
+
+    # Write output where padding actually occurs
+    data_path = tmp_path / "padding_unpadding"
+    with seisbench.data.WaveformDataWriter(
+        data_path / "metadata.csv", data_path / "waveforms.hdf5"
+    ) as writer:
+        writer.bucketer = seisbench.data.GeometricBucketer(minbucket=100, factor=1.2)
+
+        writer.add_trace({}, trace1)
+        writer.add_trace({}, trace2)
+        writer.add_trace({}, trace3)
+        writer.add_trace({}, trace4)
+
+    # Inspect output files
+    # Check that both values match and padding was removed again
+    data = seisbench.data.WaveformDataset(data_path)
+
+    assert (data.get_waveforms(0) == trace1).all()
+    assert (data.get_waveforms(1) == trace2).all()
+    assert (data.get_waveforms(2) == trace3).all()
+    assert (data.get_waveforms(3) == trace4).all()
