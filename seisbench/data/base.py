@@ -19,7 +19,7 @@ class WaveformDataset:
     """
     This class is the base class for waveform datasets.
 
-    A key consideration should be if the cache is enabled.
+    A key consideration should be how the cache is used.
     If sufficient memory is available to keep the full data set in memory, activating the cache will yield strong performance gains.
     For details on the cache strategies, see the documentation of the ``cache`` parameter.
 
@@ -88,7 +88,7 @@ class WaveformDataset:
         else:
             self._name = name
         self.lazyload = lazyload
-        self.cache = cache
+        self._cache = cache
         self._path = path
         self._chunks = chunks
         if chunks is not None:
@@ -156,6 +156,10 @@ class WaveformDataset:
     @property
     def name(self):
         return self._name
+
+    @property
+    def cache(self):
+        return self._cache
 
     @property
     def path(self):
