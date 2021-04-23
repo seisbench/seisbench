@@ -12,11 +12,16 @@ import os
 import inspect
 import scipy.signal
 import copy
+from collections import defaultdict
 
 
 class WaveformDataset:
     """
     This class is the base class for waveform datasets.
+
+    A key consideration should be how the cache is used.
+    If sufficient memory is available to keep the full data set in memory, activating the cache will yield strong performance gains.
+    For details on the cache strategies, see the documentation of the ``cache`` parameter.
 
     Description for chunked data sets:
 
@@ -42,10 +47,25 @@ class WaveformDataset:
     :type component_order: str, optional
     :param sampling_rate: Common sampling rate of waveforms in dataset, sampling rate can also be specified as a metadata column if not common across dataset.
     :type sampling_rate: int, optional
-    :param cache: If true, each waveform is loaded only once from disk and then stored in memory.
-                  Default to false to reduce memory consumption.
+    :param cache: Defines the behaviour of the waveform cache. Provides three options:
+
+                  - "full": When a trace is queried, the full block containing the trace is loaded into the cache and stored in memory.
+                    This causes the highest memory consumption, but also best performance when using large parts of the dataset.
+                  - "trace": When a trace is queried, only the trace itself is loaded and stored in memory.
+                    This is particularly useful when only a subset of traces is queried, but these are queried multiple times.
+                    In this case the performance of this strategy might outperform "full".
+                  - None: When a trace is queried, it is always loaded from disk.
+                    This mode leads to low memory consumption but high IO load.
+                    It is most likely not usable for model training.
+
+                  Note that for datasets without blocks, i.e., each trace in a single array in the hdf5 file,
+                  the strategies "full" and "trace" are identical.
+                  The default cache strategy is None.
+
                   By setting lazyload to false, the cache can automatically be populated on initialization of the dataset.
-    :type cache: bool, optional
+                  Alternatively use :py:func:`get_waveforms` without any arguments to populate the cache.
+                  Note that using lazyload is in general more efficient.
+    :type cache: str, optional
     :param chunks: Specify particular chunk prefixes to load, defaults to None.
     :type chunks: list, optional
     :param kwargs:
@@ -59,7 +79,7 @@ class WaveformDataset:
         dimension_order=None,
         component_order=None,
         sampling_rate=None,
-        cache=False,
+        cache=None,
         chunks=None,  # Which chunks should be loaded. If None, load all chunks.
         **kwargs,
     ):
@@ -68,7 +88,7 @@ class WaveformDataset:
         else:
             self._name = name
         self.lazyload = lazyload
-        self.cache = cache
+        self._cache = cache
         self._path = path
         self._chunks = chunks
         if chunks is not None:
@@ -136,6 +156,10 @@ class WaveformDataset:
     @property
     def name(self):
         return self._name
+
+    @property
+    def cache(self):
+        return self._cache
 
     @property
     def path(self):
@@ -515,7 +539,16 @@ class WaveformDataset:
 
         :return:
         """
-        existing_keys = set(self._metadata["trace_name"])
+        if self.cache == "full":
+            # Extract block names
+            existing_keys = set(
+                self._metadata["trace_name"].apply(lambda x: x.split("$")[0])
+            )
+        elif self.cache == "trace":
+            existing_keys = set(self._metadata["trace_name"])
+        else:
+            existing_keys = set()
+
         delete_keys = []
         for key in self._waveform_cache.keys():
             if key not in existing_keys:
@@ -639,13 +672,49 @@ class WaveformDataset:
         target_sampling_rate=None,
         source_sampling_rate=None,
     ):
-        if not self.cache or trace_name not in self._waveform_cache:
-            g_data = context[chunk]["data"]
-            waveform = g_data[str(trace_name)][()]
-            if self.cache:
-                self._waveform_cache[trace_name] = waveform
-        else:
+        """
+        Returns waveforms for single traces while handling caching and resampling.
+
+        :param trace_name: Name of trace to load
+        :param chunk: Chunk containing the trace
+        :param context: A LoadingContext instance holding the pointers to the hdf5 files
+        :param target_sampling_rate: Sampling rate for the output. If None keeps input sampling rate.
+        :param source_sampling_rate: Sampling rate of the original trace
+        :return: Array with trace waveforms at target_sampling_rate
+        """
+        trace_name = str(trace_name)
+
+        if trace_name in self._waveform_cache:
+            # Cache hit on trace level
             waveform = self._waveform_cache[trace_name]
+
+        else:
+            # Cache miss on trace level
+            if trace_name.find("$") != -1:
+                # Trace is part of a block
+                block_name, location = trace_name.split("$")
+            else:
+                # Trace is not part of a block
+                block_name, location = trace_name, ":"
+
+            location = self._parse_location(location)
+
+            if block_name in self._waveform_cache:
+                # Cache hit on block level
+                waveform = self._waveform_cache[block_name][location]
+
+            else:
+                # Cache miss on block level - Load from hdf5 file required
+                g_data = context[chunk]["data"]
+                block = g_data[block_name]
+                if self.cache == "full":
+                    block = block[()]  # Explicit load from hdf5 file
+                    self._waveform_cache[block_name] = block
+                    waveform = block[location]
+                else:
+                    waveform = block[location]  # Implies the load from hdf5 file
+                    if self.cache == "trace":
+                        self._waveform_cache[trace_name] = waveform
 
         if target_sampling_rate is not None:
             if np.isnan(source_sampling_rate):
@@ -656,6 +725,44 @@ class WaveformDataset:
                 )
 
         return waveform
+
+    @staticmethod
+    def _parse_location(location):
+        """
+        Parses the location string and returns the associated tuple of slice objects
+        :param location: Location identifier in numpy format as string, e.g., "5,1:7,:".
+                         Allows omission of numbers and negative indexing, e.g., ":-5".
+        :return: tuple of slice objects
+        """
+        location = location.replace(" ", "")  # Remove whitespace
+
+        slices = []
+        dim_slices = location.split(",")
+
+        def int_or_none(s):
+            if s == "":
+                return None
+            else:
+                return int(s)
+
+        for dim_slice in dim_slices:
+            parts = dim_slice.split(":")
+            if len(parts) == 1:
+                idx = int_or_none(parts[0])
+                slices.append(idx)
+            elif len(parts) == 2:
+                start = int_or_none(parts[0])
+                stop = int_or_none(parts[1])
+                slices.append(slice(start, stop))
+            elif len(parts) == 3:
+                start = int_or_none(parts[0])
+                stop = int_or_none(parts[1])
+                step = int_or_none(parts[2])
+                slices.append(slice(start, stop, step))
+            else:
+                raise ValueError(f"Invalid location string {location}")
+
+        return tuple(slices)
 
     def _resample(self, waveform, target_sampling_rate, source_sampling_rate, eps=1e-4):
         try:
@@ -1020,15 +1127,72 @@ class BenchmarkDataset(WaveformDataset, ABC):
         pass
 
 
+class Bucketer(ABC):
+    """
+    This is the abstract bucketer class that needs to be provided to the WaveformDataWriter.
+    It offers one public function, :py:func:`get_bucket`, to assign a bucket to each trace.
+    """
+
+    @abstractmethod
+    def get_bucket(self, metadata, waveform):
+        """
+        Calculates the bucket for the trace given its metadata and waveforms
+
+        :param metadata: Metadata as given to the WaveformDataWriter.
+        :param waveform: Waveforms as given to the WaveformDataWriter.
+        :return: A hashable object denoting the bucket this sample belongs to.
+        """
+        return ""
+
+
+class GeometricBucketer(Bucketer):
+    """
+    A simple bucketer that uses the length of the traces and optionally the assigned split to determine buckets.
+    Only takes into account the length along one fixed axis.
+    Bucket edges are create with a geometric spacing above a minimum bucket.
+    The first bucket is [0, minbucket), the second one [minbucket, minbucket * factor) and so on.
+    There is no maximum bucket.
+    This bucketer ensures that the overhead from padding is at most factor - 1, as long as only few traces with length < minbucket exist.
+    Note that this can even be significantly reduced by passing the input traces ordered by their length.
+
+    :param minbucket: Upper limit of the lowest bucket and start of the geometric spacing.
+    :param factor: Factor for the geometric spacing.
+    :param splits: If true, returns separate buckets for each split. Defaults to true.
+                   If no split is defined in the metadata, this parameter is ignored.
+    :param axis: Axis to take into account for determining the length of the trace.
+    """
+
+    def __init__(self, minbucket=100, factor=1.2, splits=True, axis=-1):
+        self.minbucket = minbucket
+        self.factor = factor
+        self.split = splits
+        self.axis = axis
+
+    def get_bucket(self, metadata, waveform):
+        length = waveform.shape[self.axis]
+
+        if self.split and "split" in metadata:
+            split_str = str(metadata["split"])
+        else:
+            split_str = ""
+
+        if length < self.minbucket:
+            bucket_id = 0
+        else:
+            bucket_id = int(np.log(length / self.minbucket) / np.log(self.factor) + 1)
+
+        return split_str + str(bucket_id)
+
+
 class WaveformDataWriter:
     """
-    .. warning::
-        Writing many datasets into the same hdf5 group can significantly slow down writing.
-        To mitigate this, you can introduce subgroups using trace_names with slashes.
-        For example trace_name could be "block1/trace1".
-        This would create the dataset "trace1" insight the subgroup "block1".
-        To automatically use blocks set the blocksize parameter of the writer.
-        For details on the issue see https://github.com/h5py/h5py/issues/1055.
+    The WaveformDataWriter for writing datasets in SeisBench format.
+
+    To improve reading performance when using the datasets, the writer groups traces into blocks and writes them into joint arrays in the hdf5 file.
+    The exact behaviour is controlled by the :py:attr:`bucketer` and the :py:attr:`bucket_size`.
+    For details see their documentations.
+    This packing is necessary, due to limitations in the hdf5 performance.
+    Reading many small datasets from a hdf5 file causes the overhead of the hdf5 structure to define the read times.
     """
 
     def __init__(self, metadata_path, waveforms_path):
@@ -1043,7 +1207,49 @@ class WaveformDataWriter:
         self._metadata = []
         self._waveform_file = None
         self._pbar = None
-        self._blocksize = None
+
+        self._bucketer = GeometricBucketer()
+        self._bucket_size = 1024
+        self._cache = defaultdict(list)  # Cache used for the bucketing
+        self._bucket_counter = 0  # Bucket counter to generate bucket names
+
+    @property
+    def bucketer(self):
+        """
+        The currently used bucketer, which sorts traces into buckets.
+        If the bucketer is None, no buckets are used and all traces are written separately.
+        By default uses the :py:class:`GeometricBucketer` with default parameters.
+        Please check that this suits your needs.
+        In particular, make sure that the default axis matches your sample axis.
+
+        :return: Returns the current bucketer.
+        """
+        return self._bucketer
+
+    @bucketer.setter
+    def bucketer(self, value):
+        if not isinstance(value, Bucketer) and not value is None:
+            raise TypeError("The bucketer needs to be an instance of Bucketer or None.")
+
+        self._bucketer = value
+
+    @property
+    def bucket_size(self):
+        """
+        The maximum size of a bucket.
+        Once adding another trace would overload the bucket, the bucket is written to disk.
+        Defaults to 1024.
+
+        :return: Bucket size
+        """
+        return self._bucket_size
+
+    @bucket_size.setter
+    def bucket_size(self, value):
+        if value < 1:
+            raise ValueError("Bucket size needs to be at least one")
+
+        self._bucket_size = value
 
     def __enter__(self):
         return self
@@ -1064,59 +1270,106 @@ class WaveformDataWriter:
             )
 
     def add_trace(self, metadata, waveform):
-        trace_name = str(metadata["trace_name"])
-        if self.blocksize is not None:
-            block_name = f"block{len(self._metadata) // self._blocksize}"
-            trace_name = f"{block_name}/{trace_name}"
-            metadata["trace_name"] = trace_name
+        self._metadata.append(
+            metadata
+        )  # Note that this is only a reference to the metadata. This is later used to modify the trace_name attribute.
 
-        self._metadata.append(metadata)
+        if self.bucketer is None:
+            self._write_bucket([metadata, waveform])
+        else:
+            bucket = self.bucketer.get_bucket(metadata, waveform)
+            self._cache[bucket].append((metadata, waveform))
 
-        if self._waveform_file is None:
-            # Using libver="latest" reduces slow down of write caused by the internal structure of hdf5 files
-            # For details say:
-            # https://stackoverflow.com/questions/45023488/inserting-many-hdf5-datasets-very-slow/45026048
-            # or
-            # https://github.com/h5py/h5py/issues/1055
-            self._waveform_file = h5py.File(self.waveforms_path, "w", libver="latest")
-            self._waveform_file.create_group("data")
+            if len(self._cache[bucket]) + 1 > self.bucket_size:
+                self._write_bucket(self._cache[bucket])  # Write out bucket
+                self._cache[bucket] = []  # Remove bucket from cache
+
         if self._pbar is None:
             self._pbar = tqdm(desc="Traces converted")
 
-        self._waveform_file["data"].create_dataset(trace_name, data=waveform)
         self._pbar.update()
+
+    def _write_bucket(self, bucket):
+        if len(bucket) == 0:
+            # Empty buckets don't need to be written out
+            return
+
+        if self._waveform_file is None:
+            self._waveform_file = h5py.File(self.waveforms_path, "w")
+            self._waveform_file.create_group("data")
+
+        if len(bucket) == 1:
+            metadata, waveform = bucket[0]
+            # Use trace name as bucket name
+            trace_name = str(metadata["trace_name"])
+            trace_name = trace_name.replace(
+                "$", "_"
+            )  # As $ will be interpreted as a control sequence to remove padding
+            metadata["trace_name"] = trace_name
+
+            self._waveform_file["data"].create_dataset(trace_name, data=waveform)
+
+        else:
+            bucket_id = self._bucket_counter
+            self._bucket_counter += 1
+            bucket_name = f"bucket{bucket_id}"
+
+            bucket_waveforms, locations = self._pack_arrays([x[1] for x in bucket])
+            self._waveform_file["data"].create_dataset(
+                bucket_name, data=bucket_waveforms
+            )  # Write data to hdf5 file
+
+            # Set correct trace_names
+            for i, location in enumerate(locations):
+                metadata = bucket[i][0]
+                if "trace_name" in metadata:
+                    metadata["trace_name_original"] = metadata[
+                        "trace_name"
+                    ]  # Keep original trace_name in the metadata
+
+                metadata["trace_name"] = f"{bucket_name}${location}"
+
+    @staticmethod
+    def _pack_arrays(arrays):
+        """
+        Packs a list of arrays into one large array.
+        Requires all arrays to have the same ndim and dtype.
+
+        :param arrays: List of arrays to pack into
+        :return: Packed array, location identifiers for each input trace.
+        """
+
+        assert all(x.ndim == arrays[0].ndim for x in arrays)
+        assert all(x.dtype == arrays[0].dtype for x in arrays)
+
+        output_shape = tuple(
+            [len(arrays)]
+            + [max(x.shape[i] for x in arrays) for i in range(arrays[0].ndim)]
+        )
+        output = np.zeros(output_shape, dtype=arrays[0].dtype)
+        locations = []
+
+        for i, x in enumerate(arrays):
+            location_str = ",".join([str(i)] + [f":{s}" for s in x.shape])
+            locations.append(location_str)
+
+            pad_width = [
+                (0, output_shape[i + 1] - x.shape[i])
+                for i in range(len(output_shape) - 1)
+            ]
+            x = np.pad(x, pad_width, mode="constant", constant_values=0)
+            output[i] = x
+
+        return output, locations
 
     def set_total(self, n):
         if self._pbar is None:
             self._pbar = tqdm(desc="Traces converted")
         self._pbar.total = n
 
-        if n > 2 ** 16 and self.blocksize is None:
-            seisbench.logger.warning(
-                "It appears you are writing a large data set without using blocks. "
-                "Set writer.blocksize to use blocks. "
-                "For further information, see the documentation of WaveformDataWriter."
-            )
-
-    @property
-    def blocksize(self):
-        """
-        Defines the size of the output blocks. Defaults to None, i.e., no use of blocks.
-        Suggested value is 2**16.
-        Please note, this will change the trace names in the metadata.
-        """
-        return self._blocksize
-
-    @blocksize.setter
-    def blocksize(self, value):
-        if len(self._metadata) > 0:
-            raise AttributeError(
-                "blocksize can only be set before the first trace is written."
-            )
-
-        self._blocksize = value
-
     def _finalize(self):
+        self.flush_hdf5()
+
         if len(self._metadata) == 0:
             return
 
@@ -1132,3 +1385,15 @@ class WaveformDataWriter:
             metadata.rename(columns=self.metadata_dict, inplace=True)
 
         metadata.to_csv(self.metadata_path, index=False)
+
+    def flush_hdf5(self):
+        """
+        Writes out all traces currently in the cache to the hdf5 file.
+        Should be called if no more traces for the existing buckets will be added, e.g., after finishing a split.
+        Does not write the metadata to csv.
+        """
+        buckets = list(self._cache.keys())
+
+        for bucket in buckets:
+            self._write_bucket(self._cache[bucket])
+            del self._cache[bucket]

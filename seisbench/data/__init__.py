@@ -1,4 +1,10 @@
-from .base import WaveformDataset, BenchmarkDataset, WaveformDataWriter
+from .base import (
+    WaveformDataset,
+    BenchmarkDataset,
+    WaveformDataWriter,
+    Bucketer,
+    GeometricBucketer,
+)
 from .dummy import DummyDataset, ChunkedDummyDataset
 from .stead import STEAD
 from .geofon import GEOFON

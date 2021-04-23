@@ -113,7 +113,6 @@ class Ross2018JGRFM(BenchmarkDataset):
         ) as f_test:
             test_samples = f_test["X"].shape[0]
 
-        writer.blocksize = 2 ** 16
         writer.set_total(train_samples + test_samples)
         writer.data_format = {
             "dimension_order": "CW",
@@ -183,6 +182,9 @@ class Ross2018JGRFM(BenchmarkDataset):
                     }
 
                     writer.add_trace(metadata, wf)
+
+            # Write out all data from the current split
+            writer.flush_hdf5()
 
         if cleanup:
             shutil.rmtree(path_original)
@@ -260,7 +262,6 @@ class Ross2018JGRPick(BenchmarkDataset):
         ) as f_test:
             test_samples = f_test["X"].shape[0]
 
-        writer.blocksize = 2 ** 16
         writer.set_total(train_samples + test_samples)
         writer.data_format = {
             "dimension_order": "CW",
@@ -330,6 +331,9 @@ class Ross2018JGRPick(BenchmarkDataset):
                     }
 
                     writer.add_trace(metadata, wf)
+
+            # Write out all data from the current split
+            writer.flush_hdf5()
 
         if cleanup:
             shutil.rmtree(path_original)

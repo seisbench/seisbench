@@ -5,6 +5,8 @@ import numpy as np
 import pytest
 import logging
 from pathlib import Path
+import h5py
+import pandas as pd
 
 
 def test_get_order_mapping():
@@ -43,15 +45,28 @@ def test_pad_packed_sequence():
 
 
 def test_lazyload():
-    dummy = seisbench.data.DummyDataset(lazyload=True, cache=True)
+    dummy = seisbench.data.DummyDataset(lazyload=True, cache="trace")
     assert len(dummy._waveform_cache) == 0
 
-    dummy = seisbench.data.DummyDataset(lazyload=False, cache=True)
+    dummy = seisbench.data.DummyDataset(lazyload=False, cache="trace")
     assert len(dummy._waveform_cache) == len(dummy)
 
 
 def test_filter_and_cache_evict():
-    dummy = seisbench.data.DummyDataset(lazyload=False, cache=True)
+    # Block caching
+    dummy = seisbench.data.DummyDataset(lazyload=False, cache="full")
+    blocks = set(dummy.metadata["trace_name"].apply(lambda x: x.split("$")[0]))
+    assert len(dummy._waveform_cache) == len(blocks)
+
+    mask = np.arange(len(dummy)) < len(dummy) / 2
+    dummy.filter(mask)
+
+    assert len(dummy) == np.sum(mask)  # Correct metadata length
+    blocks = set(dummy.metadata["trace_name"].apply(lambda x: x.split("$")[0]))
+    assert len(dummy._waveform_cache) == len(blocks)  # Correct cache eviction
+
+    # Trace caching
+    dummy = seisbench.data.DummyDataset(lazyload=False, cache="trace")
     assert len(dummy._waveform_cache) == len(dummy)
 
     mask = np.arange(len(dummy)) < len(dummy) / 2
@@ -101,45 +116,47 @@ def test_region_filter():
 
 
 def test_get_waveforms_dimensions():
-    dummy = seisbench.data.DummyDataset()
+    for cache in ["full", "trace", None]:
+        dummy = seisbench.data.DummyDataset(cache=cache)
 
-    waveforms = dummy.get_waveforms()
-    assert waveforms.shape == (len(dummy), 3, 1200)
+        waveforms = dummy.get_waveforms()
+        assert waveforms.shape == (len(dummy), 3, 1200)
 
-    dummy.component_order = "ZEN"
-    waveforms_zen = dummy.get_waveforms()
-    assert (waveforms[:, 1] == waveforms_zen[:, 2]).all()
-    assert (waveforms[:, 2] == waveforms_zen[:, 1]).all()
-    assert (waveforms[:, 0] == waveforms_zen[:, 0]).all()
+        dummy.component_order = "ZEN"
+        waveforms_zen = dummy.get_waveforms()
+        assert (waveforms[:, 1] == waveforms_zen[:, 2]).all()
+        assert (waveforms[:, 2] == waveforms_zen[:, 1]).all()
+        assert (waveforms[:, 0] == waveforms_zen[:, 0]).all()
 
-    mask = np.arange(len(dummy)) < len(dummy) / 2
-    assert dummy.get_waveforms(mask=mask).shape[0] == np.sum(mask)
+        mask = np.arange(len(dummy)) < len(dummy) / 2
+        assert dummy.get_waveforms(mask=mask).shape[0] == np.sum(mask)
 
-    dummy.dimension_order = "CWN"
-    waveforms = dummy.get_waveforms()
+        dummy.dimension_order = "CWN"
+        waveforms = dummy.get_waveforms()
 
-    assert waveforms.shape == (3, 1200, len(dummy))
+        assert waveforms.shape == (3, 1200, len(dummy))
 
 
 def test_get_waveforms_select():
-    dummy = seisbench.data.DummyDataset()
+    for cache in ["full", "trace", None]:
+        dummy = seisbench.data.DummyDataset(cache=cache)
 
-    waveforms_full = dummy.get_waveforms()
-    assert waveforms_full.shape == (len(dummy), 3, 1200)
+        waveforms_full = dummy.get_waveforms()
+        assert waveforms_full.shape == (len(dummy), 3, 1200)
 
-    waveforms_ind = dummy.get_waveforms(idx=5)
-    assert waveforms_ind.shape == (3, 1200)
-    assert (waveforms_ind == waveforms_full[5]).all()
+        waveforms_ind = dummy.get_waveforms(idx=5)
+        assert waveforms_ind.shape == (3, 1200)
+        assert (waveforms_ind == waveforms_full[5]).all()
 
-    waveforms_list = dummy.get_waveforms(idx=[10])
-    assert waveforms_list.shape == (1, 3, 1200)
-    assert (waveforms_list[0] == waveforms_full[10]).all()
+        waveforms_list = dummy.get_waveforms(idx=[10])
+        assert waveforms_list.shape == (1, 3, 1200)
+        assert (waveforms_list[0] == waveforms_full[10]).all()
 
-    mask = np.zeros(len(dummy), dtype=bool)
-    mask[15] = True
-    waveforms_mask = dummy.get_waveforms(mask=mask)
-    assert waveforms_mask.shape == (1, 3, 1200)
-    assert (waveforms_mask[0] == waveforms_full[15]).all()
+        mask = np.zeros(len(dummy), dtype=bool)
+        mask[15] = True
+        waveforms_mask = dummy.get_waveforms(mask=mask)
+        assert waveforms_mask.shape == (1, 3, 1200)
+        assert (waveforms_mask[0] == waveforms_full[15]).all()
 
 
 def test_lazyload_cache(caplog):
@@ -481,7 +498,7 @@ def test_get_sample():
 
 def test_load_waveform_data_with_sampling_rate():
     # Checks that preloading waveform data works with sampling rate specified
-    dummy = seisbench.data.DummyDataset(cache=True, lazyload=False, sampling_rate=20)
+    dummy = seisbench.data.DummyDataset(cache="trace", lazyload=False, sampling_rate=20)
     assert len(dummy._waveform_cache) == len(dummy.metadata)
 
 
@@ -500,7 +517,7 @@ def test_copy():
 
 
 def test_filter_inplace():
-    dummy = seisbench.data.DummyDataset(cache=True, lazyload=False)
+    dummy = seisbench.data.DummyDataset(cache="trace", lazyload=False)
     org_len = len(dummy)
     mask = np.zeros(len(dummy), dtype=bool)
     mask[50:] = True
@@ -536,3 +553,170 @@ def test_splitting():
     assert len(train) == 60
     assert len(dev) == 10
     assert len(test) == 30
+
+
+def test_bucketer_type(tmp_path: Path):
+    data_path = tmp_path / "bucketer_type"
+    writer = seisbench.data.WaveformDataWriter(
+        data_path / "metadata.csv", data_path / "waveforms.hdf5"
+    )
+
+    with pytest.raises(TypeError):
+        writer.bucketer = 10
+
+    # Don't use a bucketer
+    writer.bucketer = None
+
+    # Use a Geometric bucketer
+    writer.bucketer = seisbench.data.GeometricBucketer()
+
+    with pytest.raises(ValueError):
+        writer.bucket_size = 0
+
+    writer.bucket_size = 1024
+
+
+def test_geometric_bucketer():
+    # Split is false
+    bucketer = seisbench.data.GeometricBucketer(
+        minbucket=100, factor=1.2, splits=False, axis=-1
+    )
+
+    # Minimum bucket
+    assert "0" == bucketer.get_bucket({}, np.ones((3, 99)))
+
+    # First bucket
+    assert "1" == bucketer.get_bucket({}, np.ones((3, 101)))
+
+    # Later bucket
+    assert "10" == bucketer.get_bucket({}, np.ones((3, int(100 * 1.2 ** 9 + 1))))
+
+    # Ignores split
+    assert "0" == bucketer.get_bucket({"split": "train"}, np.ones((3, 99)))
+
+    # Split is true
+    bucketer = seisbench.data.GeometricBucketer(
+        minbucket=100, factor=1.2, splits=True, axis=-1
+    )
+
+    # Minimum bucket
+    assert "train0" == bucketer.get_bucket({"split": "train"}, np.ones((3, 99)))
+
+    # First bucket
+    assert "dev1" == bucketer.get_bucket({"split": "dev"}, np.ones((3, 101)))
+
+    # Later bucket
+    assert "test10" == bucketer.get_bucket(
+        {"split": "test"}, np.ones((3, int(100 * 1.2 ** 9 + 1)))
+    )
+
+    # Ignores missing split
+    assert "0" == bucketer.get_bucket({}, np.ones((3, 99)))
+
+
+def test_pack_arrays():
+    arrays = [np.random.rand(5, 2, 3), np.random.rand(4, 4, 2)]
+    output, locations = seisbench.data.WaveformDataWriter._pack_arrays(arrays)
+
+    assert output.shape == (2, 5, 4, 3)
+    assert (output[0, :5, :2, :3] == arrays[0]).all()
+    assert (output[1, :4, :4, :2] == arrays[1]).all()
+    assert locations[0] == "0,:5,:2,:3"
+    assert locations[1] == "1,:4,:4,:2"
+
+
+def test_bucketer_cache(tmp_path: Path):
+    data_path = tmp_path / "bucketer_cache"
+    with seisbench.data.WaveformDataWriter(
+        data_path / "metadata.csv", data_path / "waveforms.hdf5"
+    ) as writer:
+        writer.bucket_size = 10
+
+        # Traces are kept in bucket
+        for i in range(9):
+            writer.add_trace({"split": "test"}, np.ones((3, 12)))
+
+        assert len(writer._cache) == 1
+        assert len(writer._cache["test0"]) == 9
+
+        # Traces are kept in bucket
+        for i in range(9):
+            writer.add_trace({"split": "train"}, np.ones((3, 12)))
+
+        assert len(writer._cache) == 2
+        assert len(writer._cache["test0"]) == 9
+        assert len(writer._cache["train0"]) == 9
+
+        # Traces are written out
+        writer.add_trace({"split": "train"}, np.ones((3, 12)))
+        assert len(writer._cache["test0"]) == 9
+        assert len(writer._cache["train0"]) == 0
+
+        # Remaining traces are written out
+        writer.flush_hdf5()
+        assert len(writer._cache["test0"]) == 0
+
+    # Inspect output files
+    with h5py.File(data_path / "waveforms.hdf5", "r") as f:
+        assert len(f["data"].keys()) == 2
+        assert f["data/bucket0"].shape == (10, 3, 12)
+        assert f["data/bucket1"].shape == (9, 3, 12)
+
+    metadata = pd.read_csv(data_path / "metadata.csv")
+    for trace_name in metadata["trace_name"].values:
+        assert trace_name.startswith("bucket")
+        assert trace_name[7] == "$"
+
+
+def test_parse_location():
+    x = np.random.rand(100, 90, 70)
+    assert (x[0] == x[seisbench.data.WaveformDataset._parse_location("0")]).all()
+
+    assert (x[:5] == x[seisbench.data.WaveformDataset._parse_location(":5")]).all()
+
+    assert (x[1:] == x[seisbench.data.WaveformDataset._parse_location("1:")]).all()
+
+    assert (x[3:10] == x[seisbench.data.WaveformDataset._parse_location("3:10")]).all()
+
+    assert (x[-10] == x[seisbench.data.WaveformDataset._parse_location("-10")]).all()
+
+    assert (
+        x[1:99:3] == x[seisbench.data.WaveformDataset._parse_location("1:99:3")]
+    ).all()
+
+    assert (
+        x[0, 1:10, :-5]
+        == x[seisbench.data.WaveformDataset._parse_location("0, 1:10, :-5")]
+    ).all()
+
+    assert (
+        x[0, 1, 2] == x[seisbench.data.WaveformDataset._parse_location("0,1,2")]
+    ).all()
+
+
+def test_writer_padding_reader_unpadding(tmp_path: Path):
+    trace1 = np.random.rand(3, 50)
+    trace2 = np.random.rand(3, 60)
+    trace3 = np.random.rand(3, 200)
+    trace4 = np.random.rand(3, 201)
+
+    # Write output where padding actually occurs
+    data_path = tmp_path / "padding_unpadding"
+    with seisbench.data.WaveformDataWriter(
+        data_path / "metadata.csv", data_path / "waveforms.hdf5"
+    ) as writer:
+        writer.bucketer = seisbench.data.GeometricBucketer(minbucket=100, factor=1.2)
+
+        writer.add_trace({}, trace1)
+        writer.add_trace({}, trace2)
+        writer.add_trace({}, trace3)
+        writer.add_trace({}, trace4)
+
+    # Inspect output files
+    # Check that both values match and padding was removed again
+    data = seisbench.data.WaveformDataset(data_path)
+
+    assert (data.get_waveforms(0) == trace1).all()
+    assert (data.get_waveforms(1) == trace2).all()
+    assert (data.get_waveforms(2) == trace3).all()
+    assert (data.get_waveforms(3) == trace4).all()
