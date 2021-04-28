@@ -38,3 +38,9 @@ so if you are experiencing issues with installing black, just ignore the style.
 
 ## Tests
 Run tests using `pytest` by running `python -m pytest` in the repository root directory.
+
+## Documentation
+The documentation is currently not hosted, but can be built from source.
+To build the documentation first install the requirements from `docs/requirements.txt`.
+Then run `make html` to build the docs in html format.
+The output will appear in `docs/_build/html`.

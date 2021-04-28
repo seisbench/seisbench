@@ -23,16 +23,6 @@ class WaveformDataset:
     If sufficient memory is available to keep the full data set in memory, activating the cache will yield strong performance gains.
     For details on the cache strategies, see the documentation of the ``cache`` parameter.
 
-    Description for chunked data sets:
-
-    As data sets can become too large to handle, one can chunk datasets.
-    Instead of one metadata.csv and one waveforms.hdf5 file, a chunked data set consists of multiple chunks.
-    Each chunk has one metadata{chunk}.csv and waveforms{chunk}.hdf5 file.
-
-    Optionally, but recommended, a chunks file can be added to the dataset, which lists all chunk identifiers seperated by linebreaks.
-    If no chunks file is available, chunks are derived from the file names.
-    The data_format needs to be specified in each chunk and needs to be consistent across chunks.
-
     :param path: Path to dataset.
     :type path: pathlib.Path, str
     :param name: Dataset name, default is None.

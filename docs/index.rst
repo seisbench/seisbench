@@ -29,6 +29,7 @@ be based of community feedback.
 
    pages/overview.rst
    pages/installation_and_usage.rst
+   pages/data_format.rst
    pages/benchmark_datasets.rst
    pages/models.rst
    pages/examples.rst
