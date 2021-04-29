@@ -337,3 +337,108 @@ class Ross2018JGRPick(BenchmarkDataset):
 
         if cleanup:
             shutil.rmtree(path_original)
+
+
+class Ross2018GPD(BenchmarkDataset):
+    """
+    Pick dataset belonging to the publication:
+    Zachary E. Ross, Men‐Andrin Meier, Egill Hauksson, Thomas H. Heaton;
+    Generalized Seismic Phase Detection with Deep Learning.
+    Bulletin of the Seismological Society of America 2018;; 108 (5A): 2894–2901.
+    https://doi.org/10.1785/0120180080
+    """
+
+    def __init__(self, **kwargs):
+        citation = (
+            "Ross, Z. E., Meier, M.‐A., Hauksson, E., & Heaton, T.(2018). "
+            "Generalized Seismic Phase Detection with Deep Learning. "
+            "Bulletin of the Seismological Society of America 2018;; 108 (5A): 2894–2901. "
+            "https://doi.org/10.1785/0120180080"
+        )
+        super().__init__(citation=citation, repository_lookup=False, **kwargs)
+
+    def _download_dataset(self, writer, cleanup=False, blocksize=2 ** 14):
+        """
+        Downloads and converts the dataset from the original publication
+
+        :param writer: WaveformWriter
+        :param cleanup: If true, delete the original files after conversion. Defaults to false.
+        :param blocksize: Number of waveform samples to read from disk at once
+        :return:
+        """
+
+        path = self.path
+        path_original = path / "original"
+        path_original.mkdir(parents=True, exist_ok=True)
+
+        # Download data files
+        # Uses callback_if_uncached only to be able to utilize the cache mechanism
+        # Concurrent accesses are anyhow already controlled by the callback_if_uncached call wrapping _download_dataset
+        # It's therefore considered save to set force=True
+
+        data_url = "https://service.scedc.caltech.edu/ftp/ross_etal_2018_bssa/scsn_ps_2000_2017_shuf.hdf5"
+        filename = data_url[data_url.rfind("/") + 1 :]
+
+        def callback_download_original(path):
+            seisbench.util.download_http(
+                data_url,
+                path,
+                desc=f"Downloading file {filename}",
+            )
+
+        seisbench.util.callback_if_uncached(
+            path_original / filename, callback_download_original, force=True
+        )
+
+        writer.bucket_size = (
+            4096  # Single waveforms are small so the bucket size should be larger
+        )
+        writer.data_format = {
+            "dimension_order": "CW",
+            "component_order": "ZNE",
+            "measurement": "velocity",
+            "sampling_rate": 100,
+            "unit": "none/normalized",
+            "instrument_response": "not restituted",
+        }
+
+        with h5py.File(path_original / filename, "r") as fin:
+            writer.set_total(fin["X"].shape[0])
+            y = fin["Y"][()]
+
+            wf_block = None
+            for i in range(fin["X"].shape[0]):
+                # Preload block of waveforms
+                if i % blocksize == 0:
+                    wf_block = fin["X"][i : i + blocksize]
+                wf = wf_block[i % blocksize].T  # Load waveforms and transpose
+                wf = wf[[2, 0, 1]]  # Resort components to ZNE
+
+                if i % 10 < 6:
+                    trace_split = "train"
+                elif i % 10 < 7:
+                    trace_split = "dev"
+                else:
+                    trace_split = "test"
+
+                metadata = {
+                    "split": trace_split,
+                }
+
+                if y[i] == 0:
+                    # P pick
+                    metadata["trace_category"] = "earthquake"
+                    metadata["trace_p_arrival_sample"] = 300
+                    metadata["trace_p_status"] = "manual"
+                elif y[i] == 1:
+                    # S pick
+                    metadata["trace_category"] = "earthquake"
+                    metadata["trace_s_arrival_sample"] = 300
+                    metadata["trace_s_status"] = "manual"
+                else:
+                    metadata["trace_category"] = "noise"
+
+                writer.add_trace(metadata, wf)
+
+        if cleanup:
+            shutil.rmtree(path_original)
