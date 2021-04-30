@@ -442,3 +442,149 @@ class Ross2018GPD(BenchmarkDataset):
 
         if cleanup:
             shutil.rmtree(path_original)
+
+
+# TODO: Write Men-Andrin Meier regarding zero metadata columns, time format, split format
+class Meier2019JGR(BenchmarkDataset):
+    """
+    Southern californian part of the dataset from Meier et al. (2019)
+    Note that due to the missing Japanese data,
+    there is a massive overrepresentation of noise samples.
+
+    Meier, M.-A., Ross, Z. E., Ramachandran, A., Balakrishna, A.,
+    Nair, S., Kundzicz, P., et al. (2019). Reliable real‐time
+    seismic signal/noise discrimination with machine learning.
+    Journal of Geophysical Research: Solid Earth, 124.
+    https://doi.org/10.1029/2018JB016661
+    """
+
+    def __init__(self, **kwargs):
+        citation = (
+            "Meier, M.-A., Ross, Z. E., Ramachandran, A., Balakrishna, A., "
+            "Nair, S., Kundzicz, P., et al. (2019). Reliable real‐time "
+            "seismic signal/noise discrimination with machine learning. "
+            "Journal of Geophysical Research: Solid Earth, 124. "
+            "https://doi.org/10.1029/2018JB016661"
+        )
+        super().__init__(citation=citation, repository_lookup=False, **kwargs)
+
+    def _download_dataset(self, writer, cleanup=False, blocksize=2 ** 14):
+        """
+        Downloads and converts the dataset from the original publication
+
+        :param writer: WaveformWriter
+        :param cleanup: If true, delete the original files after conversion. Defaults to false.
+        :param blocksize: Number of waveform samples to read from disk at once
+        :return:
+        """
+
+        path = self.path
+        path_original = path / "original"
+        path_original.mkdir(parents=True, exist_ok=True)
+
+        # Download data files
+        # Uses callback_if_uncached only to be able to utilize the cache mechanism
+        # Concurrent accesses are anyhow already controlled by the callback_if_uncached call wrapping _download_dataset
+        # It's therefore considered save to set force=True
+
+        data_url = "https://service.scedc.caltech.edu/ftp/meier_etal_2019_jgr/onsetWforms_meier19jgr_pub1_0_woJP.h5"
+        filename = data_url[data_url.rfind("/") + 1 :]
+
+        def callback_download_original(path):
+            seisbench.util.download_http(
+                data_url,
+                path,
+                desc=f"Downloading file {filename}",
+            )
+
+        seisbench.util.callback_if_uncached(
+            path_original / filename, callback_download_original, force=True
+        )
+
+        writer.bucket_size = (
+            4096  # Single waveforms are small so the bucket size should be larger
+        )
+        writer.data_format = {
+            "dimension_order": "CW",
+            "component_order": "ZNE",
+            "measurement": "velocity",
+            "sampling_rate": 100,
+            "unit": "mps",
+            "instrument_response": "gain corrected",
+        }
+
+        category_map = {
+            "noise": "noise",
+            "quake": "earthquake (local)",
+            "tele": "earthquake (teleseismic)",
+        }
+
+        with h5py.File(path_original / filename, "r") as fin:
+            total = (
+                fin["quake/wforms"].shape[1]
+                + fin["noise/wforms"].shape[1]
+                + fin["tele/wforms"].shape[1]
+            )
+            writer.set_total(total)
+
+            for group in "quake", "noise", "tele":
+                gin = fin[group]
+                meta_features = gin["numMeta"][()]
+                category = category_map[group]
+
+                wf_block = None
+                for i in range(meta_features.shape[1]):
+                    # Preload block of waveforms
+                    if i % blocksize == 0:
+                        wf_block = gin["wforms"][:, i : i + blocksize]
+                    wf = wf_block[:, i % blocksize]  # Load waveforms
+                    wf = wf[[2, 0, 1]]  # Resort components to ZNE
+
+                    # TODO: Read/define split
+                    meta_row = meta_features[:, i]
+
+                    if group == "noise":
+                        metadata = {
+                            "trace_category": category,
+                            # "split": trace_split,
+                            "trace_snr_db": meta_row[3],
+                            "trace_record_id": meta_row[4],
+                            # meta_row[5] - pickIndex - ignored
+                            # Data is consistently zero
+                            # "station_latitude_deg": meta_row[6],
+                            # "station_longitude_deg": meta_row[7],
+                            # "trace_pga_mps2": meta_row[8],
+                            # "trace_pgv_mps": meta_row[9],
+                            # "trace_pgd_m": meta_row[10],
+                            "source_origin_time": meta_row[11],  # Format unclear
+                            # Data is consistently zero
+                            # "path_back_azimuth_deg": meta_row[12]
+                        }
+
+                    else:
+                        metadata = {
+                            "trace_category": category,
+                            # "split": trace_split,
+                            "source_magnitude": meta_row[0],
+                            "path_hyp_distance_km": meta_row[1],
+                            "source_depth_km": meta_row[2],
+                            "trace_snr_db": meta_row[3],
+                            "trace_record_id": meta_row[4],
+                            # meta_row[5] - pickIndex - ignored
+                            "station_latitude_deg": meta_row[6],
+                            "station_longitude_deg": meta_row[7],
+                            # Data is consistently zero
+                            # "trace_pga_mps2": meta_row[8],
+                            # "trace_pgv_mps": meta_row[9],
+                            # "trace_pgd_m": meta_row[10],
+                            "source_origin_time": meta_row[11],  # Format unclear
+                            # Data is consistently zero
+                            # "path_back_azimuth_deg": meta_row[12]
+                            "trace_p_arrival_sample": 201,
+                            "trace_p_status": "manual",
+                        }
+
+                    writer.add_trace(metadata, wf)
+
+        if cleanup:
+            shutil.rmtree(path_original)
