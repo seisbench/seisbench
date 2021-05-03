@@ -27,10 +27,6 @@ class WaveformDataset:
     :type path: pathlib.Path, str
     :param name: Dataset name, default is None.
     :type name: str, optional
-    :param lazyload: If true, only loads waveforms once they are first requested.
-                     Defaults to true.
-                     If cache==false, lazyload will always be set to true.
-    :type lazyload: bool, optional
     :param dimension_order: Dimension order e.g. 'CHW', if not specified will be assumed from config file, defaults to None.
     :type dimension_order: str, optional
     :param component_order: Component order e.g. 'ZNE', if not specified will be assumed from config file, defaults to None.
@@ -52,9 +48,11 @@ class WaveformDataset:
                   the strategies "full" and "trace" are identical.
                   The default cache strategy is None.
 
-                  By setting lazyload to false, the cache can automatically be populated on initialization of the dataset.
-                  Alternatively use :py:func:`get_waveforms` without any arguments to populate the cache.
-                  Note that using lazyload is in general more efficient.
+                  Use :py:func:`preload_waveforms` to populate the cache.
+                  Preloading the waveforms is often much faster than loading them during later application,
+                  as preloading can use sequential access.
+                  Note that it is recommended to always first filter a dataset and then preload to reduce
+                  unnecessary reads and memory consumption.
     :type cache: str, optional
     :param chunks: Specify particular chunk prefixes to load, defaults to None.
     :type chunks: list, optional
@@ -65,7 +63,6 @@ class WaveformDataset:
         self,
         path,
         name=None,
-        lazyload=True,
         dimension_order=None,
         component_order=None,
         sampling_rate=None,
@@ -77,7 +74,6 @@ class WaveformDataset:
             self._name = "Unnamed dataset"
         else:
             self._name = name
-        self.lazyload = lazyload
         self._cache = cache
         self._path = path
         self._chunks = chunks
@@ -110,14 +106,6 @@ class WaveformDataset:
         self.component_order = component_order
 
         self._waveform_cache = {}
-
-        if not self.lazyload:
-            if self.cache:
-                self._load_waveform_data()
-            else:
-                seisbench.logger.warning(
-                    "Skipping preloading of waveforms as cache is set to inactive."
-                )
 
     def __str__(self):
         return f"{self._name} - {len(self)} traces"
@@ -406,10 +394,14 @@ class WaveformDataset:
 
         return data_format
 
-    def _load_waveform_data(self):
+    def preload_waveforms(self):
         """
         Loads waveform data from hdf5 file into cache
         """
+        if self.cache is None:
+            seisbench.logger.warning("Skipping preload, as cache is disabled.")
+            return
+
         chunks, metadata_paths, waveforms_path = self._chunks_with_paths()
         with LoadingContext(chunks, waveforms_path) as context:
             for trace_name, chunk in zip(

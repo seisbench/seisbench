@@ -44,17 +44,18 @@ def test_pad_packed_sequence():
     assert np.sum(packed == 0) == packed.size - sum(x.size for x in seq)
 
 
-def test_lazyload():
-    dummy = seisbench.data.DummyDataset(lazyload=True, cache="trace")
+def test_preload():
+    dummy = seisbench.data.DummyDataset(cache="trace")
     assert len(dummy._waveform_cache) == 0
 
-    dummy = seisbench.data.DummyDataset(lazyload=False, cache="trace")
+    dummy.preload_waveforms()
     assert len(dummy._waveform_cache) == len(dummy)
 
 
 def test_filter_and_cache_evict():
     # Block caching
-    dummy = seisbench.data.DummyDataset(lazyload=False, cache="full")
+    dummy = seisbench.data.DummyDataset(cache="full")
+    dummy.preload_waveforms()
     blocks = set(dummy.metadata["trace_name"].apply(lambda x: x.split("$")[0]))
     assert len(dummy._waveform_cache) == len(blocks)
 
@@ -66,7 +67,8 @@ def test_filter_and_cache_evict():
     assert len(dummy._waveform_cache) == len(blocks)  # Correct cache eviction
 
     # Trace caching
-    dummy = seisbench.data.DummyDataset(lazyload=False, cache="trace")
+    dummy = seisbench.data.DummyDataset(cache="trace")
+    dummy.preload_waveforms()
     assert len(dummy._waveform_cache) == len(dummy)
 
     mask = np.arange(len(dummy)) < len(dummy) / 2
@@ -159,10 +161,12 @@ def test_get_waveforms_select():
         assert (waveforms_mask[0] == waveforms_full[15]).all()
 
 
-def test_lazyload_cache(caplog):
+def test_preload_no_cache(caplog):
     with caplog.at_level(logging.WARNING):
-        seisbench.data.DummyDataset(lazyload=False, cache=False)
-    assert "Skipping preloading of waveforms as cache is set to inactive" in caplog.text
+        dummy = seisbench.data.DummyDataset(cache=None)
+        dummy.preload_waveforms()
+
+    assert "Skipping preload, as cache is disabled." in caplog.text
 
 
 def test_writer(caplog, tmp_path: Path):
@@ -498,12 +502,14 @@ def test_get_sample():
 
 def test_load_waveform_data_with_sampling_rate():
     # Checks that preloading waveform data works with sampling rate specified
-    dummy = seisbench.data.DummyDataset(cache="trace", lazyload=False, sampling_rate=20)
+    dummy = seisbench.data.DummyDataset(cache="trace", sampling_rate=20)
+    dummy.preload_waveforms()
     assert len(dummy._waveform_cache) == len(dummy.metadata)
 
 
 def test_copy():
-    dummy1 = seisbench.data.DummyDataset(cache=True, lazyload=False)
+    dummy1 = seisbench.data.DummyDataset(cache=True)
+    dummy1.preload_waveforms()
     dummy2 = dummy1.copy()
 
     # Metadata and waveforms are copied by value
@@ -517,7 +523,8 @@ def test_copy():
 
 
 def test_filter_inplace():
-    dummy = seisbench.data.DummyDataset(cache="trace", lazyload=False)
+    dummy = seisbench.data.DummyDataset(cache="trace")
+    dummy.preload_waveforms()
     org_len = len(dummy)
     mask = np.zeros(len(dummy), dtype=bool)
     mask[50:] = True
