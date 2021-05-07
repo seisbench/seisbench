@@ -1,15 +1,20 @@
 import seisbench
-from .base import BenchmarkDataset
+import seisbench.util
+from .base import BenchmarkDataset, WaveformDataWriter
 
 from pathlib import Path
 import shutil
 import h5py
 import pandas as pd
+import numpy as np
 
 
 class STEAD(BenchmarkDataset):
     """
     STEAD dataset
+
+    Using the train/test split from the EQTransformer Github repository
+    train/dev split defined in SeisBench
     """
 
     def __init__(self, **kwargs):
@@ -19,10 +24,11 @@ class STEAD(BenchmarkDataset):
         )
         super().__init__(citation=citation, **kwargs)
 
-    def _download_dataset(self, writer, basepath=None, **kwargs):
+    def _download_dataset(self, writer: WaveformDataWriter, basepath=None, **kwargs):
         download_instructions = (
             "Please download STEAD following the instructions at https://github.com/smousavi05/STEAD. "
-            "Provide the locations of the STEAD unpacked files (merged.csv and merged.hdf5) as parameter basepath to the class. "
+            "Provide the locations of the STEAD unpacked files (merged.csv and merged.hdf5) in the "
+            "download_kwargs argument 'basepath'."
             "This step is only necessary the first time STEAD is loaded."
         )
 
@@ -33,17 +39,17 @@ class STEAD(BenchmarkDataset):
             "p_arrival_sample": "trace_p_arrival_sample",
             "p_status": "trace_p_status",
             "p_weight": "trace_p_weight",
-            "p_travel_sec": "trace_p_travel_sec",
+            "p_travel_sec": "path_p_travel_sec",
             "s_arrival_sample": "trace_s_arrival_sample",
             "s_status": "trace_s_status",
             "s_weight": "trace_s_weight",
-            "s_travel_sec": "trace_s_travel_sec",
-            "back_azimuth_deg": "trace_back_azimuth_deg",
+            "s_travel_sec": "path_s_travel_sec",
+            "back_azimuth_deg": "path_back_azimuth_deg",
             "snr_db": "trace_snr_db",
             "coda_end_sample": "trace_coda_end_sample",
             "network_code": "station_network_code",
             "receiver_code": "station_code",
-            "receiver_type": "station_type",
+            "receiver_type": "trace_channel",
             "receiver_latitude": "station_latitude_deg",
             "receiver_longitude": "station_longitude_deg",
             "receiver_elevation_m": "station_elevation_m",
@@ -62,8 +68,7 @@ class STEAD(BenchmarkDataset):
             "source_magnitude_author": "source_magnitude_author",
         }
 
-        metadata_path = writer.metadata_path
-        waveforms_path = writer.waveforms_path
+        path = self.path
 
         if basepath is None:
             raise ValueError(
@@ -83,26 +88,48 @@ class STEAD(BenchmarkDataset):
 
         self.path.mkdir(parents=True, exist_ok=True)
         seisbench.logger.warning(
-            "Copying STEAD files to cache. This might take a while."
+            "Converting STEAD files to SeisBench format. This might take a while."
+        )
+
+        split_url = "https://github.com/smousavi05/EQTransformer/raw/master/ModelsAndSampleData/test.npy"
+        seisbench.util.download_http(
+            split_url, path / "test.npy", desc=f"Downloading test splits"
         )
 
         # Copy metadata and rename columns to SeisBench format
         metadata = pd.read_csv(basepath / "merged.csv")
         metadata.rename(columns=metadata_dict, inplace=True)
-        metadata.to_csv(metadata_path, index=False)
 
-        shutil.copy(basepath / "merged.hdf5", waveforms_path)
+        # Set split
+        test_split = set(np.load(path / "test.npy"))
+        test_mask = metadata["trace_name"].isin(test_split)
+        train_dev = metadata["trace_name"][~test_mask].values
+        dev_split = train_dev[
+            ::18
+        ]  # Use 5% of total traces as suggested in EQTransformer Github repository
+        dev_mask = metadata["trace_name"].isin(dev_split)
+        metadata["split"] = "train"
+        metadata.loc[dev_mask, "split"] = "dev"
+        metadata.loc[test_mask, "split"] = "test"
 
-        data_format = {
-            "dimension_order": "WC",
-            "component_order": "ENZ",
+        # Writer data format
+        writer.data_format = {
+            "dimension_order": "CW",
+            "component_order": "ZNE",
             "sampling_rate": 100,
             "measurement": "velocity",
             "unit": "counts",
             "instrument_response": "not restituted",
         }
 
-        with h5py.File(waveforms_path, "a") as fout:
-            g_data_format = fout.create_group("data_format")
-            for key in data_format.keys():
-                g_data_format.create_dataset(key, data=data_format[key])
+        writer.set_total(len(metadata))
+
+        with h5py.File(basepath / "merged.hdf5") as f:
+            gdata = f["data"]
+            for _, row in metadata.iterrows():
+                row = row.to_dict()
+                waveforms = gdata[row["trace_name"]][()]
+                waveforms = waveforms.T  # From WC to CW
+                waveforms = waveforms[[2, 1, 0]]  # From ENZ to ZNE
+
+                writer.add_trace(row, waveforms)
