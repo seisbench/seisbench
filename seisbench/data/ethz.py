@@ -48,11 +48,10 @@ class ETHZ(BenchmarkDataset):
             "Download and conversion of raw data will now be "
             "performed. This may take a while."
         )
-        component_order = "ZNE"
 
         writer.data_format = {
             "dimension_order": "CW",
-            "component_order": component_order,
+            "component_order": "ZNE",
             "measurement": "velocity",
             "unit": "counts",
             "instrument_response": "not restituted",
@@ -77,7 +76,6 @@ class ETHZ(BenchmarkDataset):
             seisbench.logger.info(f"Downloading {event.resource_id}")
 
             picks = sorted(event.picks, key=lambda x: x.time)
-
             for pick in picks:
                 try:
                     trace_params = self._get_trace_params(
@@ -127,7 +125,7 @@ class ETHZ(BenchmarkDataset):
 
                 actual_t_start, data, completeness = _stream_to_array(
                     stream,
-                    component_order="ZNE",
+                    component_order=writer.data_format["component_order"],
                 )
 
                 if int((t_end - t_start) * sampling_rate) + 1 > data.shape[1]:
@@ -182,7 +180,7 @@ class ETHZ(BenchmarkDataset):
                 catalog += self.client.get_events(eventid=ev_id, includearrivals=True)
                 pbar.update()
 
-        catalog.write(str(self.path / "ethz_events.xml", format="QUAKEML"))
+        catalog.write(str(self.path / "ethz_events.xml"), format="QUAKEML")
 
         return catalog
 
@@ -195,7 +193,7 @@ class ETHZ(BenchmarkDataset):
         if str(event.resource_id).split("/")[-1] == "1":
             # Generate custom source-id
             chars = string.ascii_lowercase + string.digits
-            source_id = "temp_sb_" + "".join(random.choice(chars) for _ in range(6))
+            source_id = "sb_id_" + "".join(random.choice(chars) for _ in range(6))
         else:
             source_id = str(event.resource_id).split("/")[-1]
 
