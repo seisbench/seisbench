@@ -1,5 +1,10 @@
 import seisbench
 from .base import BenchmarkDataset
+from seisbench.util.trace_ops import (
+    _rotate_stream_to_ZNE,
+    _stream_to_array,
+    _trace_has_spikes,
+)
 
 from pathlib import Path
 import obspy
@@ -242,7 +247,7 @@ class GEOFON(BenchmarkDataset):
             )
             return
 
-        self._rotate_stream_to_ZNE(stream, inventory)
+        _rotate_stream_to_ZNE(stream, inventory)
 
         t_start = min(pick.time for pick in picks) - time_before
         t_end = max(pick.time for pick in picks) + time_after
@@ -255,9 +260,7 @@ class GEOFON(BenchmarkDataset):
             )
             return
 
-        actual_t_start, data, completeness = self._stream_to_array(
-            stream, component_order
-        )
+        actual_t_start, data, completeness = _stream_to_array(stream, component_order)
 
         if int((t_end - t_start) * sampling_rate) + 1 > data.shape[1]:
             # Traces appear to be complete, but do not cover the intended time range
@@ -265,7 +268,7 @@ class GEOFON(BenchmarkDataset):
 
         trace_params["trace_sampling_rate"] = sampling_rate
         trace_params["trace_completeness"] = completeness
-        trace_params["trace_has_spikes"] = self._trace_has_spikes(data)
+        trace_params["trace_has_spikes"] = _trace_has_spikes(data)
         trace_params["trace_start_time"] = str(actual_t_start)
         for pick in picks:
             sample = (pick.time - actual_t_start) * sampling_rate
@@ -273,58 +276,6 @@ class GEOFON(BenchmarkDataset):
             trace_params[f"trace_{pick.phase_hint}_status"] = pick.evaluation_mode
 
         writer.add_trace(trace_params, data)
-
-    def _trace_has_spikes(self, data, factor=25, quantile=0.975):
-        # Checks for bit flip errors in the data using a simple quantile rule
-        q = np.quantile(np.abs(data), quantile, axis=1, keepdims=True)
-        return np.any(data > q * factor)
-
-    def _stream_to_array(self, stream, component_order):
-        starttime = min(trace.stats.starttime for trace in stream)
-        endtime = max(trace.stats.endtime for trace in stream)
-        sampling_rate = stream[0].stats.sampling_rate
-
-        samples = int((endtime - starttime) * sampling_rate) + 1
-
-        completeness = 0.0
-        data = np.zeros((len(component_order), samples), dtype="float64")
-        for c_idx, c in enumerate(component_order):
-            c_stream = stream.select(channel=f"??{c}")
-            if len(c_stream) > 1:
-                # If multiple traces are found, issue a warning and write them into the data ordered by their length
-                seisbench.logger.warning(
-                    f"Found multiple traces for {c_stream[0].id} starting at {stream[0].stats.starttime}. Completeness will be wrong in case of overlapping traces."
-                )
-                c_stream = sorted(c_stream, key=lambda x: x.stats.npts)
-
-            c_completeness = 0.0
-            for trace in c_stream:
-                start_sample = int((trace.stats.starttime - starttime) * sampling_rate)
-                l = min(len(trace.data), samples - start_sample)
-                data[c_idx, start_sample : start_sample + l] = trace.data[:l]
-                c_completeness += l
-
-            completeness += min(1.0, c_completeness / samples)
-
-        data -= np.mean(data, axis=1, keepdims=True)
-
-        completeness /= len(component_order)
-        return starttime, data, completeness
-
-    def _rotate_stream_to_ZNE(self, stream, inventory):
-        """
-        Tries to rotate the stream to ZNE inplace. There are several possible failures, which are silently ignored.
-        """
-        try:
-            stream.rotate("->ZNE", inventory=inventory)
-        except ValueError as e:
-            pass
-        except NotImplementedError as e:
-            pass
-        except AttributeError as e:
-            pass
-        except ObsPyException as e:
-            pass
 
 
 class LocationHelper:
