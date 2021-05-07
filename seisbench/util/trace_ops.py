@@ -21,7 +21,7 @@ def _stream_to_array(stream, component_order):
         c_stream = stream.select(channel=f"??{c}")
         if len(c_stream) > 1:
             # If multiple traces are found, issue a warning and write them into the data ordered by their length
-            print(
+            seisbench.logger.warning(
                 f"Found multiple traces for {c_stream[0].id} starting at {stream[0].stats.starttime}. Completeness will be wrong in case of overlapping traces."
             )
             c_stream = sorted(c_stream, key=lambda x: x.stats.npts)
