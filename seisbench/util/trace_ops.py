@@ -1,3 +1,5 @@
+import seisbench
+
 import numpy as np
 from obspy import ObsPyException
 
