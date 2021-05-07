@@ -22,29 +22,6 @@ from obspy.core.util.obspy_types import ObsPyException
 from obspy.clients.fdsn import Client
 
 
-import pandas as pd
-import numpy as np
-from obspy.geodetics import gps2dist_azimuth
-from pathlib import Path
-import random
-import string
-
-from obspy.clients.fdsn.header import FDSNNoDataException
-from obspy.io.mseed import InternalMSEEDError
-from obspy.geodetics import gps2dist_azimuth
-from obspy.core.util.obspy_types import ObsPyException
-import pandas as pd
-import obspy
-from obspy.clients.fdsn import Client
-
-from tqdm import tqdm
-from seisbench.data.base import BenchmarkDataset
-from seisbench import logger
-import seisbench
-import requests
-import sys
-
-
 class ETHZ(BenchmarkDataset):
     def __init__(self, **kwargs):
         citation = "ETHZ dataset"
