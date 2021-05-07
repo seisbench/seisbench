@@ -15,6 +15,7 @@ import numpy as np
 from pathlib import Path
 from tqdm import tqdm
 
+import obspy
 from obspy.clients.fdsn.header import FDSNNoDataException
 from obspy.io.mseed import InternalMSEEDError
 from obspy.geodetics import gps2dist_azimuth
