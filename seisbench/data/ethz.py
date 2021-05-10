@@ -274,6 +274,8 @@ class ETHZ(BenchmarkDataset):
         """
         Merges all rows in metadata with same underlying data into a single row.
         """
+        # Avoid SettingWithCopy warning by storing as new variable
+        parsed_metadata = []
 
         def _dataframe_to_dicts(dataframe):
             parsed_rows = []
@@ -282,21 +284,18 @@ class ETHZ(BenchmarkDataset):
 
             return parsed_rows
 
-        def _merge_dicts_w_check(dicts, error_callback_key="trace_name"):
+        def _merge_dicts_w_check(dicts, error_callback_print_key="trace_name"):
             _merged_dict = {}
             for dictionary in dicts:
                 for key, value in dictionary.items():
                     if key not in _merged_dict:
                         _merged_dict[key] = value
                     else:
-                        try:
-                            assert (
-                                _merged_dict[key] == value
-                            ), f"Differing values recieved for key {key}."
-                        except AssertionError as e:
+                        if not _merged_dict[key] == value:
                             seisbench.logger.warning(
-                                f"{e} Recieved: {value}, and {_merged_dict[key]}, "
-                                f"{error_callback_key}: {_merged_dict[error_callback_key]}"
+                                f"Differing values recieved for key {key}. "
+                                f"Recieved: {value}, and {_merged_dict[key]}, "
+                                f"{error_callback_print_key}: {_merged_dict[error_callback_print_key]}"
                             )
 
             return _merged_dict
@@ -310,11 +309,10 @@ class ETHZ(BenchmarkDataset):
                 parsed_rows = _dataframe_to_dicts(sel_rows)
                 merged_metadata_dict = _merge_dicts_w_check(parsed_rows, "trace_name")
 
-                # Overwite metadata on first row, log remaining matched rows for removal
-                metadata.iloc[sel_rows.index[0]].update(merged_metadata_dict)
-                [to_drop.append(val) for val in sel_rows.index[1:]]
+                # Store merged metadata information
+                parsed_metadata.append(merged_metadata_dict)
 
-        return metadata.drop(list(set(to_drop)))
+        return pd.DataFrame(parsed_metadata).drop_duplicates()
 
 
 class InventoryMapper:
