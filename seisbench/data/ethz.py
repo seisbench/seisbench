@@ -43,7 +43,7 @@ class ETHZ(BenchmarkDataset):
         return self._fdsn_client()
 
     def _download_dataset(self, writer, time_before=60, time_after=60, **kwargs):
-        seisbench.logger.warning(
+        seisbench.logger.info(
             "No pre-processed version of ETHZ dataset found. "
             "Download and conversion of raw data will now be "
             "performed. This may take a while."
@@ -83,7 +83,7 @@ class ETHZ(BenchmarkDataset):
                     )
                 except KeyError as e:
                     self.not_in_inv_catches += 1
-                    seisbench.logger.error(e)
+                    seisbench.logger.debug(e)
                     continue
 
                 t_start = min(pick.time for pick in picks) - time_before
@@ -99,12 +99,12 @@ class ETHZ(BenchmarkDataset):
                         endtime=t_end,
                     )
                 except FDSNNoDataException as e:
-                    seisbench.logger.error(e)
+                    seisbench.logger.debug(e)
                     self.no_data_catches += 1
                     continue
 
                 if len(waveforms) == 0:
-                    seisbench.logger.error(
+                    seisbench.logger.debug(
                         f'Found no waveforms for {pick.waveform_id.id[:-1]} in event {event_params["source_id"]}'
                     )
                     continue
@@ -113,7 +113,7 @@ class ETHZ(BenchmarkDataset):
                 if any(
                     trace.stats.sampling_rate != sampling_rate for trace in waveforms
                 ):
-                    seisbench.logger.error(
+                    seisbench.logger.warning(
                         f"Found inconsistent sampling rates for {pick.waveform_id.id[:-1]} in event {event}"
                     )
 
@@ -147,7 +147,7 @@ class ETHZ(BenchmarkDataset):
                     writer.add_trace({**event_params, **trace_params}, data)
                 except ValueError as e:
                     # For multiple metadata rows picking same waveform, store seperatley for now.
-                    seisbench.logger.warning(
+                    seisbench.logger.debug(
                         f"Received: {e}. Extra phase type is {pick.phase_hint}. Stored in seperate metadata row."
                     )
                     continue
