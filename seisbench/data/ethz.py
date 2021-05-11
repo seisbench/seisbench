@@ -31,8 +31,9 @@ class ETHZ(BenchmarkDataset):
 
         # If raw data downloaded, merge metadata rows linked to same underlying data
         if self.downloaded_raw:
-            self._metadata = self._merge_metadata(self._metadata)
-            self._metadata.to_csv(str(self.path / "metadata.csv"))
+            # TODO: Previous bugs metadata parsing still need to be fully checked with unit tests - write parsed info to new file to prevent loss of original data
+            self._metadata = self._merge_metadata(self._metadata)  
+            self._metadata.to_csv(str(self.path / "metadata_out.csv"))
 
     @classmethod
     def _fdsn_client(cls):
@@ -274,8 +275,7 @@ class ETHZ(BenchmarkDataset):
         """
         Merges all rows in metadata with same underlying data into a single row.
         """
-        # Avoid SettingWithCopy warning by storing as new variable
-        parsed_metadata = []
+        unique_metadata, parsed_metadata = [], []
 
         def _dataframe_to_dicts(dataframe):
             parsed_rows = []
@@ -308,11 +308,12 @@ class ETHZ(BenchmarkDataset):
                 # Convert metadata to dict and merge into single row
                 parsed_rows = _dataframe_to_dicts(sel_rows)
                 merged_metadata_dict = _merge_dicts_w_check(parsed_rows, "trace_name")
-
-                # Store merged metadata information
                 parsed_metadata.append(merged_metadata_dict)
+            else:
+                unique_metadata.append(row._asdict())
+                unique_metadata.pop('Index', None)
 
-        return pd.DataFrame(parsed_metadata).drop_duplicates()
+        return pd.DataFrame(unique_metadata + parsed_metadata).drop_duplicates()
 
 
 class InventoryMapper:
