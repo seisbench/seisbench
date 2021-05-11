@@ -311,7 +311,11 @@ class ETHZ(BenchmarkDataset):
                 parsed_metadata.append(merged_metadata_dict)
             else:
                 unique_metadata.append(row._asdict())
+<<<<<<< HEAD
                 unique_metadata.pop("Index", None)
+=======
+                unique_metadata.pop('Index', None)
+>>>>>>> 27fa3f9c24df4a286582504fdcfef8c338c4d9eb
 
         return pd.DataFrame(unique_metadata + parsed_metadata).drop_duplicates()
 
