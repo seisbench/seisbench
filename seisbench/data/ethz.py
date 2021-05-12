@@ -31,9 +31,8 @@ class ETHZ(BenchmarkDataset):
 
         # If raw data downloaded, merge metadata rows linked to same underlying data
         if self.downloaded_raw:
-            # TODO: Previous bugs metadata parsing still need to be fully checked with unit tests - write parsed info to new file to prevent loss of original data
             self._metadata = self._merge_metadata(self._metadata)
-            self._metadata.to_csv(str(self.path / "metadata_out.csv"))
+            self._metadata.to_csv(str(self.path / "metadata.csv"))
 
     @classmethod
     def _fdsn_client(cls):
@@ -173,14 +172,12 @@ class ETHZ(BenchmarkDataset):
         ]
 
         catalog = obspy.Catalog(events=[])
-
         with tqdm(
             desc="Downlading quakeml event meta from FDSNWS", total=len(ev_ids)
         ) as pbar:
             for ev_id in ev_ids:
                 catalog += self.client.get_events(eventid=ev_id, includearrivals=True)
                 pbar.update()
-
         catalog.write(str(self.path / "ethz_events.xml"), format="QUAKEML")
 
         return catalog
@@ -273,14 +270,20 @@ class ETHZ(BenchmarkDataset):
     @staticmethod
     def _merge_metadata(metadata):
         """
-        Merges all rows in metadata with same underlying data into a single row.
+        Merges all rows in metadata which have same 'trace_name' into a single row.
+
+        If any matched rows contain multiple values for a specific column, a warning is logged
+        and the first value (row with lowest index) is kept as the value for the column.
+
+        If rows for specific column contain combination of NaN and one other value, the
+        value is assigned to the row.
         """
         unique_metadata, parsed_metadata = [], []
 
         def _dataframe_to_dicts(dataframe):
             parsed_rows = []
-            for row in dataframe.iterrows():
-                parsed_rows.append(row[1].dropna().to_dict())
+            for _, row in dataframe.iterrows():
+                parsed_rows.append(row.dropna().to_dict())
 
             return parsed_rows
 
@@ -301,8 +304,8 @@ class ETHZ(BenchmarkDataset):
             return _merged_dict
 
         # Get all rows with same underlying trace data
-        for row in metadata.itertuples():
-            sel_rows = metadata.loc[metadata["trace_name"] == row.trace_name]
+        for _, row in metadata.iterrows():
+            sel_rows = metadata.loc[metadata["trace_name"] == row["trace_name"]]
 
             if len(sel_rows) > 1:
                 # Convert metadata to dict and merge into single row
@@ -310,8 +313,8 @@ class ETHZ(BenchmarkDataset):
                 merged_metadata_dict = _merge_dicts_w_check(parsed_rows, "trace_name")
                 parsed_metadata.append(merged_metadata_dict)
             else:
-                unique_metadata.append(row._asdict())
-                unique_metadata.pop("Index", None)
+                unique_metadata_dict = row.to_dict()
+                unique_metadata.append(unique_metadata_dict)
 
         return pd.DataFrame(unique_metadata + parsed_metadata).drop_duplicates()
 
