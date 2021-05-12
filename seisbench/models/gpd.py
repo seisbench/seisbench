@@ -48,6 +48,7 @@ class GPD(WaveformModel):
         self.pool = nn.MaxPool1d(2, 2)
 
     def forward(self, x):
+        # Max normalization
         x = x / (
             torch.max(torch.max(x, dim=-1, keepdims=True)[0], dim=-2, keepdims=True)[0]
             + self.eps
