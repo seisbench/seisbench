@@ -727,3 +727,61 @@ def test_writer_padding_reader_unpadding(tmp_path: Path):
     assert (data.get_waveforms(1) == trace2).all()
     assert (data.get_waveforms(2) == trace3).all()
     assert (data.get_waveforms(3) == trace4).all()
+
+
+def test_ethz_metadata_parsing(caplog):
+
+    # Test different data entered in same column/key
+    metadata1 = [
+        {
+            "trace_Pg_arrival_sample": 8483.0,
+            "trace_name": "test_trace",
+        },
+        {
+            "trace_Pg_arrival_sample": 1234.1234,
+            "trace_name": "test_trace",
+        },
+    ]
+
+    with caplog.at_level(logging.WARNING):
+        _ = seisbench.data.ethz.ETHZ._merge_metadata(pd.DataFrame(metadata1))
+        assert (
+            "Differing values recieved for key trace_Pg_arrival_sample" in caplog.text
+        )
+
+    # Test correct filtering of duplicate rows
+    caplog.clear()
+    metadata2 = []
+    for i in range(10):
+        if i % 2 == 0:
+            metadata_r = {
+                "trace_name": f"trace{i}",
+                "trace_Pg_arrival_sample": 100,
+                "source_magnitude": np.nan,
+            }
+        else:
+            metadata_r = {
+                "trace_name": f"trace{i-1}",
+                "trace_Sg_arrival_sample": 100,
+                "source_magnitude": 2,
+            }
+        metadata2.append(metadata_r)
+
+    # 5 rows with same underlying raw data, check metadata merged correctly
+    metadata2_filtered = seisbench.data.ethz.ETHZ._merge_metadata(
+        pd.DataFrame(metadata2)
+    )
+
+    assert sorted(list(metadata2_filtered.columns)) == sorted(
+        [
+            "source_magnitude",
+            "trace_Pg_arrival_sample",
+            "trace_Sg_arrival_sample",
+            "trace_name",
+        ]
+    )
+    assert len(metadata2_filtered) == 5
+    assert list(metadata2_filtered.index) == [0, 2, 4, 6, 8]
+
+    # Check new values are preferred over null (NaN values)
+    assert metadata2_filtered.isnull().all(axis=None) == False

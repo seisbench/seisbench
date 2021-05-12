@@ -43,7 +43,7 @@ class ETHZ(BenchmarkDataset):
         return self._fdsn_client()
 
     def _download_dataset(self, writer, time_before=60, time_after=60, **kwargs):
-        seisbench.logger.warning(
+        seisbench.logger.info(
             "No pre-processed version of ETHZ dataset found. "
             "Download and conversion of raw data will now be "
             "performed. This may take a while."
@@ -83,7 +83,7 @@ class ETHZ(BenchmarkDataset):
                     )
                 except KeyError as e:
                     self.not_in_inv_catches += 1
-                    seisbench.logger.error(e)
+                    seisbench.logger.debug(e)
                     continue
 
                 t_start = min(pick.time for pick in picks) - time_before
@@ -99,12 +99,12 @@ class ETHZ(BenchmarkDataset):
                         endtime=t_end,
                     )
                 except FDSNNoDataException as e:
-                    seisbench.logger.error(e)
+                    seisbench.logger.debug(e)
                     self.no_data_catches += 1
                     continue
 
                 if len(waveforms) == 0:
-                    seisbench.logger.error(
+                    seisbench.logger.debug(
                         f'Found no waveforms for {pick.waveform_id.id[:-1]} in event {event_params["source_id"]}'
                     )
                     continue
@@ -113,7 +113,7 @@ class ETHZ(BenchmarkDataset):
                 if any(
                     trace.stats.sampling_rate != sampling_rate for trace in waveforms
                 ):
-                    seisbench.logger.error(
+                    seisbench.logger.warning(
                         f"Found inconsistent sampling rates for {pick.waveform_id.id[:-1]} in event {event}"
                     )
 
@@ -147,7 +147,7 @@ class ETHZ(BenchmarkDataset):
                     writer.add_trace({**event_params, **trace_params}, data)
                 except ValueError as e:
                     # For multiple metadata rows picking same waveform, store seperatley for now.
-                    seisbench.logger.warning(
+                    seisbench.logger.debug(
                         f"Received: {e}. Extra phase type is {pick.phase_hint}. Stored in seperate metadata row."
                     )
                     continue
@@ -172,14 +172,12 @@ class ETHZ(BenchmarkDataset):
         ]
 
         catalog = obspy.Catalog(events=[])
-
         with tqdm(
             desc="Downlading quakeml event meta from FDSNWS", total=len(ev_ids)
         ) as pbar:
             for ev_id in ev_ids:
                 catalog += self.client.get_events(eventid=ev_id, includearrivals=True)
                 pbar.update()
-
         catalog.write(str(self.path / "ethz_events.xml"), format="QUAKEML")
 
         return catalog
@@ -272,49 +270,53 @@ class ETHZ(BenchmarkDataset):
     @staticmethod
     def _merge_metadata(metadata):
         """
-        Merges all rows in metadata with same underlying data into a single row.
+        Merges all rows in metadata which have same 'trace_name' into a single row.
+
+        If any matched rows contain multiple values for a specific column, a warning is logged
+        and the first value (row with lowest index) is kept as the value for the column.
+
+        If rows for specific column contain combination of NaN and one other value, the
+        value is assigned to the row.
         """
+        unique_metadata, parsed_metadata = [], []
 
         def _dataframe_to_dicts(dataframe):
             parsed_rows = []
-            for row in dataframe.iterrows():
-                parsed_rows.append(row[1].dropna().to_dict())
+            for _, row in dataframe.iterrows():
+                parsed_rows.append(row.dropna().to_dict())
 
             return parsed_rows
 
-        def _merge_dicts_w_check(dicts, error_callback_key="trace_name"):
+        def _merge_dicts_w_check(dicts, error_callback_print_key="trace_name"):
             _merged_dict = {}
             for dictionary in dicts:
                 for key, value in dictionary.items():
                     if key not in _merged_dict:
                         _merged_dict[key] = value
                     else:
-                        try:
-                            assert (
-                                _merged_dict[key] == value
-                            ), f"Differing values recieved for key {key}."
-                        except AssertionError as e:
+                        if not _merged_dict[key] == value:
                             seisbench.logger.warning(
-                                f"{e} Recieved: {value}, and {_merged_dict[key]}, "
-                                f"{error_callback_key}: {_merged_dict[error_callback_key]}"
+                                f"Differing values recieved for key {key}. "
+                                f"Recieved: {value}, and {_merged_dict[key]}, "
+                                f"{error_callback_print_key}: {_merged_dict[error_callback_print_key]}"
                             )
 
             return _merged_dict
 
         # Get all rows with same underlying trace data
-        for row in metadata.itertuples():
-            sel_rows = metadata.loc[metadata["trace_name"] == row.trace_name]
+        for _, row in metadata.iterrows():
+            sel_rows = metadata.loc[metadata["trace_name"] == row["trace_name"]]
 
             if len(sel_rows) > 1:
                 # Convert metadata to dict and merge into single row
                 parsed_rows = _dataframe_to_dicts(sel_rows)
                 merged_metadata_dict = _merge_dicts_w_check(parsed_rows, "trace_name")
+                parsed_metadata.append(merged_metadata_dict)
+            else:
+                unique_metadata_dict = row.to_dict()
+                unique_metadata.append(unique_metadata_dict)
 
-                # Overwite metadata on first row, log remaining matched rows for removal
-                metadata.iloc[sel_rows.index[0]].update(merged_metadata_dict)
-                [to_drop.append(val) for val in sel_rows.index[1:]]
-
-        return metadata.drop(list(set(to_drop)))
+        return pd.DataFrame(unique_metadata + parsed_metadata).drop_duplicates()
 
 
 class InventoryMapper:
