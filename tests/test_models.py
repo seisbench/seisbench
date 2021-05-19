@@ -278,3 +278,23 @@ def test_stream_to_arrays():
         assert (data[i][0] == trace_z.data[0]).all()
         assert (data[i][1] == trace_n.data[0]).all()
         assert (data[i][2] == trace_e.data[0]).all()
+
+
+def test_group_stream_by_instrument():
+    # The first 3 should be grouped together, the last 3 should each be separate
+    stream = obspy.Stream(
+        [
+            obspy.Trace(header={"network": "SB", "station": "ABC1", "channel": "BHZ"}),
+            obspy.Trace(header={"network": "SB", "station": "ABC1", "channel": "BHN"}),
+            obspy.Trace(header={"network": "SB", "station": "ABC1", "channel": "BHE"}),
+            obspy.Trace(header={"network": "SB", "station": "ABC1", "channel": "HHZ"}),
+            obspy.Trace(header={"network": "HB", "station": "ABC1", "channel": "BHZ"}),
+            obspy.Trace(header={"network": "SB", "station": "ABC2", "channel": "BHZ"}),
+        ]
+    )
+
+    dummy = DummyWaveformModel(component_order="ZNE")
+    groups = dummy.groups_stream_by_instrument(stream)
+
+    assert len(groups) == 4
+    assert list(sorted([len(x) for x in groups])) == [1, 1, 1, 3]
