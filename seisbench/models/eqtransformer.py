@@ -4,6 +4,7 @@ import seisbench
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
 
 # For implementation, potentially follow: https://medium.com/huggingface/from-tensorflow-to-pytorch-265f40ef2a28
@@ -31,6 +32,7 @@ class EQTransformer(WaveformModel):
                                 It is usually recommended to stick to the default value, as the custom layers show
                                 slightly worse performance than the PyTorch builtins.
                                 The exception is when loading the original weights using :py:func:`from_pretrained`.
+    :param kwargs: Keyword arguments passed to the constructor of :py:class:`WaveformModel`.
     """
 
     def __init__(
@@ -42,6 +44,7 @@ class EQTransformer(WaveformModel):
         lstm_blocks=3,
         drop_rate=0.1,
         original_compatible=False,
+        **kwargs,
     ):
         citation = (
             "Mousavi, S.M., Ellsworth, W.L., Zhu, W., Chuang, L, Y., and Beroza, G, C. "
@@ -49,10 +52,23 @@ class EQTransformer(WaveformModel):
             "detection and phase picking. Nat Commun 11, 3952 (2020). "
             "https://doi.org/10.1038/s41467-020-17591-w"
         )
-        super().__init__(citation=citation)
+        # Define default value for sampling rate
+        kwargs["sampling_rate"] = kwargs.get("sampling_rate", 100)
+
+        # Blinding defines how many samples at beginning and end of the prediction should be ignored
+        # This is usually required to mitigate prediction problems from training properties, e.g.,
+        # if all picks in the training fall between seconds 5 and 55.
+        super().__init__(
+            citation=citation,
+            output_type="array",
+            default_args={"overlap": 1800, "blinding": (500, 500)},
+            in_samples=in_samples,
+            pred_sample=(0, in_samples),
+            labels=["Detection"] + list(phases),
+            **kwargs,
+        )
 
         self.in_channels = in_channels
-        self.in_samples = in_samples
         self.classes = classes
         self.lstm_blocks = lstm_blocks
         self.drop_rate = drop_rate
@@ -162,7 +178,6 @@ class EQTransformer(WaveformModel):
     def forward(self, x):
         assert x.ndim == 3
         assert x.shape[1:] == (self.in_channels, self.in_samples)
-        # TODO: Normalization STD ?
 
         # Shared encoder part
         x = self.encoder(x)
@@ -172,7 +187,7 @@ class EQTransformer(WaveformModel):
         x, _ = self.transformer_d(x)
 
         # Detection part
-        detection, layerout = self.decoder_d(x)
+        detection = self.decoder_d(x)
         detection = torch.sigmoid(self.conv_d(detection))
         detection = torch.squeeze(detection, dim=1)  # Remove channel dimension
 
@@ -191,18 +206,27 @@ class EQTransformer(WaveformModel):
                 1, 2, 0
             )  # From sequence, batch, channels to batch, channels, sequence
             px, _ = attention(px)
-            px, _ = decoder(px)
+            px = decoder(px)
             pred = torch.sigmoid(conv(px))
             pred = torch.squeeze(pred, dim=1)  # Remove channel dimension
 
             outputs.append(pred)
 
-        outputs.append(layerout)
         return tuple(outputs)
 
-    @property
-    def device(self):
-        return next(self.parameters()).device
+    def annotate_window_post(self, pred, argdict):
+        # Combine predictions in one array
+        prenan, postnan = argdict.get("blinding", (0, 0))
+        pred = np.stack(pred, axis=-1)
+        pred[:prenan] = np.nan
+        pred[-postnan:] = np.nan
+        return pred
+
+    def annotate_window_pre(self, window, argdict):
+        # Add a demean and an amplitude normalization step to the preprocessing
+        window = window - np.mean(window, axis=-1, keepdims=True)
+        window = window / (np.std(window) + 1e-10)
+        return window
 
     @property
     def phases(self):
@@ -214,9 +238,6 @@ class EQTransformer(WaveformModel):
     def _parse_metadata(self):
         super()._parse_metadata()
         self._phases = self._weights_metadata.get("phases", None)
-
-    def annotate(self, stream, strict=True, prediction_rate=100, **kwargs):
-        raise NotImplementedError("Annotate is not yet implemented")
 
     def classify(self, stream, *args, **kwargs):
         raise NotImplementedError("Classify is not yet implemented")
@@ -277,7 +298,7 @@ class Decoder(nn.Module):
         super().__init__()
 
         self.upsample = nn.Upsample(scale_factor=2, mode="nearest")
-        self.original_compatible = True
+        self.original_compatible = original_compatible
 
         # We need to trim of the final sample sometimes to get to the right number of output samples
         self.crops = []
@@ -301,7 +322,6 @@ class Decoder(nn.Module):
         self.convs = nn.ModuleList(convs)
 
     def forward(self, x):
-        layerout = None
         for i, conv in enumerate(self.convs):
             x = self.upsample(x)
 
@@ -313,10 +333,8 @@ class Decoder(nn.Module):
                     x = x[:, :, :-1]
 
             x = F.relu(conv(x))
-            if i == 2:
-                layerout = x
 
-        return x, layerout
+        return x
 
 
 class ResCNNStack(nn.Module):

@@ -3,19 +3,28 @@ import seisbench
 
 import torch
 import torch.nn as nn
-import obspy
 import numpy as np
 
 
 class GPD(WaveformModel):
     # TODO: How to handle filtering (e.g. highpass/lowpass)?
-    def __init__(self, in_channels=3, classes=3, phases=None, eps=1e-10):
+    def __init__(self, in_channels=3, classes=3, phases=None, eps=1e-10, **kwargs):
         citation = (
             "Ross, Z. E., Meier, M.-A., Hauksson, E., & Heaton, T. H. (2018). "
             "Generalized Seismic Phase Detection with Deep Learning. "
             "ArXiv:1805.01075 [Physics]. http://arxiv.org/abs/1805.01075"
         )
-        super().__init__(citation=citation)
+        # Define default value for sampling rate
+        kwargs["sampling_rate"] = kwargs.get("sampling_rate", 100)
+
+        super().__init__(
+            citation=citation,
+            output_type="point",
+            in_samples=400,
+            pred_sample=200,
+            labels=phases,
+            **kwargs,
+        )
 
         self.in_channels = in_channels
         self.classes = classes
@@ -50,7 +59,9 @@ class GPD(WaveformModel):
     def forward(self, x):
         # Max normalization
         x = x / (
-            torch.max(torch.max(x, dim=-1, keepdims=True)[0], dim=-2, keepdims=True)[0]
+            torch.max(
+                torch.max(torch.abs(x), dim=-1, keepdims=True)[0], dim=-2, keepdims=True
+            )[0]
             + self.eps
         )
         x = self.activation(self.pool(self.bn1(self.conv1(x))))
@@ -70,10 +81,6 @@ class GPD(WaveformModel):
             return torch.softmax(x, -1)
 
     @property
-    def device(self):
-        return next(self.parameters()).device
-
-    @property
     def phases(self):
         if self._phases is not None:
             return self._phases
@@ -84,85 +91,9 @@ class GPD(WaveformModel):
         super()._parse_metadata()
         self._phases = self._weights_metadata.get("phases", None)
 
-    def annotate(self, stream, strict=True, prediction_rate=100, **kwargs):
-        """
-        Annotates the stream using a sliding window approach.
-        :param stream:
-        :param strict:
-        :param prediction_rate:
-        :param kwargs:
-        :return:
-        """
-        if prediction_rate > 100:
-            raise ValueError("Prediction rate needs to be below sampling rate.")
-
-        stream = stream.copy()
-        stream.merge(-1)
-
-        output = obspy.Stream()
-        if len(stream) == 0:
-            return output
-
-        if self.has_mismatching_records(stream):
-            raise ValueError(
-                "Detected multiple records for the same time and component that did not agree."
-            )
-
-        self.resample(stream, 100)
-
-        groups = self.groups_stream_by_instrument(stream)
-
-        for group in groups:
-            times, data = self.stream_to_arrays(group, strict=strict)
-            if 100 % prediction_rate != 0:
-                seisbench.logger.warning(
-                    "Prediction rate is no real divisor of sampling rate. "
-                    "Adjusting to next possible prediction rate."
-                )
-
-            d = 100 // prediction_rate
-            true_prediction_rate = 100 / d
-            for t0, block in zip(times, data):
-                mids = np.arange(200, block.shape[1] - 200, d)
-
-                fragments = np.stack(
-                    [block[:, m - 200 : m + 200] for m in mids], axis=0
-                )
-                fragments = torch.tensor(
-                    fragments, device=self.device, dtype=torch.float32
-                )
-
-                with torch.no_grad():
-                    train_mode = self.training
-                    try:
-                        self.eval()
-                        # TODO: Add batching
-                        pred = self(fragments)
-                    finally:
-                        if train_mode:
-                            self.train()
-                    pred = pred.cpu().numpy()
-
-                if len(pred.shape) == 1:
-                    pred = pred.reshape(-1, 1)
-
-                for i in range(pred.shape[1]):
-                    trace = group[0]
-                    output.append(
-                        obspy.Trace(
-                            pred[:, i],
-                            {
-                                "starttime": t0 + 2,
-                                "sampling_rate": true_prediction_rate,
-                                "network": trace.stats.network,
-                                "station": trace.stats.station,
-                                "location": trace.stats.location,
-                                "channel": f"GPD_{self.phases[i]}",
-                            },
-                        )
-                    )
-
-        return output
+    def annotate_window_pre(self, window, argdict):
+        # Add a demean step to the preprocessing
+        return window - np.mean(window, axis=-1, keepdims=True)
 
     def classify(self, stream, *args, **kwargs):
         raise NotImplementedError("Classify is not yet implemented")

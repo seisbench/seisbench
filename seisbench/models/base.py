@@ -1,3 +1,5 @@
+import numpy
+
 import seisbench
 import seisbench.util as util
 
@@ -10,6 +12,8 @@ from collections import defaultdict
 from queue import PriorityQueue
 import json
 import numpy as np
+import obspy
+import warnings
 
 
 class SeisBenchModel(nn.Module):
@@ -128,46 +132,471 @@ class SeisBenchModel(nn.Module):
         self._weights_docstring = self._weights_metadata.get("docstring", "")
 
 
+# TODO: Add classify function using aggregation of annotate results
 class WaveformModel(SeisBenchModel, ABC):
     """
     Abstract interface for models processing waveforms.
-    Additionally implements functions commonly required to apply models to waveforms.
-    Class does not inherit from SeisBenchModel to allow implementation of non-DL models with this interface.
+    Based on the properties specified by inheriting models, WaveformModel automatically provides the respective
+    :py:func:`annotate`/:py:func:`classify` functions. For details see the documentation of these functions.
 
-    :param component_order: Specify component order (e.g. ['ZNE']), defaults to None
+    :param component_order: Specify component order (e.g. ['ZNE']), defaults to None.
     :type component_order: list, optional
-    :param args:
-    :param kwargs:
+    :param sampling_rate: Sampling rate of the model, defaults to None.
+                          If sampling rate is not None, the annotate and classify functions will automatically resample
+                          incoming traces and validate correct sampling rate if the model overwrites
+                          :py:func:`annotate_stream_pre`.
+    :type sampling_rate: float
+    :param output_type: The type of output from the model. Current options are:
+
+                        - "point" for a point prediction, i.e., the probability of containing a pick in the window
+                          or of a pick at a certain location. This will provide an :py:func:`annotate` function.
+                          If an :py:func:`classify_aggregate` function is provided by the inheriting model,
+                          this will also provide a :py:func:`classify` function.
+                        - "array" for prediction curves, i.e., probabilities over time for the arrival of certain wave types.
+                          This will provide an :py:func:`annotate` function.
+                          If an :py:func:`classify_aggregate` function is provided by the inheriting model,
+                          this will also provide a :py:func:`classify` function.
+                        - "regression" for a regression value, i.e., the sample of the arrival within a window.
+                          This will only provide a :py:func:`classify` function.
+
+    :type output_type: str
+    :param default_args: Default arguments to use in annotate and classify functions
+    :type default_args: dict[str, any]
+    :param in_samples: Number of input samples in time
+    :type in_samples: int
+    :param pred_sample: For a "point" prediction: sample number of the sample in a window for which the prediction is valid.
+                        For an "array" prediction: a tuple of first and last sample defining the prediction range.
+                        Note that the number of output samples and input samples within the given range are not required
+                        to agree.
+    :type pred_sample: int, tuple
+    :param labels: Labels for the different predictions in the output, e.g., Noise, P, S
+    :type labels: list or string
+    :param kwargs: Kwargs are passed to the superclass
     """
 
-    def __init__(self, component_order=None, *args, **kwargs):
-
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        component_order=None,
+        sampling_rate=None,
+        output_type=None,
+        default_args=None,
+        in_samples=None,
+        pred_sample=0,
+        labels=None,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
 
         if component_order is None:
             self._component_order = seisbench.config["component_order"]
         else:
             self._component_order = component_order
 
+        self.sampling_rate = sampling_rate
+        self.output_type = output_type
+        if default_args is None:
+            self.default_args = {}
+        else:
+            self.default_args = default_args
+        self.in_samples = in_samples
+        self.pred_sample = pred_sample
+
+        # Validate pred sample
+        if output_type == "point" and not isinstance(pred_sample, (int, float)):
+            raise TypeError(
+                "For output type 'point', pred_sample needs to be a scalar."
+            )
+        if output_type == "array":
+            if not isinstance(pred_sample, (list, tuple)) or not len(pred_sample) == 2:
+                raise TypeError(
+                    "For output type 'array', pred_sample needs to be a tuple of length 2."
+                )
+            if pred_sample[0] < 0 or pred_sample[1] < 0:
+                raise ValueError(
+                    "For output type 'array', both entries of pred_sample need to be non-negative."
+                )
+
+        self.labels = labels
+
+        self._annotate_function_mapping = {
+            "point": self._annotate_point,
+            "array": self._annotate_array,
+        }
+        self._classify_function_mapping = {"regression": None}
+
+        self._annotate_function = self._annotate_function_mapping.get(output_type, None)
+        self._classify_function = self._classify_function_mapping.get(output_type, None)
+
     def __str__(self):
         return f"Component order:\t{self.component_order}\n{super().__str__()}"
+
+    @property
+    def device(self):
+        return next(self.parameters()).device
 
     @property
     def component_order(self):
         return self._component_order
 
-    @abstractmethod
-    def annotate(self, stream, *args, **kwargs):
+    def annotate(self, stream, strict=True, **kwargs):
         """
-        Annotates a stream.
+        Annotates an obspy stream using the model based on the configuration of the WaveformModel superclass.
+        For example, for a picking model, annotate will give a characteristic function/probability function for picks
+        over time.
+        The annotate function contains multiple subfunction, which can be overwritten individually by inheriting
+        models to accomodate their requirements. These functions are:
+
+        - :py:func:`annotate_stream_pre`
+        - :py:func:`annotate_stream_validate`
+        - :py:func:`annotate_window_pre`
+        - :py:func:`annotate_window_post`
+
+        Please see the respective documentation for details on their functionality, inputs and outputs.
 
         :param stream: Obspy stream to annotate
         :type stream: obspy.core.Stream
+        :param strict: If true, only annotate if recordings for all components are available,
+                       otherwise impute missing data with zeros.
+        :type strict: bool
         :param args:
         :param kwargs:
         :return: Obspy stream of annotations
         """
-        pass
+        if self._annotate_function is None:
+            raise NotImplementedError(
+                "This model has no annotate function implemented."
+            )
+
+        # Kwargs overwrite default args
+        argdict = self.default_args.copy()
+        argdict.update(kwargs)
+
+        stream = stream.copy()
+        stream.merge(-1)
+
+        output = obspy.Stream()
+        if len(stream) == 0:
+            return output
+
+        # Preprocess stream, e.g., filter/resample
+        self.annotate_stream_pre(stream, argdict)
+
+        # Validate stream
+        self.annotate_stream_validate(stream, argdict)
+
+        # Group stream
+        groups = self.groups_stream_by_instrument(stream)
+
+        # Stream to arrays to windows
+        for group in groups:
+            trace = group[0]
+            # Sampling rate of the data. Equal to self.sampling_rate is this is not None
+            argdict["sampling_rate"] = trace.stats.sampling_rate
+
+            times, data = self.stream_to_arrays(group, strict=strict)
+
+            pred_times, pred_rates, preds = self._annotate_function(
+                times, data, argdict
+            )
+
+            # Write to output stream
+            output += self._predictions_to_stream(pred_rates, pred_times, preds, trace)
+
+        return output
+
+    def _predictions_to_stream(self, pred_rates, pred_times, preds, trace):
+        """
+        Converts a set of predictions to obspy streams
+
+        :param pred_rates: Sampling rates of the prediction arrays
+        :param pred_times: Start time of each prediction array
+        :param preds: The prediction arrays, each with shape (samples, channels)
+        :param trace: A source trace to extract trace naming from
+        :return: Obspy stream of predictions
+        """
+        output = obspy.Stream()
+        for (pred_time, pred_rate, pred) in zip(pred_times, pred_rates, preds):
+            for i in range(pred.shape[1]):
+                if self.labels is None:
+                    label = i
+                else:
+                    label = self.labels[i]
+
+                trimmed_pred, f, _ = self._trim_nan(pred[:, i])
+                trimmed_start = pred_time + f / pred_rate
+                output.append(
+                    obspy.Trace(
+                        trimmed_pred,
+                        {
+                            "starttime": trimmed_start,
+                            "sampling_rate": pred_rate,
+                            "network": trace.stats.network,
+                            "station": trace.stats.station,
+                            "location": trace.stats.location,
+                            "channel": f"{self.__class__.__name__}_{label}",
+                        },
+                    )
+                )
+
+        return output
+
+    def annotate_stream_pre(self, stream, argdict):
+        """
+        Runs preprocessing on stream level for the annotate function, e.g., filtering or resampling.
+        By default, this function will resample all traces if a sampling rate for the model is provided.
+        As annotate create a copy of the input stream, this function can safely modify the stream inplace.
+        Inheriting classes should overwrite this function if necessary.
+        To keep the default functionality, a call to the overwritten method can be included.
+
+        :param stream: Input stream
+        :type stream: obspy.Stream
+        :param argdict: Dictionary of arguments
+        :return: Preprocessed stream
+        """
+        if self.sampling_rate is not None:
+            self.resample(stream, self.sampling_rate)
+        return stream
+
+    def annotate_stream_validate(self, stream, argdict):
+        """
+        Validates stream for the annotate function.
+        This function should raise an exception if the stream is invalid.
+        By default, this function will check if the sampling rate fits the provided one, unless it is None,
+        and check for mismatching traces, i.e., traces covering the same time range on the same instrument with
+        different values.
+        Inheriting classes should overwrite this function if necessary.
+        To keep the default functionality, a call to the overwritten method can be included.
+
+        :param stream: Input stream
+        :type stream: obspy.Stream
+        :param argdict: Dictionary of arguments
+        :return: None
+        """
+        if self.sampling_rate is not None:
+            if any(trace.stats.sampling_rate != self.sampling_rate for trace in stream):
+                raise ValueError(
+                    f"Detected traces with mismatching sampling rate. "
+                    f"Expected {self.sampling_rate} Hz for all traces."
+                )
+
+        if self.has_mismatching_records(stream):
+            raise ValueError(
+                "Detected multiple records for the same time and component that did not agree."
+            )
+
+    def annotate_window_pre(self, window, argdict):
+        """
+        Runs preprocessing on window level for the annotate function, e.g., normalization.
+        By default returns the input window.
+        Inheriting classes should overwrite this function if necessary.
+
+        :param window: Input window
+        :type window: numpy.array
+        :param argdict: Dictionary of arguments
+        :return: Preprocessed window
+        """
+        return window
+
+    def annotate_window_post(self, pred, argdict):
+        """
+        Runs postprocessing on the predictions of a window for the annotate function, e.g., reformatting them.
+        By default returns the original prediction.
+        Inheriting classes should overwrite this function if necessary.
+
+        :param pred: Predictions for one window. The data type depends on the model.
+        :param argdict: Dictionary of arguments
+        :return: Postprocessed predictions
+        """
+        return pred
+
+    def _annotate_point(self, times, data, argdict):
+        """
+        Annotation function for a point prediction model using a sliding window approach.
+        Will use the key `stride` from the `argdict` to determine the shift (in samples) between two windows.
+        Default `stride` is 1.
+        This function expects model outputs after postprocessing for each window to be scalar or 1D arrays.
+        """
+        stride = argdict.get("stride", 1)
+
+        pred_times = []
+        pred_rates = []
+        full_preds = []
+
+        # Iterate over all blocks of waveforms
+        for t0, block in zip(times, data):
+            starts = np.arange(0, block.shape[1] - self.in_samples + 1, stride)
+            if len(starts) == 0:
+                seisbench.logger.warning(
+                    "Parts of the input stream consist of fragments shorter than the number "
+                    "of input samples. Output might be empty."
+                )
+                continue
+
+            # Generate windows and preprocess
+            fragments = [
+                self.annotate_window_pre(block[:, s : s + self.in_samples], argdict)
+                for s in starts
+            ]
+            fragments = np.stack(fragments, axis=0)
+            fragments = torch.tensor(fragments, device=self.device, dtype=torch.float32)
+
+            with torch.no_grad():
+                preds = self._predict_and_postprocess_windows(argdict, fragments)
+                preds = np.stack(preds, axis=0)
+                if preds.ndim == 1:
+                    preds = preds.reshape(-1, 1)
+
+                pred_times.append(t0 + self.pred_sample / argdict["sampling_rate"])
+                pred_rates.append(argdict["sampling_rate"] / stride)
+                full_preds.append(preds)
+
+        return pred_times, pred_rates, full_preds
+
+    def _annotate_array(self, times, data, argdict):
+        """
+        Annotation function for an array prediction model using a sliding window approach.
+        Will use the key `overlap` from the `argdict` to determine the overlap (in samples) between two neighboring windows.
+        Overlapping predictions will be averaged. NaN predictions will be ignored in the averaging.
+        This function expects model outputs after postprocessing for each window to be 1D arrays (only sample dimension)
+        or 2D arrays (sample and channel dimension in this order) and that each prediction has the same number of output samples.
+        """
+        overlap = argdict.get("overlap", 0)
+
+        pred_times = []
+        pred_rates = []
+        full_preds = []
+
+        # Iterate over all blocks of waveforms
+        for t0, block in zip(times, data):
+            starts = np.arange(
+                0, block.shape[1] - self.in_samples + 1, self.in_samples - overlap
+            )
+            if len(starts) == 0:
+                seisbench.logger.warning(
+                    "Parts of the input stream consist of fragments shorter than the number "
+                    "of input samples. Output might be empty."
+                )
+                continue
+
+            # Generate windows and preprocess
+            fragments = [
+                self.annotate_window_pre(block[:, s : s + self.in_samples], argdict)
+                for s in starts
+            ]
+            fragments = np.stack(fragments, axis=0)
+            fragments = torch.tensor(fragments, device=self.device, dtype=torch.float32)
+
+            with torch.no_grad():
+                preds = self._predict_and_postprocess_windows(argdict, fragments)
+
+                # Number of prediction samples per input sample
+                prediction_sample_factor = preds[0].shape[0] / (
+                    self.pred_sample[1] - self.pred_sample[0]
+                )
+
+                # Maximum number of predictions covering a point
+                coverage = int(
+                    np.ceil(self.in_samples / (self.in_samples - overlap) + 1)
+                )
+
+                pred_length = int(np.ceil(block.shape[1] * prediction_sample_factor))
+                pred_merge = (
+                    np.zeros_like(
+                        preds[0], shape=(pred_length, preds[0].shape[1], coverage)
+                    )
+                    * np.nan
+                )
+                for i, (pred, start) in enumerate(zip(preds, starts)):
+                    pred_start = int(start * prediction_sample_factor)
+                    pred_merge[
+                        pred_start : pred_start + pred.shape[0], :, i % coverage
+                    ] = pred
+
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        action="ignore", message="Mean of empty slice"
+                    )
+                    preds = np.nanmean(pred_merge, axis=-1)
+
+                pred_times.append(t0 + self.pred_sample[0] / argdict["sampling_rate"])
+                pred_rates.append(argdict["sampling_rate"] * prediction_sample_factor)
+                full_preds.append(preds)
+
+        return pred_times, pred_rates, full_preds
+
+    def _predict_and_postprocess_windows(self, argdict, fragments):
+        train_mode = self.training
+        preds = []
+        try:
+            self.eval()
+            batch_size = argdict.get("batch_size", 64)
+            p0 = 0
+            # Iterate over batches
+            while p0 < fragments.shape[0]:
+                preds.append(self(fragments[p0 : p0 + batch_size]))
+                p0 += batch_size
+        finally:
+            if train_mode:
+                self.train()
+        preds = self._recursive_torch_to_numpy(preds)
+        # Separate and postprocess window predictions
+        reshaped_preds = []
+        for pred_batch in preds:
+            reshaped_preds += [
+                self.annotate_window_post(pred, argdict)
+                for pred in self._recursive_slice_pred(pred_batch)
+            ]
+        return reshaped_preds
+
+    @staticmethod
+    def _trim_nan(x):
+        """
+        Removes all starting and trailing nan values from a 1D array and returns the new array and the number of NaNs removed per side.
+        """
+        mask_forward = np.cumprod(np.isnan(x)).astype(
+            bool
+        )  # cumprod will be one until the first non-Nan value
+        x = x[~mask_forward]
+        mask_backward = np.cumprod(np.isnan(x)[::-1])[::-1].astype(
+            bool
+        )  # Double reverse for a backwards cumprod
+        x = x[~mask_backward]
+
+        return x, np.sum(mask_forward.astype(int)), np.sum(mask_backward.astype(int))
+
+    def _recursive_torch_to_numpy(self, x):
+        """
+        Recursively converts torch.Tensor objects to numpy arrays while preserving any overarching tuple or list structure.
+        :param x:
+        :return:
+        """
+        if isinstance(x, torch.Tensor):
+            return x.cpu().numpy()
+        elif isinstance(x, list):
+            return [self._recursive_torch_to_numpy(y) for y in x]
+        elif isinstance(x, tuple):
+            return tuple([self._recursive_torch_to_numpy(y) for y in x])
+        else:
+            raise ValueError(f"Can't unpack object of type {type(x)}.")
+
+    def _recursive_slice_pred(self, x):
+        """
+        Converts batched predictions into a list of single predictions, assuming batch axis is first in all cases.
+        Preserves overarching tuple and list structures
+        :param x:
+        :return:
+        """
+        if isinstance(x, numpy.ndarray):
+            return list(y for y in x)
+        elif isinstance(x, list):
+            return [
+                list(entry)
+                for entry in zip(*[self._recursive_slice_pred(y) for y in x])
+            ]
+        elif isinstance(x, tuple):
+            return [entry for entry in zip(*[self._recursive_slice_pred(y) for y in x])]
+        else:
+            raise ValueError(f"Can't unpack object of type {type(x)}.")
 
     @abstractmethod
     def classify(self, stream, *args, **kwargs):
@@ -196,7 +625,7 @@ class WaveformModel(SeisBenchModel, ABC):
         :param stream: Input stream
         :type stream: obspy.core.Stream
         :param sampling_rate: Sampling rate (sps) to resample to
-        :type sampling_rate: int
+        :type sampling_rate: float
         """
         for trace in stream:
             if trace.stats.sampling_rate == sampling_rate:
@@ -206,7 +635,6 @@ class WaveformModel(SeisBenchModel, ABC):
             else:
                 trace.resample(sampling_rate)
 
-    # TODO: unit test static method
     @staticmethod
     def groups_stream_by_instrument(stream):
         """

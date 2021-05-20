@@ -3,6 +3,8 @@ import seisbench.models
 import numpy as np
 import obspy
 from obspy import UTCDateTime
+import torch
+from unittest.mock import patch
 
 
 def test_weights_docstring():
@@ -77,6 +79,10 @@ class DummyWaveformModel(seisbench.models.WaveformModel):
 
     def classify(self, stream, *args, **kwargs):
         pass
+
+    @property
+    def device(self):
+        return "cpu"
 
 
 def test_stream_to_arrays():
@@ -298,3 +304,147 @@ def test_group_stream_by_instrument():
 
     assert len(groups) == 4
     assert list(sorted([len(x) for x in groups])) == [1, 1, 1, 3]
+
+
+def test_recursive_torch_to_numpy():
+    dummy = DummyWaveformModel(component_order="ZNE")
+
+    x = np.random.rand(5, 3)
+    y = dummy._recursive_torch_to_numpy(torch.tensor(x))
+    assert (x == y).all()
+
+    xt = torch.tensor(x)
+    bigtest = [[xt, xt, xt], (xt, xt, xt, xt)]
+    bigresult = dummy._recursive_torch_to_numpy(bigtest)
+    assert len(bigresult) == 2
+    assert isinstance(bigresult, list)
+    assert len(bigresult[0]) == 3
+    assert isinstance(bigresult[0], list)
+    assert len(bigresult[1]) == 4
+    assert isinstance(bigresult[1], tuple)
+
+
+def test_recursive_slice_pred():
+    dummy = DummyWaveformModel(component_order="ZNE")
+
+    x1 = np.random.rand(5, 3)
+    x2 = np.random.rand(5, 3)
+    x3 = np.random.rand(5, 3)
+    x4 = np.random.rand(5, 3)
+    x5 = np.random.rand(5, 3)
+
+    x = [[x1, x2], (x3, x4, x5)]
+    y = dummy._recursive_slice_pred(x)
+
+    for i in range(x1.shape[0]):
+        assert isinstance(y[i], list)
+        assert isinstance(y[i][0], list)
+        assert isinstance(y[i][1], tuple)
+
+        [px1, px2], (px3, px4, px5) = y[i]
+        assert (x1[i] == px1).all()
+        assert (x2[i] == px2).all()
+        assert (x3[i] == px3).all()
+        assert (x4[i] == px4).all()
+        assert (x5[i] == px5).all()
+
+
+def test_trim_nan():
+    dummy = DummyWaveformModel(component_order="ZNE")
+
+    x = np.random.rand(100)
+    y, f, b = dummy._trim_nan(x)
+    assert (y == x).all()
+    assert (f, b) == (0, 0)
+
+    x[:10] = np.nan
+    y, f, b = dummy._trim_nan(x)
+    assert (y == x[10:]).all()
+    assert (f, b) == (10, 0)
+
+    x[95:] = np.nan
+    y, f, b = dummy._trim_nan(x)
+    assert (y == x[10:95]).all()
+    assert (f, b) == (10, 5)
+
+    x[30:40] = np.nan
+    y, f, b = dummy._trim_nan(x)
+    # Needs an extra check as nan==nan is defined as false
+    double_nan = np.logical_and(np.isnan(y), np.isnan(x[10:95]))
+    assert (np.logical_or(y == x[10:95], double_nan)).all()
+    assert (f, b) == (10, 5)
+
+
+def test_predictions_to_stream():
+    dummy = DummyWaveformModel(component_order="ZNE")
+
+    pred_rates = [100, 50]
+    pred_times = [UTCDateTime(), UTCDateTime()]
+    preds = [np.random.rand(1000, 3), np.random.rand(2000, 3)]
+    preds[0][:100] = np.nan  # Test proper shift
+    trace = obspy.Trace(np.zeros(100), header={"network": "SB", "station": "ABC1"})
+
+    stream = dummy._predictions_to_stream(pred_rates, pred_times, preds, trace)
+
+    assert stream[0].stats.starttime == pred_times[0] + 1
+    assert stream[1].stats.starttime == pred_times[0] + 1
+    assert stream[2].stats.starttime == pred_times[0] + 1
+    assert stream[3].stats.starttime == pred_times[1]
+    assert stream[4].stats.starttime == pred_times[1]
+    assert stream[5].stats.starttime == pred_times[1]
+
+    assert stream[0].id == "SB.ABC1..DummyWaveformModel_0"
+    assert stream[1].id == "SB.ABC1..DummyWaveformModel_1"
+    assert stream[2].id == "SB.ABC1..DummyWaveformModel_2"
+    assert stream[3].id == "SB.ABC1..DummyWaveformModel_0"
+    assert stream[4].id == "SB.ABC1..DummyWaveformModel_1"
+    assert stream[5].id == "SB.ABC1..DummyWaveformModel_2"
+
+    assert stream[0].stats.sampling_rate == 100
+    assert stream[1].stats.sampling_rate == 100
+    assert stream[2].stats.sampling_rate == 100
+    assert stream[3].stats.sampling_rate == 50
+    assert stream[4].stats.sampling_rate == 50
+    assert stream[5].stats.sampling_rate == 50
+
+
+def test_annotate_point():
+    dummy = DummyWaveformModel(
+        component_order="ZNE", in_samples=1000, sampling_rate=100
+    )
+    times = [0]
+    data = [np.ones((3, 10000))]
+    with patch(
+        "seisbench.models.WaveformModel._predict_and_postprocess_windows"
+    ) as predict_func:
+        predict_func.return_value = 91 * [0]
+        pred_times, pred_rates, full_preds = dummy._annotate_point(
+            times, data, {"stride": 100, "sampling_rate": 100}
+        )
+        argdict, fragments = predict_func.call_args.args
+
+    assert fragments.shape == (91, 3, 1000)
+    assert len(pred_times) == len(pred_rates) == len(full_preds) == 1
+    assert full_preds[0].shape == (91, 1)
+    assert pred_rates[0] == 1
+
+
+def test_annotate_array():
+    dummy = DummyWaveformModel(
+        component_order="ZNE", in_samples=1000, sampling_rate=100, pred_sample=(0, 1000)
+    )
+    times = [0]
+    data = [np.ones((3, 10000))]
+    with patch(
+        "seisbench.models.WaveformModel._predict_and_postprocess_windows"
+    ) as predict_func:
+        predict_func.return_value = 11 * [np.ones((1000, 3))]
+        pred_times, pred_rates, full_preds = dummy._annotate_array(
+            times, data, {"overlap": 100, "sampling_rate": 100}
+        )
+        argdict, fragments = predict_func.call_args.args
+
+    assert fragments.shape == (11, 3, 1000)
+    assert len(pred_times) == len(pred_rates) == len(full_preds) == 1
+    assert full_preds[0].shape == (10000, 3)
+    assert pred_rates[0] == 100.0
