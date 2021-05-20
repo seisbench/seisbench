@@ -171,6 +171,10 @@ class WaveformModel(SeisBenchModel, ABC):
     :type pred_sample: int, tuple
     :param labels: Labels for the different predictions in the output, e.g., Noise, P, S
     :type labels: list or string
+    :param filter_args: Arguments to be passed to :py:func:`obspy.filter` in :py:func:`annotate_stream_pre`
+    :type filter_args: tuple
+    :param filter_kwargs: Keyword arguments to be passed to :py:func:`obspy.filter` in :py:func:`annotate_stream_pre`
+    :type filter_kwargs: dict
     :param kwargs: Kwargs are passed to the superclass
     """
 
@@ -183,6 +187,8 @@ class WaveformModel(SeisBenchModel, ABC):
         in_samples=None,
         pred_sample=0,
         labels=None,
+        filter_args=None,
+        filter_kwargs=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -200,6 +206,8 @@ class WaveformModel(SeisBenchModel, ABC):
             self.default_args = default_args
         self.in_samples = in_samples
         self.pred_sample = pred_sample
+        self.filter_args = filter_args
+        self.filter_kwargs = filter_kwargs
 
         # Validate pred sample
         if output_type == "point" and not isinstance(pred_sample, (int, float)):
@@ -344,6 +352,7 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         Runs preprocessing on stream level for the annotate function, e.g., filtering or resampling.
         By default, this function will resample all traces if a sampling rate for the model is provided.
+        Furthermore, if a filter is specified in the class, the filter will be executed.
         As annotate create a copy of the input stream, this function can safely modify the stream inplace.
         Inheriting classes should overwrite this function if necessary.
         To keep the default functionality, a call to the overwritten method can be included.
@@ -353,6 +362,19 @@ class WaveformModel(SeisBenchModel, ABC):
         :param argdict: Dictionary of arguments
         :return: Preprocessed stream
         """
+        if self.filter_args is not None or self.filter_kwargs is not None:
+            if self.filter_args is None:
+                filter_args = ()
+            else:
+                filter_args = self.filter_args
+
+            if self.filter_kwargs is None:
+                filter_kwargs = {}
+            else:
+                filter_kwargs = self.filter_kwargs
+
+            stream.filter(*filter_args, **filter_kwargs)
+
         if self.sampling_rate is not None:
             self.resample(stream, self.sampling_rate)
         return stream

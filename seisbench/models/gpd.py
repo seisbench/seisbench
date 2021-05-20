@@ -7,7 +7,6 @@ import numpy as np
 
 
 class GPD(WaveformModel):
-    # TODO: How to handle filtering (e.g. highpass/lowpass)?
     def __init__(self, in_channels=3, classes=3, phases=None, eps=1e-10, **kwargs):
         citation = (
             "Ross, Z. E., Meier, M.-A., Hauksson, E., & Heaton, T. H. (2018). "
