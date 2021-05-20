@@ -421,7 +421,7 @@ def test_annotate_point():
         pred_times, pred_rates, full_preds = dummy._annotate_point(
             times, data, {"stride": 100, "sampling_rate": 100}
         )
-        argdict, fragments = predict_func.call_args.args
+        argdict, fragments = predict_func.call_args[0]
 
     assert fragments.shape == (91, 3, 1000)
     assert len(pred_times) == len(pred_rates) == len(full_preds) == 1
@@ -442,7 +442,7 @@ def test_annotate_array():
         pred_times, pred_rates, full_preds = dummy._annotate_array(
             times, data, {"overlap": 100, "sampling_rate": 100}
         )
-        argdict, fragments = predict_func.call_args.args
+        argdict, fragments = predict_func.call_args[0]
 
     assert fragments.shape == (11, 3, 1000)
     assert len(pred_times) == len(pred_rates) == len(full_preds) == 1
