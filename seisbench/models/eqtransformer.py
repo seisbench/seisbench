@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from obspy.signal.trigger import trigger_onset
 
 
 # For implementation, potentially follow: https://medium.com/huggingface/from-tensorflow-to-pytorch-265f40ef2a28
@@ -239,8 +240,48 @@ class EQTransformer(WaveformModel):
         super()._parse_metadata()
         self._phases = self._weights_metadata.get("phases", None)
 
-    def classify(self, stream, *args, **kwargs):
-        raise NotImplementedError("Classify is not yet implemented")
+    def classify_aggregate(self, annotations, argdict):
+        """
+        Converts the annotations to discrete thresholds using a classical trigger on/off.
+        Trigger onset thresholds for picks are derived from the argdict at keys "[phase]_threshold".
+        Trigger onset thresholds for detections are derived from the argdict at key "detection_threshold".
+        For all triggers the lower threshold is set to half the higher threshold.
+        For each pick a triple is returned, consisting of the trace_id ("net.sta.loc"), the pick time and the phase.
+        For each detection a triple is returned consisting of the trace_id, the start and end time.
+
+        :param annotations: See description in superclass
+        :param argdict: See description in superclass
+        :return: List of picks, list of detections
+        """
+        picks = []
+        for phase in self.phases:
+            pick_threshold = argdict.get(f"{phase}_threshold", 0.1)
+            for trace in annotations.select(channel=f"EQTransformer_{phase}"):
+                trace_id = f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
+                triggers = trigger_onset(trace.data, pick_threshold, pick_threshold / 2)
+                times = trace.times()
+                for s0, _ in triggers:
+                    t0 = trace.stats.starttime + times[s0]
+                    picks.append((trace_id, t0, phase))
+
+        # Use threshold / 2 as lower bound
+        detection_threshold = argdict.get("detection_threshold", 0.3)
+
+        detections = []
+        for trace in annotations.select(channel="EQTransformer_Detection"):
+            trace_id = (
+                f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
+            )
+            triggers = trigger_onset(
+                trace.data, detection_threshold, detection_threshold / 2
+            )
+            times = trace.times()
+            for s0, s1 in triggers:
+                t0 = trace.stats.starttime + times[s0]
+                t1 = trace.stats.starttime + times[s1]
+                detections.append((trace_id, t0, t1))
+
+        return sorted(picks), detections
 
 
 class Encoder(nn.Module):

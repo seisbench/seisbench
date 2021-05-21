@@ -4,6 +4,7 @@ import seisbench
 import torch
 import torch.nn as nn
 import numpy as np
+from obspy.signal.trigger import trigger_onset
 
 
 class GPD(WaveformModel):
@@ -94,5 +95,30 @@ class GPD(WaveformModel):
         # Add a demean step to the preprocessing
         return window - np.mean(window, axis=-1, keepdims=True)
 
-    def classify(self, stream, *args, **kwargs):
-        raise NotImplementedError("Classify is not yet implemented")
+    def classify_aggregate(self, annotations, argdict):
+        """
+        Converts the annotations to discrete thresholds using a classical trigger on/off.
+        Trigger onset thresholds are derived from the argdict at keys "[phase]_threshold".
+        For all triggers the lower threshold is set to half the higher threshold.
+        For each pick a triple is returned, consisting of the trace_id ("net.sta.loc"), the pick time and the phase.
+
+        :param annotations: See description in superclass
+        :param argdict: See description in superclass
+        :return: List of picks
+        """
+        picks = []
+        for phase in self.phases:
+            if phase == "N":
+                # Don't pick noise
+                continue
+
+            pick_threshold = argdict.get(f"{phase}_threshold", 0.3)
+            for trace in annotations.select(channel=f"GPD_{phase}"):
+                trace_id = f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
+                triggers = trigger_onset(trace.data, pick_threshold, pick_threshold / 2)
+                times = trace.times()
+                for s0, _ in triggers:
+                    t0 = trace.stats.starttime + times[s0]
+                    picks.append((trace_id, t0, phase))
+
+        return sorted(picks)

@@ -137,7 +137,16 @@ class WaveformModel(SeisBenchModel, ABC):
     """
     Abstract interface for models processing waveforms.
     Based on the properties specified by inheriting models, WaveformModel automatically provides the respective
-    :py:func:`annotate`/:py:func:`classify` functions. For details see the documentation of these functions.
+    :py:func:`annotate`/:py:func:`classify` functions.
+    Both functions take obspy streams as input.
+    The :py:func:`annotate` function has a rather strictly defined output, i.e.,
+    it always outputs obspy streams with the annotations.
+    These can for example be functions of pick probability over time.
+    In contrast, the :py:func:`classify` function can tailor it's output to the model type.
+    For example, a picking model might output picks, while a magnitude estimation model might only output a scalar magnitude.
+    Internally, :py:func:`classify` will usually rely on :py:func:`annotate` and simply add steps to it's output.
+
+    For details see the documentation of these functions.
 
     :param component_order: Specify component order (e.g. ['ZNE']), defaults to None.
     :type component_order: list, optional
@@ -230,10 +239,8 @@ class WaveformModel(SeisBenchModel, ABC):
             "point": self._annotate_point,
             "array": self._annotate_array,
         }
-        self._classify_function_mapping = {"regression": None}
 
         self._annotate_function = self._annotate_function_mapping.get(output_type, None)
-        self._classify_function = self._classify_function_mapping.get(output_type, None)
 
     def __str__(self):
         return f"Component order:\t{self.component_order}\n{super().__str__()}"
@@ -266,7 +273,6 @@ class WaveformModel(SeisBenchModel, ABC):
         :param strict: If true, only annotate if recordings for all components are available,
                        otherwise impute missing data with zeros.
         :type strict: bool
-        :param args:
         :param kwargs:
         :return: Obspy stream of annotations
         """
@@ -620,18 +626,50 @@ class WaveformModel(SeisBenchModel, ABC):
         else:
             raise ValueError(f"Can't unpack object of type {type(x)}.")
 
-    @abstractmethod
-    def classify(self, stream, *args, **kwargs):
+    def classify(self, stream, **kwargs):
         """
-        Classifies the stream.
+        Classifies the stream. The classification
 
         :param stream: Obspy stream to classify
         :type stream: obspy.core.Stream
-        :param args:
         :param kwargs:
-        :return: A classification for the full stream, e.g., signal/noise or source magnitude.
+        :return: A classification for the full stream, e.g., a list of picks or the source magnitude.
         """
-        pass
+        argdict = self.default_args.copy()
+        argdict.update(kwargs)
+
+        stream = self.classify_stream_pre(stream, argdict)
+        annotations = self.annotate(stream, **argdict)
+        return self.classify_aggregate(annotations, argdict)
+
+    def classify_stream_pre(self, stream, argdict):
+        """
+        Runs preprocessing on stream level for the classify function, e.g., subselecting traces.
+        By default, this function will simply return the input stream.
+        In contrast to :py:func:`annotate_stream_pre`, this function operates on the original input stream.
+        The stream should therefore not be modified in place.
+        Note that :py:func:`annotate_stream_pre` will be executed on the output of this stream
+        within the :py:func:`classify` function.
+
+        :param stream: Input stream
+        :type stream: obspy.Stream
+        :param argdict: Dictionary of arguments
+        :return: Preprocessed stream
+        """
+        return stream
+
+    def classify_aggregate(self, annotations, argdict):
+        """
+        An aggregation function that converts the annotation streams returned by :py:func:`annotate` into a classification.
+        A classification may be an arbitrary object.
+        However, when implementing a model which already exists in similar form, we recommend using the same output format.
+        For example, all pick outputs should have the same format.
+
+        :param annotations: Annotations returned from :py:func:`annotate`
+        :param argdict: Dictionary of arguments
+        :return: Classification object
+        """
+        return annotations
 
     def _parse_metadata(self):
         super()._parse_metadata()
@@ -718,7 +756,7 @@ class WaveformModel(SeisBenchModel, ABC):
 
         :param stream: Input stream
         :type stream: obspy.core.Stream
-        :param strict: If true, only annotate if recordings for all components are available, otherwise impute missing data with zeros.
+        :param strict: If true, only if recordings for all components are available, otherwise impute missing data with zeros.
         :type strict: bool, default True
         :return: output_times: Start times for each array
         :return: output_data: Arrays with waveforms
