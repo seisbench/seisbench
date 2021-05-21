@@ -610,7 +610,7 @@ class PickLabeller(SupervisedLabeller):
 
     def __init__(
         self,
-        label_method="standard",
+        label_method="probabilistic",
         label_columns=None,
         dim=1,
         sigma=10,
@@ -687,7 +687,7 @@ class PickLabeller(SupervisedLabeller):
             )
 
         # Construct pick labels
-        self._check_pick_labels()
+        self._check_pick_labels(metadata, ndim)
 
         for i, label in enumerate(self.label_columns):
 

@@ -565,7 +565,7 @@ def test_pick_labeller():
     # Assumes standard config['dimension_order'] = 'NCW'
 
     # Test label construction for single window
-    labeller = PickLabeller(label_type="multi_class", dim=0)
+    labeller = PickLabeller(dim=0)
     labeller(state_dict)
 
     assert state_dict["y"][0].shape == (3, 1000)
@@ -574,7 +574,7 @@ def test_pick_labeller():
 
     # Fails when multi_class specified and channel dim sum > 1
     with pytest.raises(ValueError):
-        labeller = PickLabeller(label_type="multi_class", dim=1)
+        labeller = PickLabeller(dim=1)
         labeller(state_dict)
 
     # Test label construction for multiple windows
@@ -587,7 +587,7 @@ def test_pick_labeller():
             },
         )
     }
-    labeller = PickLabeller(label_type="multi_class", dim=1)
+    labeller = PickLabeller(dim=1)
     labeller(state_dict)
 
     assert state_dict["y"][0].shape == (5, 3, 1000)
@@ -605,14 +605,14 @@ def test_pick_labeller():
         )
     }
     with pytest.raises(ValueError):
-        labeller = PickLabeller(label_type="multi_class", dim=1)
+        labeller = PickLabeller(dim=1)
         labeller(state_dict)
 
     state_dict["X"] = np.random.rand(10, 5, 3, 1000)
 
     # Fails if non-compatible input data dimensions are provided
     with pytest.raises(ValueError):
-        labeller = PickLabeller(label_type="multi_class", dim=1)
+        labeller = PickLabeller(dim=1)
         labeller(state_dict)
 
 
