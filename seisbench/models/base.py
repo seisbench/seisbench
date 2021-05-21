@@ -485,6 +485,8 @@ class WaveformModel(SeisBenchModel, ABC):
         Annotation function for an array prediction model using a sliding window approach.
         Will use the key `overlap` from the `argdict` to determine the overlap (in samples) between two neighboring windows.
         Overlapping predictions will be averaged. NaN predictions will be ignored in the averaging.
+        If after regularly spacing windows there are leftover samples at the end, one additional window with potentially
+        larger overlap is added to the end.
         This function expects model outputs after postprocessing for each window to be 1D arrays (only sample dimension)
         or 2D arrays (sample and channel dimension in this order) and that each prediction has the same number of output samples.
         """
@@ -505,6 +507,10 @@ class WaveformModel(SeisBenchModel, ABC):
                     "of input samples. Output might be empty."
                 )
                 continue
+
+            # Add one more trace to the end
+            if starts[-1] + self.in_samples < block.shape[1]:
+                starts = np.concatenate([starts, [block.shape[1] - self.in_samples]])
 
             # Generate windows and preprocess
             fragments = [

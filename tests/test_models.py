@@ -434,17 +434,17 @@ def test_annotate_array():
         component_order="ZNE", in_samples=1000, sampling_rate=100, pred_sample=(0, 1000)
     )
     times = [0]
-    data = [np.ones((3, 10000))]
+    data = [np.ones((3, 10001))]
     with patch(
         "seisbench.models.WaveformModel._predict_and_postprocess_windows"
     ) as predict_func:
-        predict_func.return_value = 11 * [np.ones((1000, 3))]
+        predict_func.return_value = 12 * [np.ones((1000, 3))]
         pred_times, pred_rates, full_preds = dummy._annotate_array(
             times, data, {"overlap": 100, "sampling_rate": 100}
         )
         argdict, fragments = predict_func.call_args[0]
 
-    assert fragments.shape == (11, 3, 1000)
+    assert fragments.shape == (12, 3, 1000)
     assert len(pred_times) == len(pred_rates) == len(full_preds) == 1
-    assert full_preds[0].shape == (10000, 3)
+    assert full_preds[0].shape == (10001, 3)
     assert pred_rates[0] == 100.0
