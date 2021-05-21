@@ -669,7 +669,7 @@ class PickLabeller(SupervisedLabeller):
             else:
                 # Handle multi-window case
                 for j in range(X.shape[sample_dim]):
-                    onset = metadata[label][i]
+                    onset = metadata[label][j]
                     y[j, i, :] = gaussian_pick(
                         onset=onset, length=X.shape[width_dim], sigma=self.sigma
                     )
