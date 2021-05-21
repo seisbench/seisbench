@@ -573,7 +573,7 @@ class SupervisedLabeller(ABC):
         return y
 
     def _check_labels(self, y):
-        if self.label_type == "multi_class":
+        if self.label_type == "multi_class" and self.label_method == "probabilistic":
             if (y.sum(self.dim) > 1).any():
                 raise ValueError(
                     f"More than one label provided. For multi_class problems, only one label can be provided per input."
@@ -592,13 +592,41 @@ class SupervisedLabeller(ABC):
 
 class PickLabeller(SupervisedLabeller):
     """
-    Create supervised labels from picks.
+    Create supervised labels from picks in `multi-class` sense. Labels can be
+    constructed from the pick arrivals using the following methods:
+     - 'standard' The entire example is labelled as a single class/pick.
+     - 'probabilistic' The picks in example are represented probabilistically with a Gaussian
+        \[
+            X \sim \mathcal{N}(\mu,\,\sigma^{2})\,.
+        \]
+        and the noise class is automatically created as \[ \max \left(0, 1 - \sum_{n=1}^{c} x_{j} \right) \]
+
+    For cases where multiple picks overlap in the input window, a number of options can be specified:
+      - 'label_first' Only use first pick as label example.
+      - 'fixed relavance' Use pick closest to centre point of window as example.
+      - 'random' Use random choice as example label.
+
     """
 
-    def __init__(self, label_type="multi_label", label_columns=None, dim=1, sigma=10):
-        self.sigma = sigma
+    def __init__(
+        self,
+        label_method="standard",
+        label_columns=None,
+        dim=1,
+        sigma=10,
+        on_overlap="label-first",
+    ):
+        self.label_method = label_method
         self.label_columns = label_columns
-        super().__init__(label_type, dim)
+        self.sigma = sigma
+        self.on_overlap = on_overlap
+
+        if self.on_overlap not in ("label-first", "fixed-relavance", "random"):
+            raise ValueError(
+                "Unexpected value for `on_overlap` argument. Accepted values are:\n"
+                "`label-first`, `fixed-relavance`, `random`."
+            )
+        super().__init__(label_type="multi_class", dim=dim)
 
     @staticmethod
     def _swap_dimension_order(arr, current_dim, expected_dim):
@@ -616,7 +644,7 @@ class PickLabeller(SupervisedLabeller):
             channel_dim = config["dimension_order"].find("C")
             width_dim = config["dimension_order"].find("W")
             channel_dim = 0 if channel_dim < width_dim else 1
-            width_dim = 1 if channel_dim < width_dim else 0
+            width_dim = int(not channel_dim)
         else:
             raise ValueError(
                 f"PickLabeller only supports labelling of data with 3 dimensions (NCW) "
@@ -626,11 +654,18 @@ class PickLabeller(SupervisedLabeller):
         return sample_dim, channel_dim, width_dim
 
     def _auto_identify_picklabels(self, state_dict):
-        return list(
-            filter(re.compile("trace_.*_arrival_sample").match, state_dict.keys())
+        return sorted(
+            list(filter(re.compile("trace_.*_arrival_sample").match, state_dict.keys()))
         )
 
-    def _construct_softassign_softmax_label(self, X, metadata):
+    def _check_pick_labels(self, metadata, ndim):
+        for label in self.label_columns:
+            if (isinstance(metadata[label], (int, np.integer))) and ndim == 3:
+                raise ValueError(
+                    f"Only provided single arrival in metadata {label} column to multiple windows. Check augmentation workflow."
+                )
+
+    def _construct_probabilistic_label(self, X, metadata):
 
         if not self.label_columns:
             self.label_columns = self._auto_identify_picklabels(metadata)
@@ -642,7 +677,6 @@ class PickLabeller(SupervisedLabeller):
 
         if ndim == 2:
             y = np.zeros(shape=(len(self.label_columns) + 1, X.shape[width_dim]))
-            print(y.shape)
         elif ndim == 3:
             y = np.zeros(
                 shape=(
@@ -651,14 +685,11 @@ class PickLabeller(SupervisedLabeller):
                     X.shape[width_dim],
                 )
             )
-            print(y.shape)
 
         # Construct pick labels
+        self._check_pick_labels()
+
         for i, label in enumerate(self.label_columns):
-            if (isinstance(metadata[label], (int, np.integer))) and ndim == 3:
-                raise ValueError(
-                    f"Only provided single arrival in metadata {label} column to multiple windows. Check augmentation workflow."
-                )
 
             if isinstance(metadata[label], (int, np.integer)):
                 # Handle single window case
@@ -690,9 +721,87 @@ class PickLabeller(SupervisedLabeller):
 
         return y
 
+    def _get_pick_arrivals_as_array(self, metadata):
+        """
+        Convert picked arrivals to numpy array. Set arrivals outside
+        window to null (NaN) values.
+        """
+        arrival_array = np.array([metadata[col] for col in self.label_columns]).T
+        arrival_array[arrival_array < 0] = np.nan
+        nan_mask = np.isnan(arrival_array)
+        return arrival_array, nan_mask
+
+    def _label_first(self, row_id, arrival_array, nan_mask):
+        """
+        Label based of first arrival in time in window.
+        If no arrivals, label as noise. Noise class is added (class 0)
+        """
+        arrival_array[nan_mask] = np.inf
+        first_arrival = np.nanargmin(arrival_array[row_id])
+        return first_arrival if first_arrival == 0 else first_arrival + 1
+
+    def _label_random(self, row_id, arrival_array, nan_mask):
+        """
+        Label by randomly choosing pick inside window.
+        If no arrivals, label as noise. Noise class is added (class 0)
+        """
+        non_null_columns = np.argwhere(~nan_mask[row_id])
+        if non_null_columns.any() > 0:
+            return np.random.choice(non_null_columns.reshape(-1)) + 1
+        else:
+            return 0
+
+    def _label_fixed_relavence(self, row_id, arrival_array, midpoint, metadata):
+        """
+        Label is closest pick to centre of window.
+        If no arrivals, label as noise. Noise class is added (class 0)
+        """
+        if np.isnan(arrival_array[row_id]).all():
+            return 0
+        else:
+            return np.nanargmin(abs(arrival_array[row_id] - midpoint)) + 1
+
+    def _construct_standard_label(self, X, metadata):
+
+        if not self.label_columns:
+            self.label_columns = self._auto_identify_picklabels(metadata)
+
+        ndim = len(X.shape)
+        sample_dim, _, width_dim = self._get_dimension_order_from_config(config, ndim)
+
+        self.label_tags = [label.split("_")[1] for label in self.label_columns]
+        self.label_tags.insert(0, "Noise")
+
+        # Construct pick labels
+        y = np.zeros(shape=(X.shape[sample_dim], 1))
+
+        self._check_pick_labels(metadata, ndim)
+        arrival_array, nan_mask = self._get_pick_arrivals_as_array(metadata)
+        n_arrivals = nan_mask.shape[1] - nan_mask.sum(axis=1)
+
+        for row_id, arrivals in enumerate(arrival_array):
+            # Label
+            if n_arrivals[row_id] == 1:
+                y[row_id] = np.nanargmin(arrivals) + 1
+            # On potentially overlapping labels
+            else:
+                if self.on_overlap == "label-first":
+                    y[row_id] = self._label_first(row_id, arrival_array, nan_mask)
+                elif self.on_overlap == "random":
+                    y[row_id] = self._label_random(row_id, arrival_array, nan_mask)
+                elif self.on_overlap == "fixed-relavance":
+                    midpoint = X.shape[width_dim] // 2
+                    y[row_id] = self._label_fixed_relavence(
+                        row_id, arrival_array, midpoint, metadata
+                    )
+
+        return y
+
     def label(self, X, metadata):
-        # Create label
-        return self._construct_softassign_softmax_label(X, metadata)
+        if self.label_method == "probabilistic":
+            return self._construct_probabilistic_label(X, metadata)
+        elif self.label_method == "standard":
+            return self._construct_standard_label(X, metadata)
 
     def __str__(self):
         return f"PickLabeller (label_type={self.label_type}, dim={self.dim})"
