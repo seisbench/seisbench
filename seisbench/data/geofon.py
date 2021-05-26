@@ -120,6 +120,14 @@ class GEOFON(BenchmarkDataset):
             "source_depth_uncertainty_km": origin.depth_errors["uncertainty"] / 1e3,
         }
 
+        if str(origin.time) < "2012-11-01":
+            split = "train"
+        elif str(origin.time) < "2013-03-15":
+            split = "dev"
+        else:
+            split = "test"
+        event_params["split"] = split
+
         if mag is not None:
             event_params["source_magnitude"] = mag.mag
             event_params["source_magnitude_uncertainty"] = mag.mag_errors["uncertainty"]
