@@ -31,8 +31,8 @@ class GEOFON(BenchmarkDataset):
         self, writer, basepath=None, time_before=60, time_after=60, **kwargs
     ):
         if basepath is None:
-            seisbench.logger.error(
-                "basepath needs to be set to start dataset conversion. "
+            raise ValueError(
+                "'basepath' needs to be set in the download_kwargs to start dataset conversion for source. "
                 "If you are seeing this error, the SeisBench remote root might be unavailable. "
                 "If it is available and you are still seeing this error, "
                 "please get in touch with the developers."
@@ -81,6 +81,15 @@ class GEOFON(BenchmarkDataset):
             for pick in event.picks:
                 if pick.phase_hint is None:
                     continue
+
+                if pick.waveform_id.network_code == "IA":
+                    # Skip restricted IA data
+                    continue
+
+                if not isinstance(pick.waveform_id.network_code, str):
+                    # Skip traces with invalid network code
+                    continue
+
                 station_groups[pick.waveform_id.id[:-1]].append(pick)
 
             for picks in station_groups.values():
