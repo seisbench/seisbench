@@ -134,7 +134,7 @@ class ETHZ(BenchmarkDataset):
                         int((t_end - t_start) * sampling_rate) + 1
                     )
 
-                trace_params["trace_sampling_rate"] = sampling_rate
+                trace_params["trace_sampling_rate_hz"] = sampling_rate
                 trace_params["trace_completeness"] = completeness
                 trace_params["trace_has_spikes"] = _trace_has_spikes(data)
                 trace_params["trace_start_time"] = str(actual_t_start)
@@ -255,10 +255,10 @@ class ETHZ(BenchmarkDataset):
             back_azimuth = np.nan
 
         trace_params = {
-            "trace_back_azimuth_deg": back_azimuth,
+            "path_back_azimuth_deg": back_azimuth,
             "station_network_code": net,
             "station_code": sta,
-            "station_channel_code": pick.waveform_id.channel_code[:-1],
+            "trace_channel": pick.waveform_id.channel_code[:-1],
             "station_location_code": pick.waveform_id.location_code,
             "station_latitude_deg": lat,
             "station_longitude_deg": lon,

@@ -154,10 +154,10 @@ class GEOFON(BenchmarkDataset):
         else:
             back_azimuth = np.nan
         trace_params = {
-            "trace_back_azimuth_deg": back_azimuth,
+            "path_back_azimuth_deg": back_azimuth,
             "station_network_code": pick.waveform_id.network_code,
             "station_code": pick.waveform_id.station_code,
-            "station_channel_code": pick.waveform_id.channel_code[:-1],
+            "trace_channel": pick.waveform_id.channel_code[:-1],
             "station_location_code": pick.waveform_id.location_code,
             "station_latitude_deg": lat,
             "station_longitude_deg": lon,
@@ -266,7 +266,7 @@ class GEOFON(BenchmarkDataset):
             # Traces appear to be complete, but do not cover the intended time range
             completeness *= data.shape[1] / (int((t_end - t_start) * sampling_rate) + 1)
 
-        trace_params["trace_sampling_rate"] = sampling_rate
+        trace_params["trace_sampling_rate_hz"] = sampling_rate
         trace_params["trace_completeness"] = completeness
         trace_params["trace_has_spikes"] = _trace_has_spikes(data)
         trace_params["trace_start_time"] = str(actual_t_start)
