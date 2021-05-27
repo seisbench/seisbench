@@ -5,6 +5,7 @@ import obspy
 from obspy import UTCDateTime
 import torch
 from unittest.mock import patch
+import logging
 
 
 def test_weights_docstring():
@@ -284,6 +285,93 @@ def test_stream_to_arrays():
         assert (data[i][0] == trace_z.data[0]).all()
         assert (data[i][1] == trace_n.data[0]).all()
         assert (data[i][2] == trace_e.data[0]).all()
+
+
+def test_flexible_horizontal_components(caplog):
+    t0 = UTCDateTime(0)
+    stats_z = {
+        "network": "SB",
+        "station": "TEST",
+        "channel": "HHZ",
+        "sampling_rate": 100,
+        "starttime": t0,
+    }
+    stats_n = {
+        "network": "SB",
+        "station": "TEST",
+        "channel": "HHN",
+        "sampling_rate": 100,
+        "starttime": t0,
+    }
+    stats_e = {
+        "network": "SB",
+        "station": "TEST",
+        "channel": "HHE",
+        "sampling_rate": 100,
+        "starttime": t0,
+    }
+    stats_1 = {
+        "network": "SB",
+        "station": "TEST",
+        "channel": "HH1",
+        "sampling_rate": 100,
+        "starttime": t0,
+    }
+    stats_2 = {
+        "network": "SB",
+        "station": "TEST",
+        "channel": "HH2",
+        "sampling_rate": 100,
+        "starttime": t0,
+    }
+    stats_2_test2 = {
+        "network": "SB",
+        "station": "TEST2",
+        "channel": "HH2",
+        "sampling_rate": 100,
+        "starttime": t0,
+    }
+    dummy = DummyWaveformModel(component_order="ZNE")
+
+    trace_z = obspy.Trace(np.ones(1000), stats_z)
+    trace_n = obspy.Trace(2 * np.ones(1000), stats_n)
+    trace_e = obspy.Trace(3 * np.ones(1000), stats_e)
+    trace_1 = obspy.Trace(4 * np.ones(1000), stats_1)
+    trace_2 = obspy.Trace(5 * np.ones(1000), stats_2)
+    trace_2_test2 = obspy.Trace(5 * np.ones(1000), stats_2_test2)
+
+    # flexible_horizontal_components=False
+    stream = obspy.Stream([trace_z, trace_1, trace_2])
+    times, data = dummy.stream_to_arrays(
+        stream, strict=True, flexible_horizontal_components=False
+    )
+    assert len(times) == len(data) == 0
+
+    # flexible_horizontal_components=True
+    stream = obspy.Stream([trace_z, trace_1, trace_2])
+    times, data = dummy.stream_to_arrays(
+        stream, strict=True, flexible_horizontal_components=True
+    )
+    assert len(times) == len(data) == 1
+
+    # Warning for mixed component names
+    caplog.clear()
+    stream = obspy.Stream([trace_z, trace_n, trace_e, trace_1, trace_2])
+    with caplog.at_level(logging.WARNING):
+        times, data = dummy.stream_to_arrays(
+            stream, strict=True, flexible_horizontal_components=True
+        )
+    assert "This might lead to undefined behavior." in caplog.text
+    assert len(times) == len(data) == 1
+
+    # No warning for mixed component names on different stations
+    caplog.clear()
+    stream = obspy.Stream([trace_z, trace_n, trace_e, trace_2_test2])
+    with caplog.at_level(logging.WARNING):
+        times, data = dummy.stream_to_arrays(
+            stream, strict=True, flexible_horizontal_components=True
+        )
+    assert "This might lead to undefined behavior." not in caplog.text
 
 
 def test_group_stream_by_instrument():

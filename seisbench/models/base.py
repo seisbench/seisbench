@@ -253,7 +253,9 @@ class WaveformModel(SeisBenchModel, ABC):
     def component_order(self):
         return self._component_order
 
-    def annotate(self, stream, strict=True, **kwargs):
+    def annotate(
+        self, stream, strict=True, flexible_horizontal_components=True, **kwargs
+    ):
         """
         Annotates an obspy stream using the model based on the configuration of the WaveformModel superclass.
         For example, for a picking model, annotate will give a characteristic function/probability function for picks
@@ -273,6 +275,10 @@ class WaveformModel(SeisBenchModel, ABC):
         :param strict: If true, only annotate if recordings for all components are available,
                        otherwise impute missing data with zeros.
         :type strict: bool
+        :param flexible_horizontal_components: If true, accepts traces with Z12 components as ZNE and vice versa.
+                                               This is usually acceptable for rotationally invariant models,
+                                               e.g., most picking models.
+        :type flexible_horizontal_components: bool
         :param kwargs:
         :return: Obspy stream of annotations
         """
@@ -307,7 +313,11 @@ class WaveformModel(SeisBenchModel, ABC):
             # Sampling rate of the data. Equal to self.sampling_rate is this is not None
             argdict["sampling_rate"] = trace.stats.sampling_rate
 
-            times, data = self.stream_to_arrays(group, strict=strict)
+            times, data = self.stream_to_arrays(
+                group,
+                strict=strict,
+                flexible_horizontal_components=flexible_horizontal_components,
+            )
 
             pred_times, pred_rates, preds = self._annotate_function(
                 times, data, argdict
@@ -751,7 +761,9 @@ class WaveformModel(SeisBenchModel, ABC):
 
         return False
 
-    def stream_to_arrays(self, stream, strict=True):
+    def stream_to_arrays(
+        self, stream, strict=True, flexible_horizontal_components=True
+    ):
         """
         Converts streams into a list of start times and numpy arrays.
         Assumes:
@@ -764,6 +776,10 @@ class WaveformModel(SeisBenchModel, ABC):
         :type stream: obspy.core.Stream
         :param strict: If true, only if recordings for all components are available, otherwise impute missing data with zeros.
         :type strict: bool, default True
+        :param flexible_horizontal_components: If true, accepts traces with Z12 components as ZNE and vice versa.
+                                               This is usually acceptable for rotationally invariant models,
+                                               e.g., most picking models.
+        :type flexible_horizontal_components: bool
         :return: output_times: Start times for each array
         :return: output_data: Arrays with waveforms
         """
@@ -776,11 +792,37 @@ class WaveformModel(SeisBenchModel, ABC):
         component_order = self._component_order
         comp_dict = {c: i for i, c in enumerate(component_order)}
 
+        matches = [
+            ("1", "N"),
+            ("2", "E"),
+        ]  # Component regarded as identical if flexible_horizontal_components is True.
+        if flexible_horizontal_components:
+            for a, b in matches:
+                if a in comp_dict:
+                    comp_dict[b] = comp_dict[a]
+                elif b in comp_dict:
+                    comp_dict[a] = comp_dict[b]
+
+        # Maps traces to the components existing. Allows to warn for mixed use of ZNE and Z12.
+        existing_trace_components = defaultdict(list)
+
         start_sorted = PriorityQueue()
         for trace in stream:
-            if trace.id[-1] in component_order and len(trace.data) > 0:
+            if trace.id[-1] in comp_dict and len(trace.data) > 0:
                 start_sorted.put((trace.stats.starttime, seqnum, trace))
                 seqnum += 1
+                existing_trace_components[trace.id[:-1]].append(trace.id[-1])
+
+        if flexible_horizontal_components:
+            for trace, components in existing_trace_components.items():
+                for a, b in matches:
+                    if a in components and b in components:
+                        seisbench.logger.warning(
+                            f"Station {trace} has both {a} and {b} components. "
+                            f"This might lead to undefined behavior. "
+                            f"Please preselect the relevant components "
+                            f"or set flexible_horizontal_components=False."
+                        )
 
         active = (
             PriorityQueue()
@@ -816,7 +858,6 @@ class WaveformModel(SeisBenchModel, ABC):
                 to_write.append(end_element[2])
             else:
                 # both start_element and end_element are active
-                # TODO: If end_element == start_element, it depends on strict what we want to do
                 if end_element[0] < start_element[0] or (
                     strict and end_element[0] == start_element[0]
                 ):
