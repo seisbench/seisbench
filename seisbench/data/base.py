@@ -74,6 +74,12 @@ class WaveformDataset:
             self._name = "Unnamed dataset"
         else:
             self._name = name
+
+        if cache not in ["full", "trace", None]:
+            raise ValueError(
+                f"Unknown cache strategy '{cache}'. Allowed values are 'full', 'trace' and None."
+            )
+
         self._cache = cache
         self._path = path
         self._chunks = chunks

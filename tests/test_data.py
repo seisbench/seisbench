@@ -508,7 +508,7 @@ def test_load_waveform_data_with_sampling_rate():
 
 
 def test_copy():
-    dummy1 = seisbench.data.DummyDataset(cache=True)
+    dummy1 = seisbench.data.DummyDataset(cache="full")
     dummy1.preload_waveforms()
     dummy2 = dummy1.copy()
 
