@@ -8,21 +8,27 @@ from obspy.signal.trigger import trigger_onset
 
 
 class GPD(WaveformModel):
-    def __init__(self, in_channels=3, classes=3, phases=None, eps=1e-10, **kwargs):
+    def __init__(
+        self,
+        in_channels=3,
+        classes=3,
+        phases=None,
+        eps=1e-10,
+        sampling_rate=100,
+        **kwargs,
+    ):
         citation = (
             "Ross, Z. E., Meier, M.-A., Hauksson, E., & Heaton, T. H. (2018). "
             "Generalized Seismic Phase Detection with Deep Learning. "
             "ArXiv:1805.01075 [Physics]. http://arxiv.org/abs/1805.01075"
         )
-        # Define default value for sampling rate
-        kwargs["sampling_rate"] = kwargs.get("sampling_rate", 100)
-
         super().__init__(
             citation=citation,
             output_type="point",
             in_samples=400,
             pred_sample=200,
             labels=phases,
+            sampling_rate=sampling_rate,
             **kwargs,
         )
 

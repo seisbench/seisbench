@@ -40,7 +40,9 @@ class Conv1dSame(nn.Module):
 
 
 class PhaseNet(WaveformModel):
-    def __init__(self, in_channels=3, classes=3, phases="NPS", **kwargs):
+    def __init__(
+        self, in_channels=3, classes=3, phases="NPS", sampling_rate=100, **kwargs
+    ):
         citation = (
             "Zhu, W., & Beroza, G. C. (2019). "
             "PhaseNet: a deep-neural-network-based seismic arrival-time picking method. "
@@ -55,6 +57,7 @@ class PhaseNet(WaveformModel):
             default_args={"overlap": 250},
             pred_sample=(0, 3001),
             labels=phases,
+            sampling_rate=sampling_rate,
             **kwargs,
         )
 

@@ -45,6 +45,7 @@ class EQTransformer(WaveformModel):
         lstm_blocks=3,
         drop_rate=0.1,
         original_compatible=False,
+        sampling_rate=100,
         **kwargs,
     ):
         citation = (
@@ -53,9 +54,6 @@ class EQTransformer(WaveformModel):
             "detection and phase picking. Nat Commun 11, 3952 (2020). "
             "https://doi.org/10.1038/s41467-020-17591-w"
         )
-        # Define default value for sampling rate
-        kwargs["sampling_rate"] = kwargs.get("sampling_rate", 100)
-
         # Blinding defines how many samples at beginning and end of the prediction should be ignored
         # This is usually required to mitigate prediction problems from training properties, e.g.,
         # if all picks in the training fall between seconds 5 and 55.
@@ -66,6 +64,7 @@ class EQTransformer(WaveformModel):
             in_samples=in_samples,
             pred_sample=(0, in_samples),
             labels=["Detection"] + list(phases),
+            sampling_rate=sampling_rate,
             **kwargs,
         )
 
