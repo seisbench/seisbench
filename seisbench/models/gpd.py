@@ -14,6 +14,8 @@ class GPD(WaveformModel):
         phases=None,
         eps=1e-10,
         sampling_rate=100,
+        pred_sample=200,
+        original_compatible=False,
         **kwargs,
     ):
         citation = (
@@ -25,7 +27,7 @@ class GPD(WaveformModel):
             citation=citation,
             output_type="point",
             in_samples=400,
-            pred_sample=200,
+            pred_sample=pred_sample,
             labels=phases,
             sampling_rate=sampling_rate,
             **kwargs,
@@ -35,24 +37,25 @@ class GPD(WaveformModel):
         self.classes = classes
         self.eps = eps
         self._phases = phases
+        self.original_compatible = original_compatible
         if phases is not None and len(phases) != classes:
             raise ValueError(
                 f"Number of classes ({classes}) does not match number of phases ({len(phases)})."
             )
 
         self.conv1 = nn.Conv1d(in_channels, 32, 21, padding=10)
-        self.bn1 = nn.BatchNorm1d(32)
+        self.bn1 = nn.BatchNorm1d(32, eps=1e-3)
         self.conv2 = nn.Conv1d(32, 64, 15, padding=7)
-        self.bn2 = nn.BatchNorm1d(64)
+        self.bn2 = nn.BatchNorm1d(64, eps=1e-3)
         self.conv3 = nn.Conv1d(64, 128, 11, padding=5)
-        self.bn3 = nn.BatchNorm1d(128)
+        self.bn3 = nn.BatchNorm1d(128, eps=1e-3)
         self.conv4 = nn.Conv1d(128, 256, 9, padding=4)
-        self.bn4 = nn.BatchNorm1d(256)
+        self.bn4 = nn.BatchNorm1d(256, eps=1e-3)
 
         self.fc1 = nn.Linear(6400, 200)
-        self.bn5 = nn.BatchNorm1d(200)
+        self.bn5 = nn.BatchNorm1d(200, eps=1e-3)
         self.fc2 = nn.Linear(200, 200)
-        self.bn6 = nn.BatchNorm1d(200)
+        self.bn6 = nn.BatchNorm1d(200, eps=1e-3)
         self.fc3 = nn.Linear(200, classes)
 
         self.activation = torch.relu
@@ -72,6 +75,9 @@ class GPD(WaveformModel):
         x = self.pool(self.activation(self.bn3(self.conv3(x))))
         x = self.pool(self.activation(self.bn4(self.conv4(x))))
 
+        if self.original_compatible:
+            # Permutation is required to be consistent with the following fully connected layer
+            x = x.permute(0, 2, 1)
         x = torch.flatten(x, 1)
 
         x = self.activation(self.bn5(self.fc1(x)))
@@ -115,7 +121,7 @@ class GPD(WaveformModel):
                 # Don't pick noise
                 continue
 
-            pick_threshold = argdict.get(f"{phase}_threshold", 0.3)
+            pick_threshold = argdict.get(f"{phase}_threshold", 0.7)
             for trace in annotations.select(channel=f"GPD_{phase}"):
                 trace_id = f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
                 triggers = trigger_onset(trace.data, pick_threshold, pick_threshold / 2)
