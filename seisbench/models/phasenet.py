@@ -3,6 +3,8 @@ from .base import WaveformModel
 import torch
 import torch.nn as nn
 import math
+from obspy.signal.trigger import trigger_onset
+import numpy as np
 
 
 class Conv1dSame(nn.Module):
@@ -38,10 +40,26 @@ class Conv1dSame(nn.Module):
 
 
 class PhaseNet(WaveformModel):
-    def __init__(self, in_channels=3, n_classes=3):
-        super().__init__()
+    def __init__(self, in_channels=3, classes=3, phases="NPS", **kwargs):
+        citation = (
+            "Zhu, W., & Beroza, G. C. (2019). "
+            "PhaseNet: a deep-neural-network-based seismic arrival-time picking method. "
+            "Geophysical Journal International, 216(1), 261-273. "
+            "https://doi.org/10.1093/gji/ggy423"
+        )
+
+        super().__init__(
+            citation=citation,
+            in_samples=3001,
+            output_type="array",
+            default_args={"overlap": 250},
+            pred_sample=(0, 3001),
+            labels=phases,
+            **kwargs,
+        )
+
         self.in_channels = in_channels
-        self.n_classes = n_classes
+        self.classes = classes
         self.kernel_size = 7
         self.stride = 4
         self.activation = torch.relu
@@ -84,63 +102,63 @@ class PhaseNet(WaveformModel):
         self.up4 = nn.ConvTranspose1d(22, 8, self.kernel_size, self.stride, padding=3)
         self.bnu4 = nn.BatchNorm1d(8)
 
-        self.out = nn.ConvTranspose1d(16, self.n_classes, 1)
+        self.out = nn.ConvTranspose1d(16, self.classes, 1)
         self.softmax = torch.nn.Softmax(dim=1)
 
-    def forward(self, x, summary=False):
+    def forward(self, x):
+        x_in = self.activation(self.in_bn(self.inc(x)))
 
-        # Print architecture summary on forward-pass (to remove)
-        if summary:
+        x1 = self.activation(self.bnd1(self.conv1(x_in)))
+        x2 = self.activation(self.bnd2(self.conv2(x1)))
+        x3 = self.activation(self.bnd3(self.conv3(x2)))
+        x4 = self.activation(self.bnd4(self.conv4(x3)))
 
-            print("PhaseNet\n\n[C, W]")
-            print((x.shape[1], x.shape[2]))
+        x = torch.cat([self.activation(self.bnu1(self.up1(x4))), x3], dim=1)
+        x = torch.cat([self.activation(self.bnu2(self.up2(x))), x2], dim=1)
+        x = torch.cat([self.activation(self.bnu3(self.up3(x))), x1], dim=1)
+        x = torch.cat([self.activation(self.bnu4(self.up4(x))), x_in], dim=1)
 
-            x_in = self.activation(self.in_bn(self.inc(x)))
-            print((x_in.shape[1], x_in.shape[2]))
-            x1 = self.activation(self.bnd1(self.conv1(x_in)))
-            print("|\t", (x1.shape[1], x1.shape[2]))
-            x2 = self.activation(self.bnd2(self.conv2(x1)))
-            print("|\t|\t", (x2.shape[1], x2.shape[2]))
-            x3 = self.activation(self.bnd3(self.conv3(x2)))
-            print("|\t|\t|\t", (x3.shape[1], x3.shape[2]))
-            x4 = self.activation(self.bnd4(self.conv4(x3)))
-
-            print("|\t|\t|\t|\t", (x4.shape[1], x4.shape[2]))
-
-            x = torch.cat([self.activation(self.bnu1(self.up1(x4))), x3], dim=1)
-            print("|\t|\t|\t", (x.shape[1], x.shape[2]))
-            x = torch.cat([self.activation(self.bnu2(self.up2(x))), x2], dim=1)
-            print("|\t|\t", (x.shape[1], x.shape[2]))
-            x = torch.cat([self.activation(self.bnu3(self.up3(x))), x1], dim=1)
-            print("|\t", (x.shape[1], x.shape[2]))
-            x = torch.cat([self.activation(self.bnu4(self.up4(x))), x_in], dim=1)
-            print((x.shape[1], x.shape[2]))
-            x = self.out(x)
-            print((x.shape[1], x.shape[2]))
-
-            x = self.softmax(x)
-
-        else:
-
-            x_in = self.activation(self.in_bn(self.inc(x)))
-
-            x1 = self.activation(self.bnd1(self.conv1(x_in)))
-            x2 = self.activation(self.bnd2(self.conv2(x1)))
-            x3 = self.activation(self.bnd3(self.conv3(x2)))
-            x4 = self.activation(self.bnd4(self.conv4(x3)))
-
-            x = torch.cat([self.activation(self.bnu1(self.up1(x4))), x3], dim=1)
-            x = torch.cat([self.activation(self.bnu2(self.up2(x))), x2], dim=1)
-            x = torch.cat([self.activation(self.bnu3(self.up3(x))), x1], dim=1)
-            x = torch.cat([self.activation(self.bnu4(self.up4(x))), x_in], dim=1)
-
-            x = self.out(x)
-            x = self.softmax(x)
+        x = self.out(x)
+        x = self.softmax(x)
 
         return x
 
-    def annotate(self, stream, *args, **kwargs):
-        raise NotImplementedError("Annotate is not yet implemented")
+    def annotate_window_pre(self, window, argdict):
+        # Add a demean and normalize step to the preprocessing
+        window = window - np.mean(window, axis=-1, keepdims=True)
+        std = np.std(window, axis=-1, keepdims=True)
+        std[std == 0] = 1  # Avoid NaN errors
+        window = window / std
+        return window
 
-    def classify(self, stream, *args, **kwargs):
-        raise NotImplementedError("Classify is not yet implemented")
+    def annotate_window_post(self, pred, argdict):
+        # Transpose predictions to correct shape
+        return pred.T
+
+    def classify_aggregate(self, annotations, argdict):
+        """
+        Converts the annotations to discrete thresholds using a classical trigger on/off.
+        Trigger onset thresholds are derived from the argdict at keys "[phase]_threshold".
+        For all triggers the lower threshold is set to half the higher threshold.
+        For each pick a triple is returned, consisting of the trace_id ("net.sta.loc"), the pick time and the phase.
+
+        :param annotations: See description in superclass
+        :param argdict: See description in superclass
+        :return: List of picks
+        """
+        picks = []
+        for phase in self.labels:
+            if phase == "N":
+                # Don't pick noise
+                continue
+
+            pick_threshold = argdict.get(f"{phase}_threshold", 0.3)
+            for trace in annotations.select(channel=f"PhaseNet_{phase}"):
+                trace_id = f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
+                triggers = trigger_onset(trace.data, pick_threshold, pick_threshold / 2)
+                times = trace.times()
+                for s0, _ in triggers:
+                    t0 = trace.stats.starttime + times[s0]
+                    picks.append((trace_id, t0, phase))
+
+        return sorted(picks)
