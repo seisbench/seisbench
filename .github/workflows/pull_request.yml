@@ -48,9 +48,9 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.seisbench
-          key: seisbench-cache
+          key: seisbench-cache-v2
           restore-keys: |
-            seisbench-cache
+            seisbench-cache-v2
       
       - name: Install dependencies
         run: |

@@ -1,5 +1,4 @@
 from .base import WaveformModel
-import seisbench
 
 import torch
 import torch.nn as nn
@@ -41,18 +40,16 @@ class GPD(WaveformModel):
                 f"Number of classes ({classes}) does not match number of phases ({len(phases)})."
             )
 
-        # TODO: Verify Pooling
-        # TODO: Verify order of activation, pooling and batch norm
-        self.conv1 = nn.Conv1d(in_channels, 32, 21)
+        self.conv1 = nn.Conv1d(in_channels, 32, 21, padding=10)
         self.bn1 = nn.BatchNorm1d(32)
-        self.conv2 = nn.Conv1d(32, 64, 21)
+        self.conv2 = nn.Conv1d(32, 64, 15, padding=7)
         self.bn2 = nn.BatchNorm1d(64)
-        self.conv3 = nn.Conv1d(64, 128, 21)
+        self.conv3 = nn.Conv1d(64, 128, 11, padding=5)
         self.bn3 = nn.BatchNorm1d(128)
-        self.conv4 = nn.Conv1d(128, 256, 21)
+        self.conv4 = nn.Conv1d(128, 256, 9, padding=4)
         self.bn4 = nn.BatchNorm1d(256)
 
-        self.fc1 = nn.Linear(1536, 200)
+        self.fc1 = nn.Linear(6400, 200)
         self.bn5 = nn.BatchNorm1d(200)
         self.fc2 = nn.Linear(200, 200)
         self.bn6 = nn.BatchNorm1d(200)
@@ -70,10 +67,10 @@ class GPD(WaveformModel):
             )[0]
             + self.eps
         )
-        x = self.activation(self.pool(self.bn1(self.conv1(x))))
-        x = self.activation(self.pool(self.bn2(self.conv2(x))))
-        x = self.activation(self.pool(self.bn3(self.conv3(x))))
-        x = self.activation(self.pool(self.bn4(self.conv4(x))))
+        x = self.pool(self.activation(self.bn1(self.conv1(x))))
+        x = self.pool(self.activation(self.bn2(self.conv2(x))))
+        x = self.pool(self.activation(self.bn3(self.conv3(x))))
+        x = self.pool(self.activation(self.bn4(self.conv4(x))))
 
         x = torch.flatten(x, 1)
 
