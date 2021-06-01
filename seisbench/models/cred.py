@@ -5,12 +5,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from scipy.signal import stft
 import numpy as np
+from obspy.signal.trigger import trigger_onset
 
 
 class CRED(WaveformModel):
     """
     Note: There are subtle differences between the model presented in the paper (as in Figure 1) and the code on Github.
-          Here we follow the implementation from Github.
+          Here we follow the implementation from Github to allow for compatibility with the pretrained weights.
     """
 
     def __init__(
@@ -19,7 +20,7 @@ class CRED(WaveformModel):
         in_channels=3,
         sampling_rate=100,
         original_compatible=False,
-        **kwargs
+        **kwargs,
     ):
         citation = (
             "Mousavi, S. M., Zhu, W., Sheng, Y., & Beroza, G. C. (2019). "
@@ -32,6 +33,9 @@ class CRED(WaveformModel):
             labels=["Detection"],
             sampling_rate=sampling_rate,
             in_samples=in_samples,
+            output_type="array",
+            pred_sample=(0, in_samples),
+            default_args={"overlap": 500},
             **kwargs,
         )
 
@@ -86,21 +90,59 @@ class CRED(WaveformModel):
         x = self.norm2(x)
         x = x.permute(0, 2, 1)
 
+        shape_save = x.shape
         x = x.reshape((-1,) + x.shape[2:])
         x = self.dropout(x)
         x = torch.sigmoid(self.fc2(x))
+        x = x.reshape(shape_save[:2] + (1,))
 
         return x
 
     @staticmethod
     def waveforms_to_spectrogram(wv):
         """
-        Transforms waveforms into spectogram using short term fourier transform
+        Transforms waveforms into spectrogram using short term fourier transform
         :param wv: Waveforms with shape (channels, samples)
         :return: Spectrogram with shape (channels, times, frequencies)
         """
         _, _, z = stft(wv, fs=100, nperseg=80)
         return np.transpose(np.abs(z), (0, 2, 1))
+
+    def annotate_window_pre(self, window, argdict):
+        # Add a demean and an amplitude normalization step to the preprocessing
+        window = window - np.mean(window, axis=-1, keepdims=True)
+        window = window / (np.std(window) + 1e-10)
+        return self.waveforms_to_spectrogram(window)
+
+    def classify_aggregate(self, annotations, argdict):
+        """
+        Converts the annotations to discrete thresholds using a classical trigger on/off.
+        Trigger onset thresholds for detections are derived from the argdict at key "detection_threshold".
+        For all triggers the lower threshold is set to half the higher threshold.
+        For each detection a triple is returned consisting of the trace_id, the start and end time.
+
+        :param annotations: See description in superclass
+        :param argdict: See description in superclass
+        :return: List of detections
+        """
+        # Use threshold / 2 as lower bound
+        detection_threshold = argdict.get("detection_threshold", 0.5)
+
+        detections = []
+        for trace in annotations.select(channel="CRED_Detection"):
+            trace_id = (
+                f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
+            )
+            triggers = trigger_onset(
+                trace.data, detection_threshold, detection_threshold / 2
+            )
+            times = trace.times()
+            for s0, s1 in triggers:
+                t0 = trace.stats.starttime + times[s0]
+                t1 = trace.stats.starttime + times[s1]
+                detections.append((trace_id, t0, t1))
+
+        return detections
 
 
 class BlockCNN(nn.Module):
