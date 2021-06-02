@@ -30,6 +30,7 @@ class GPD(WaveformModel):
             pred_sample=pred_sample,
             labels=phases,
             sampling_rate=sampling_rate,
+            default_args={"stride": 10},
             **kwargs,
         )
 
