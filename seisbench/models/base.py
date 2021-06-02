@@ -920,7 +920,8 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         Converts the annotations streams for a single phase to discrete picks using a classical trigger on/off.
         The lower threshold is set to half the higher threshold.
-        For each pick a triple is returned, consisting of the trace_id ("net.sta.loc"), the pick time and the phase.
+        Picks are represented by :py:class:`~seisbench.util.annotations.Pick` objects.
+        The pick start_time and end_time are set to the trigger on and off times.
 
         :param annotations: Stream of annotations
         :param threshold: Higher threshold for trigger
@@ -959,7 +960,8 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         Converts the annotations streams for a single phase to discrete detections using a classical trigger on/off.
         The lower threshold is set to half the higher threshold.
-        For each detection a triple is returned consisting of the trace_id, the start and end time.
+        Detections are represented by :py:class:`~seisbench.util.annotations.Detection` objects.
+        The detection start_time and end_time are set to the trigger on and off times.
 
         :param annotations: Stream of annotations
         :param threshold: Higher threshold for trigger

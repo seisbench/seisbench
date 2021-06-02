@@ -89,4 +89,8 @@ seisbench.util
     :undoc-members:
     :show-inheritance:
 
+.. automodule:: seisbench.util.annotations
+    :members:
+    :undoc-members:
+    :show-inheritance:
 
