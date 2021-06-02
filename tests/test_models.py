@@ -536,3 +536,76 @@ def test_annotate_array():
     assert len(pred_times) == len(pred_rates) == len(full_preds) == 1
     assert full_preds[0].shape == (10001, 3)
     assert pred_rates[0] == 100.0
+
+
+def test_picks_from_annotations():
+    data = np.zeros(1000)
+    data[100:201] = 0.7
+    data[300:401] = 0.1
+    data[500:701] = 0.5
+    data[600] = 0.6  # Different peak
+    t0 = UTCDateTime()
+    trace = obspy.Trace(
+        data,
+        header={
+            "network": "SB",
+            "station": "ABC1",
+            "starttime": t0,
+            "sampling_rate": 100,
+        },
+    )
+
+    picks = seisbench.models.WaveformModel.picks_from_annotations(
+        obspy.Stream([trace]), 0.3, "P"
+    )
+    picks = sorted(picks)
+
+    assert len(picks) == 2
+
+    assert picks[0].trace_id == "SB.ABC1."
+    assert picks[0].start_time == t0 + 1
+    assert picks[0].end_time == t0 + 2
+    assert picks[0].peak_value == 0.7
+    assert picks[0].phase == "P"
+
+    assert picks[1].trace_id == "SB.ABC1."
+    assert picks[1].start_time == t0 + 5
+    assert picks[1].end_time == t0 + 7
+    assert picks[1].peak_time == t0 + 6
+    assert picks[1].peak_value == 0.6
+    assert picks[1].phase == "P"
+
+
+def test_detections_from_annotations():
+    data = np.zeros(1000)
+    data[100:201] = 0.7
+    data[300:401] = 0.1
+    data[500:701] = 0.5
+    data[600] = 0.6  # Different peak
+    t0 = UTCDateTime()
+    trace = obspy.Trace(
+        data,
+        header={
+            "network": "SB",
+            "station": "ABC1",
+            "starttime": t0,
+            "sampling_rate": 100,
+        },
+    )
+
+    detections = seisbench.models.WaveformModel.detections_from_annotations(
+        obspy.Stream([trace]), 0.3
+    )
+    detections = sorted(detections)
+
+    assert len(detections) == 2
+
+    assert detections[0].trace_id == "SB.ABC1."
+    assert detections[0].start_time == t0 + 1
+    assert detections[0].end_time == t0 + 2
+    assert detections[0].peak_value == 0.7
+
+    assert detections[1].trace_id == "SB.ABC1."
+    assert detections[1].start_time == t0 + 5
+    assert detections[1].end_time == t0 + 7
+    assert detections[1].peak_value == 0.6

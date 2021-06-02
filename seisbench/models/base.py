@@ -131,7 +131,6 @@ class SeisBenchModel(nn.Module):
         self._weights_docstring = self._weights_metadata.get("docstring", "")
 
 
-# TODO: Add classify function using aggregation of annotate results
 class WaveformModel(SeisBenchModel, ABC):
     """
     Abstract interface for models processing waveforms.
@@ -935,9 +934,23 @@ class WaveformModel(SeisBenchModel, ABC):
             )
             triggers = trigger_onset(trace.data, threshold, threshold / 2)
             times = trace.times()
-            for s0, _ in triggers:
+            for s0, s1 in triggers:
                 t0 = trace.stats.starttime + times[s0]
-                picks.append((trace_id, t0, phase))
+                t1 = trace.stats.starttime + times[s1]
+
+                peak_value = np.max(trace.data[s0:s1])
+                s_peak = s0 + np.argmax(trace.data[s0:s1])
+                t_peak = trace.stats.starttime + times[s_peak]
+
+                pick = util.Pick(
+                    trace_id=trace_id,
+                    start_time=t0,
+                    end_time=t1,
+                    peak_time=t_peak,
+                    peak_value=peak_value,
+                    phase=phase,
+                )
+                picks.append(pick)
 
         return picks
 
@@ -962,6 +975,11 @@ class WaveformModel(SeisBenchModel, ABC):
             for s0, s1 in triggers:
                 t0 = trace.stats.starttime + times[s0]
                 t1 = trace.stats.starttime + times[s1]
-                detections.append((trace_id, t0, t1))
+                peak_value = np.max(trace.data[s0:s1])
+
+                detection = util.Detection(
+                    trace_id=trace_id, start_time=t0, end_time=t1, peak_value=peak_value
+                )
+                detections.append(detection)
 
         return detections
