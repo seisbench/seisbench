@@ -50,6 +50,26 @@ seisbench.models
     :undoc-members:
     :show-inheritance:
 
+.. automodule:: seisbench.models.cred
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. automodule:: seisbench.models.eqtransformer
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. automodule:: seisbench.models.gpd
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. automodule:: seisbench.models.phasenet
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 
 seisbench.util
 -----------------------------------

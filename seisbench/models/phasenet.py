@@ -140,10 +140,8 @@ class PhaseNet(WaveformModel):
 
     def classify_aggregate(self, annotations, argdict):
         """
-        Converts the annotations to discrete thresholds using a classical trigger on/off.
-        Trigger onset thresholds are derived from the argdict at keys "[phase]_threshold".
-        For all triggers the lower threshold is set to half the higher threshold.
-        For each pick a triple is returned, consisting of the trace_id ("net.sta.loc"), the pick time and the phase.
+        Converts the annotations to discrete thresholds using :py:func:`~seisbench.models.base.WaveformModel.picks_from_annotations`.
+        Trigger onset thresholds for picks are derived from the argdict at keys "[phase]_threshold".
 
         :param annotations: See description in superclass
         :param argdict: See description in superclass
@@ -155,13 +153,10 @@ class PhaseNet(WaveformModel):
                 # Don't pick noise
                 continue
 
-            pick_threshold = argdict.get(f"{phase}_threshold", 0.3)
-            for trace in annotations.select(channel=f"PhaseNet_{phase}"):
-                trace_id = f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
-                triggers = trigger_onset(trace.data, pick_threshold, pick_threshold / 2)
-                times = trace.times()
-                for s0, _ in triggers:
-                    t0 = trace.stats.starttime + times[s0]
-                    picks.append((trace_id, t0, phase))
+            picks += self.picks_from_annotations(
+                annotations.select(channel=f"PhaseNet_{phase}"),
+                argdict.get(f"{phase}_threshold", 0.3),
+                phase,
+            )
 
         return sorted(picks)

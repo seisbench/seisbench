@@ -116,31 +116,17 @@ class CRED(WaveformModel):
 
     def classify_aggregate(self, annotations, argdict):
         """
-        Converts the annotations to discrete thresholds using a classical trigger on/off.
-        Trigger onset thresholds for detections are derived from the argdict at key "detection_threshold".
-        For all triggers the lower threshold is set to half the higher threshold.
-        For each detection a triple is returned consisting of the trace_id, the start and end time.
+        Converts the annotations to discrete detections using :py:func:`~seisbench.models.base.WaveformModel.detections_from_annotations`.
+        Trigger onset thresholds are derived from the argdict at key "detection_threshold".
 
         :param annotations: See description in superclass
         :param argdict: See description in superclass
         :return: List of detections
         """
-        # Use threshold / 2 as lower bound
-        detection_threshold = argdict.get("detection_threshold", 0.5)
-
-        detections = []
-        for trace in annotations.select(channel="CRED_Detection"):
-            trace_id = (
-                f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
-            )
-            triggers = trigger_onset(
-                trace.data, detection_threshold, detection_threshold / 2
-            )
-            times = trace.times()
-            for s0, s1 in triggers:
-                t0 = trace.stats.starttime + times[s0]
-                t1 = trace.stats.starttime + times[s1]
-                detections.append((trace_id, t0, t1))
+        detections = self.detections_from_annotations(
+            annotations.select(channel="CRED_Detection"),
+            argdict.get("detection_threshold", 0.5),
+        )
 
         return detections
 

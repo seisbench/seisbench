@@ -241,12 +241,10 @@ class EQTransformer(WaveformModel):
 
     def classify_aggregate(self, annotations, argdict):
         """
-        Converts the annotations to discrete thresholds using a classical trigger on/off.
+        Converts the annotations to discrete picks using :py:func:`~seisbench.models.base.WaveformModel.picks_from_annotations`
+        and to discrete detections using :py:func:`~seisbench.models.base.WaveformModel.detections_from_annotations`.
         Trigger onset thresholds for picks are derived from the argdict at keys "[phase]_threshold".
         Trigger onset thresholds for detections are derived from the argdict at key "detection_threshold".
-        For all triggers the lower threshold is set to half the higher threshold.
-        For each pick a triple is returned, consisting of the trace_id ("net.sta.loc"), the pick time and the phase.
-        For each detection a triple is returned consisting of the trace_id, the start and end time.
 
         :param annotations: See description in superclass
         :param argdict: See description in superclass
@@ -254,33 +252,18 @@ class EQTransformer(WaveformModel):
         """
         picks = []
         for phase in self.phases:
-            pick_threshold = argdict.get(f"{phase}_threshold", 0.1)
-            for trace in annotations.select(channel=f"EQTransformer_{phase}"):
-                trace_id = f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
-                triggers = trigger_onset(trace.data, pick_threshold, pick_threshold / 2)
-                times = trace.times()
-                for s0, _ in triggers:
-                    t0 = trace.stats.starttime + times[s0]
-                    picks.append((trace_id, t0, phase))
-
-        # Use threshold / 2 as lower bound
-        detection_threshold = argdict.get("detection_threshold", 0.3)
-
-        detections = []
-        for trace in annotations.select(channel="EQTransformer_Detection"):
-            trace_id = (
-                f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
+            picks += self.picks_from_annotations(
+                annotations.select(channel=f"EQTransformer_{phase}"),
+                argdict.get(f"{phase}_threshold", 0.1),
+                phase,
             )
-            triggers = trigger_onset(
-                trace.data, detection_threshold, detection_threshold / 2
-            )
-            times = trace.times()
-            for s0, s1 in triggers:
-                t0 = trace.stats.starttime + times[s0]
-                t1 = trace.stats.starttime + times[s1]
-                detections.append((trace_id, t0, t1))
 
-        return sorted(picks), detections
+        detections = self.detections_from_annotations(
+            annotations.select(channel="EQTransformer_Detection"),
+            argdict.get("detection_threshold", 0.3),
+        )
+
+        return sorted(picks), sorted(detections)
 
 
 class Encoder(nn.Module):

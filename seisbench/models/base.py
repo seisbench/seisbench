@@ -1,5 +1,3 @@
-import numpy
-
 import seisbench
 import seisbench.util as util
 
@@ -14,6 +12,7 @@ import json
 import numpy as np
 import obspy
 import warnings
+from obspy.signal.trigger import trigger_onset
 
 
 class SeisBenchModel(nn.Module):
@@ -630,7 +629,7 @@ class WaveformModel(SeisBenchModel, ABC):
         :param x:
         :return:
         """
-        if isinstance(x, numpy.ndarray):
+        if isinstance(x, np.ndarray):
             return list(y for y in x)
         elif isinstance(x, list):
             return [
@@ -916,3 +915,53 @@ class WaveformModel(SeisBenchModel, ABC):
                         seqnum += 1
 
         return output_times, output_data
+
+    @staticmethod
+    def picks_from_annotations(annotations, threshold, phase):
+        """
+        Converts the annotations streams for a single phase to discrete picks using a classical trigger on/off.
+        The lower threshold is set to half the higher threshold.
+        For each pick a triple is returned, consisting of the trace_id ("net.sta.loc"), the pick time and the phase.
+
+        :param annotations: Stream of annotations
+        :param threshold: Higher threshold for trigger
+        :param phase: Phase to label, only relevant for output phase labelling
+        :return: List of picks
+        """
+        picks = []
+        for trace in annotations:
+            trace_id = (
+                f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
+            )
+            triggers = trigger_onset(trace.data, threshold, threshold / 2)
+            times = trace.times()
+            for s0, _ in triggers:
+                t0 = trace.stats.starttime + times[s0]
+                picks.append((trace_id, t0, phase))
+
+        return picks
+
+    @staticmethod
+    def detections_from_annotations(annotations, threshold):
+        """
+        Converts the annotations streams for a single phase to discrete detections using a classical trigger on/off.
+        The lower threshold is set to half the higher threshold.
+        For each detection a triple is returned consisting of the trace_id, the start and end time.
+
+        :param annotations: Stream of annotations
+        :param threshold: Higher threshold for trigger
+        :return: List of detections
+        """
+        detections = []
+        for trace in annotations:
+            trace_id = (
+                f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
+            )
+            triggers = trigger_onset(trace.data, threshold, threshold / 2)
+            times = trace.times()
+            for s0, s1 in triggers:
+                t0 = trace.stats.starttime + times[s0]
+                t1 = trace.stats.starttime + times[s1]
+                detections.append((trace_id, t0, t1))
+
+        return detections
