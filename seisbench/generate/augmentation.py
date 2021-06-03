@@ -825,7 +825,7 @@ class StandardLabeller(SupervisedLabeller):
                 if self.on_overlap == "label-first":
                     y[row_id] = self._label_first(row_id, arrival_array, nan_mask)
                 elif self.on_overlap == "random":
-                    y[row_id] = self._label_random(row_id, arrival_array, nan_mask)
+                    y[row_id] = self._label_random(row_id, nan_mask)
                 elif self.on_overlap == "fixed-relevance":
                     midpoint = X.shape[width_dim] // 2
                     y[row_id] = self._label_fixed_relavence(
