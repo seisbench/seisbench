@@ -578,7 +578,14 @@ class WaveformDataset:
                 # Rewrite all metadata keys in sample units to the new sampling rate
                 for key in metadata.keys():
                     if key.endswith("_sample"):
-                        metadata[key] *= resampling_factor
+                        try:
+                            metadata[key] = metadata[key] * resampling_factor
+                        except TypeError:
+                            seisbench.logger.warning(
+                                f"Failed to do sampling rate adjustment for column {key} "
+                                f"due to type error. "
+                                f"Value was {metadata[key]} with type {type(metadata[key])}."
+                            )
 
                 metadata["trace_sampling_rate_hz"] = sampling_rate
                 metadata["trace_dt_s"] = 1.0 / sampling_rate
