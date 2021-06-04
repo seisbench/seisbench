@@ -575,6 +575,9 @@ def test_probabilistic_pick_labeller():
     assert state_dict["y"][0].shape == (4, 1000)
     assert np.argmax(state_dict["y"][0], axis=1)[1] == 499
     assert np.argmax(state_dict["y"][0], axis=1)[2] == 699
+    assert (
+        state_dict["y"][0][0] == 0
+    ).all()  # Check that NaN picks are interpreted as not present
 
     # Fails when multi_class specified and channel dim sum > 1
     with pytest.raises(ValueError):
@@ -588,15 +591,18 @@ def test_probabilistic_pick_labeller():
             {
                 "trace_p_arrival_sample": np.array([500] * 5),
                 "trace_s_arrival_sample": np.array([700] * 5),
+                "trace_g_arrival_sample": np.array([500, 500, 500, np.nan, 500]),
             },
         )
     }
     labeller = ProbabilisticLabeller(dim=1)
     labeller(state_dict)
 
-    assert state_dict["y"][0].shape == (5, 3, 1000)
-    assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[0] == 499
-    assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[1] == 699
+    assert state_dict["y"][0].shape == (5, 4, 1000)
+    assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[1] == 499
+    assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[2] == 699
+    assert np.argmax(state_dict["y"][0][2, :, :], axis=-1)[0] == 499  # Entry with pick
+    assert (state_dict["y"][0][3, 0, :] == 0).all()
 
     # Fails if single sample provided for multiple windows
     state_dict = {

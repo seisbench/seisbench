@@ -638,6 +638,8 @@ class ProbabilisticLabeller(SupervisedLabeller):
         \]
         and the noise class is automatically created as \[ \max \left(0, 1 - \sum_{n=1}^{c} x_{j} \right) \].
 
+    All picks with NaN sample are treated as not present.
+
     :param label_columns: Specify the columns to use for pick labelling, defaults to None and columns are inferred from metadata
     :type label_columns: list, optional
     :param dim: Dimension over which labelling will be applied, defaults to 1
@@ -697,6 +699,8 @@ class ProbabilisticLabeller(SupervisedLabeller):
                     y[j, i, :] = gaussian_pick(
                         onset=onset, length=X.shape[width_dim], sigma=self.sigma
                     )
+
+            y[np.isnan(y)] = 0  # Set non-present pick probabilites to 0
 
         # Construct noise label
         if self.ndim == 2:
