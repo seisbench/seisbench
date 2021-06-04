@@ -1,3 +1,4 @@
+import seisbench.generate
 from seisbench.generate import (
     Normalize,
     Filter,
@@ -720,3 +721,20 @@ def test_autoidentify_pick_labels():
         "trace_Pn_arrival_sample",
         "trace_Sg_arrival_sample",
     ]
+
+
+def test_add_augmentations():
+    # Tests mixing of augmentation decorator and add_augmentations
+    generator = seisbench.generate.GenericGenerator(None)
+
+    @generator.augmentation
+    def f():
+        return
+
+    generator.add_augmentations([1, 2])
+
+    @generator.augmentation
+    def g():
+        return
+
+    assert generator._augmentations == [f, 1, 2, g]

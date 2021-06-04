@@ -42,6 +42,20 @@ class GenericGenerator(Dataset):
 
         return f
 
+    def add_augmentations(self, augmentations):
+        """
+        Adds a list of augmentations to the generator. Can not be used as decorator.
+
+        :param augmentations: List of augmentations
+        :return: None
+        """
+        if not isinstance(augmentations, list):
+            raise TypeError(
+                "The argument of add_augmentations must be a list of augmentations."
+            )
+
+        self._augmentations.extend(augmentations)
+
     def __str__(self):
         summary = f"GenericGenerator with {len(self._augmentations)} augmentations:\n"
         for i, aug in enumerate(self._augmentations):
