@@ -6,6 +6,7 @@ import re
 from abc import abstractmethod, ABC
 from seisbench.util.ml import gaussian_pick
 from seisbench import config
+import seisbench
 
 
 class FixedWindow:
@@ -110,7 +111,13 @@ class FixedWindow:
 
         for key in metadata.keys():
             if key.endswith("_sample"):
-                metadata[key] -= p0
+                try:
+                    metadata[key] = metadata[key] - p0
+                except TypeError:
+                    seisbench.logger.info(
+                        f"Failed to do window adjustment for column {key} "
+                        f"due to type error. "
+                    )
 
         state_dict[self.key[1]] = (window, metadata)
 

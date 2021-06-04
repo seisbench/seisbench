@@ -581,10 +581,9 @@ class WaveformDataset:
                         try:
                             metadata[key] = metadata[key] * resampling_factor
                         except TypeError:
-                            seisbench.logger.warning(
+                            seisbench.logger.info(
                                 f"Failed to do sampling rate adjustment for column {key} "
                                 f"due to type error. "
-                                f"Value was {metadata[key]} with type {type(metadata[key])}."
                             )
 
                 metadata["trace_sampling_rate_hz"] = sampling_rate
