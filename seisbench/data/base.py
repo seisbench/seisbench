@@ -400,7 +400,7 @@ class WaveformDataset:
 
         return data_format
 
-    def preload_waveforms(self):
+    def preload_waveforms(self, pbar=False):
         """
         Loads waveform data from hdf5 file into cache
         """
@@ -410,9 +410,13 @@ class WaveformDataset:
 
         chunks, metadata_paths, waveforms_path = self._chunks_with_paths()
         with LoadingContext(chunks, waveforms_path) as context:
-            for trace_name, chunk in zip(
-                self._metadata["trace_name"], self._metadata["trace_chunk"]
-            ):
+            iterator = zip(self._metadata["trace_name"], self._metadata["trace_chunk"])
+            if pbar:
+                iterator = tqdm(
+                    iterator, total=len(self._metadata), desc="Preloading waveforms"
+                )
+
+            for trace_name, chunk in iterator:
                 self._get_single_waveform(trace_name, chunk, context=context)
 
     def filter(self, mask, inplace=True):
