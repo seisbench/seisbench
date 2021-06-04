@@ -10,8 +10,7 @@ cache_root = _Path(
     _os.getenv("SEISBENCH_CACHE_ROOT", _Path(_Path.home(), ".seisbench"))
 )
 
-# TODO: Update to correct root
-remote_root = "https://munchmeyer.de/seisbench/"
+remote_root = "https://dcache-demo.desy.de:2443/Helmholtz/HelmholtzAI/SeisBench/"
 
 if not cache_root.is_dir():
     cache_root.mkdir(parents=True, exist_ok=True)
