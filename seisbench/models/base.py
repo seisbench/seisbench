@@ -127,6 +127,58 @@ class SeisBenchModel(nn.Module):
 
         return model
 
+    @classmethod
+    def list_pretrained(cls, details=False):
+        """
+        Returns list of available pretrained weights and optionally their docstrings.
+
+        :param details: If true, instead of a returning only a list, also return their docstrings.
+                        Note that this requires to download the json files for each model in the background
+                        and is therefore slower. Defaults to false.
+        :type details: bool
+        :return: List of available weights or dict of weights and their docstrings
+        :rtype: list or dict
+        """
+        remote_path = cls._remote_path()
+
+        weights = [
+            x[:-3] for x in seisbench.util.ls_webdav(remote_path) if x.endswith(".pt")
+        ]
+
+        if details:
+            detail_weights = {}
+
+            for weight in weights:
+
+                def download_metadata_callback(metadata_path):
+                    remote_metadata_path = os.path.join(
+                        cls._remote_path(), f"{weight}.json"
+                    )
+                    try:
+                        util.download_http(
+                            remote_metadata_path, metadata_path, progress_bar=False
+                        )
+                    except ValueError:
+                        # A missing metadata file does not lead to a crash
+                        pass
+
+                _, metadata_path = cls._pretrained_path(weight)
+
+                seisbench.util.callback_if_uncached(
+                    metadata_path, download_metadata_callback
+                )
+
+                if metadata_path.is_file():
+                    with open(metadata_path, "r") as f:
+                        config = json.load(f)
+                    detail_weights[weight] = config.get("docstring", None)
+                else:
+                    detail_weights[weight] = None
+
+            weights = detail_weights
+
+        return weights
+
     def _parse_metadata(self):
         self._weights_docstring = self._weights_metadata.get("docstring", "")
 

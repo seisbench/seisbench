@@ -6,6 +6,7 @@ from tqdm import tqdm
 from pathlib import Path
 import time
 import os
+from lxml import etree
 
 
 def download_http(url, target, progress_bar=True, desc="Downloading"):
@@ -69,6 +70,34 @@ def download_ftp(
 
         if progress_bar:
             pbar.close()
+
+
+def ls_webdav(url):
+    """
+    Lists the files in a WebDAV directory
+    :return: List of files
+    """
+    xml_request = b'<?xml version="1.0"?><a:propfind xmlns:a="DAV:"><a:prop><a:resourcetype/></a:prop></a:propfind>'
+
+    req = requests.Request("PROPFIND", url, headers={"Depth": "1"}, data=xml_request)
+    prep = req.prepare()
+
+    with requests.Session() as sess:
+        ret = sess.send(prep)
+
+    if not 200 <= ret.status_code < 300:
+        raise ValueError(
+            f"Invalid URL. Request returned status code {ret.status_code}."
+        )
+
+    files = ["."]  # The first part of the response is always the root path
+    tree = etree.fromstring(ret.content)
+    for elem in tree.xpath(".//d:href", namespaces={"d": "DAV:"})[1:]:
+        # Extract basepath from path
+        p = elem.text[:-1].rfind("/") + 1
+        files.append(elem.text[p:])
+
+    return files
 
 
 def callback_if_uncached(
