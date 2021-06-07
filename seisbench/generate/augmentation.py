@@ -717,7 +717,11 @@ class ProbabilisticLabeller(SupervisedLabeller):
                         onset=onset, length=X.shape[width_dim], sigma=self.sigma
                     )
 
-            y[np.isnan(y)] = 0  # Set non-present pick probabilites to 0
+        y[np.isnan(y)] = 0  # Set non-present pick probabilites to 0
+
+        y /= np.maximum(
+            1, np.nansum(y, axis=channel_dim, keepdims=True)
+        )  # Ensure total probability mass is at most 1
 
         # Construct noise label
         if self.ndim == 2:

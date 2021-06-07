@@ -591,7 +591,7 @@ def test_probabilistic_pick_labeller():
             {
                 "trace_p_arrival_sample": np.array([500] * 5),
                 "trace_s_arrival_sample": np.array([700] * 5),
-                "trace_g_arrival_sample": np.array([500, 500, 500, np.nan, 500]),
+                "trace_g_arrival_sample": np.array([500, 500, 200, np.nan, 500]),
             },
         )
     }
@@ -601,7 +601,7 @@ def test_probabilistic_pick_labeller():
     assert state_dict["y"][0].shape == (5, 4, 1000)
     assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[1] == 499
     assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[2] == 699
-    assert np.argmax(state_dict["y"][0][2, :, :], axis=-1)[0] == 499  # Entry with pick
+    assert np.argmax(state_dict["y"][0][2, :, :], axis=-1)[0] == 199  # Entry with pick
     assert (state_dict["y"][0][3, 0, :] == 0).all()
 
     # Fails if single sample provided for multiple windows
@@ -624,6 +624,29 @@ def test_probabilistic_pick_labeller():
     with pytest.raises(ValueError):
         labeller = ProbabilisticLabeller(dim=1)
         labeller(state_dict)
+
+
+def test_probabilistic_pick_labeller_overlap():
+    # Test that even in case of an overlap, the total probability mass is exactly 1.
+    np.random.seed(42)
+    state_dict = {
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {
+                "trace_p_arrival_sample": 500,
+                "trace_s_arrival_sample": 500,
+                "trace_g_arrival_sample": np.nan,
+            },
+        )
+    }
+
+    labeller = ProbabilisticLabeller(dim=0, sigma=50)
+    labeller(state_dict)
+
+    assert np.allclose(np.sum(state_dict["y"][0], axis=0), 1)  # Sum is always 1
+    assert np.isclose(
+        np.min(state_dict["y"][0]), 0
+    )  # Minimum is close to 0, in particular noise is never negative
 
 
 def test_standard_pick_labeller():
