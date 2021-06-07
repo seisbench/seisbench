@@ -560,11 +560,21 @@ class SupervisedLabeller(ABC):
 
     :param label_type: The type of label either: 'multi_label', 'multi_class', 'binary'.
     :param dim: Dimension over which labelling will be applied.
+    :param key: The keys for reading from and writing to the state dict.
+                Expects a 2-tuple with the first string indicating the key to read from and the second one the key to
+                write to. Defaults to ("X", "y")
     """
 
-    def __init__(self, label_type, dim):
+    def __init__(self, label_type, dim, key=("X", "y")):
         self.label_type = label_type
         self.dim = dim
+
+        if not isinstance(key, tuple):
+            raise TypeError("key needs to be a 2-tuple.")
+        if not len(key) == 2:
+            raise ValueError("key needs to have exactly length 2.")
+
+        self.key = key
 
         if self.label_type not in ("multi_label", "multi_class", "binary"):
             raise ValueError(
@@ -620,12 +630,12 @@ class SupervisedLabeller(ABC):
                 )
 
     def __call__(self, state_dict):
-        X, metadata = state_dict["X"]
+        X, metadata = state_dict[self.key[0]]
         self.ndim = len(X.shape)
 
         y = self.label(X, metadata)
         self._check_labels(y, metadata)
-        state_dict["y"] = (y, copy.deepcopy(metadata))
+        state_dict[self.key[1]] = (y, copy.deepcopy(metadata))
 
 
 # FIXME: Best place for this method? Common to both 'Labeller' child classes but too specific to but in SupervisedLabller parent (as deals with picks-only)
