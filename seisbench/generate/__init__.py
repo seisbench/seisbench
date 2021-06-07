@@ -9,6 +9,7 @@ from .augmentation import (
     RandomWindow,
     ChangeDtype,
     SupervisedLabeller,
+    PickLabeller,
     ProbabilisticLabeller,
     StandardLabeller,
 )

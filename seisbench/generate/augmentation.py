@@ -624,6 +624,10 @@ class SupervisedLabeller(ABC):
                 raise ValueError(f"Binary labels should lie within 0-1 range.")
 
         for label in self.label_columns:
+            if not label in metadata:
+                # Ignore labels that are not present
+                continue
+
             if (isinstance(metadata[label], (int, np.integer))) and self.ndim == 3:
                 raise ValueError(
                     f"Only provided single arrival in metadata {label} column to multiple windows. Check augmentation workflow."
@@ -638,15 +642,66 @@ class SupervisedLabeller(ABC):
         state_dict[self.key[1]] = (y, copy.deepcopy(metadata))
 
 
-# FIXME: Best place for this method? Common to both 'Labeller' child classes but too specific to but in SupervisedLabller parent (as deals with picks-only)
-# Leaving here for now
-def _auto_identify_picklabels(state_dict):
-    return sorted(
-        list(filter(re.compile("trace_.*_arrival_sample").match, state_dict.keys()))
-    )
+class PickLabeller(SupervisedLabeller, ABC):
+    """
+    Abstract class for PickLabellers implementing common functionality
+
+    :param label_columns: Specify the columns to use for pick labelling, defaults to None and columns are inferred from metadata.
+                          Columns can either be specified as list or dict.
+                          For a list, each entry is treated as its own pick type.
+                          The dict should contain a mapping from column name to pick label, e.g.,
+                          {"trace_Pg_arrival_sample": "P"}.
+                          This allows to group phases, e.g., Pg, Pn, pP all being labeled as P phase.
+                          Multiple phases present within a window can lead to the labeller annotating multiple picks
+                          for the same label.
+    :type label_columns: list or dict, optional
+    :param kwargs: Kwargs are passed to the SupervisedLabeller superclass
+    """
+
+    def __init__(self, label_columns=None, **kwargs):
+        self.label_columns = label_columns
+        if label_columns is not None:
+            (
+                self.label_columns,
+                self.labels,
+                self.label_ids,
+            ) = self._colums_to_dict_and_labels(label_columns)
+        else:
+            self.labels = None
+            self.label_ids = None
+
+        super(PickLabeller, self).__init__(**kwargs)
+
+    @staticmethod
+    def _auto_identify_picklabels(state_dict):
+        """
+        Identify pick columns from the generator state dict
+        :return: Sorted list of pick columns
+        """
+        return sorted(
+            list(filter(re.compile("trace_.*_arrival_sample").match, state_dict.keys()))
+        )
+
+    @staticmethod
+    def _colums_to_dict_and_labels(label_columns):
+        """
+        Generate label columns dict and list of labels from label_columns list or dict.
+        Always appends a noise column at the end.
+
+        :param label_columns: List of label columns or dict[label_columns -> labels]
+        :return: dict[label_columns -> labels], list[labels], dict[labels -> ids]
+        """
+        if not isinstance(label_columns, dict):
+            label_columns = {label: label.split("_")[1] for label in label_columns}
+
+        labels = sorted(list(np.unique(list(label_columns.values()))))
+        labels.append("Noise")
+        label_ids = {label: i for i, label in enumerate(labels)}
+
+        return label_columns, labels, label_ids
 
 
-class ProbabilisticLabeller(SupervisedLabeller):
+class ProbabilisticLabeller(PickLabeller):
     """
     Create supervised labels from picks. The picks in example are represented
     probabilistically with a Gaussian
@@ -657,67 +712,71 @@ class ProbabilisticLabeller(SupervisedLabeller):
 
     All picks with NaN sample are treated as not present.
 
-    :param label_columns: Specify the columns to use for pick labelling, defaults to None and columns are inferred from metadata
-    :type label_columns: list, optional
     :param dim: Dimension over which labelling will be applied, defaults to 1
     :type dim: int, optional
     :param sigma: Variance of Gaussian representation in samples, defaults to 10
     :type sigma: int, optional
     """
 
-    def __init__(
-        self,
-        label_columns=None,
-        dim=1,
-        sigma=10,
-    ):
+    def __init__(self, sigma=10, **kwargs):
         self.label_method = "probabilistic"
-        self.label_columns = label_columns
         self.sigma = sigma
-        super().__init__(label_type="multi_class", dim=dim)
+        kwargs["dim"] = kwargs.get("dim", 1)
+        super().__init__(label_type="multi_class", **kwargs)
 
     def label(self, X, metadata):
-
         if not self.label_columns:
-            self.label_columns = _auto_identify_picklabels(metadata)
+            label_columns = self._auto_identify_picklabels(metadata)
+            (
+                self.label_columns,
+                self.labels,
+                self.label_ids,
+            ) = self._colums_to_dict_and_labels(label_columns)
 
         sample_dim, channel_dim, width_dim = self._get_dimension_order_from_config(
             config, self.ndim
         )
 
-        # Add Noise as class (class N + 1 where N is number of labels)
-        self.labels = [label.split("_")[1] for label in self.label_columns]
-        self.labels.append("Noise")
-
         if self.ndim == 2:
-            y = np.zeros(shape=(len(self.label_columns) + 1, X.shape[width_dim]))
+            y = np.zeros(shape=(len(self.labels), X.shape[width_dim]))
         elif self.ndim == 3:
             y = np.zeros(
                 shape=(
                     X.shape[sample_dim],
-                    len(self.label_columns) + 1,
+                    len(self.labels),
                     X.shape[width_dim],
                 )
             )
 
         # Construct pick labels
-        for i, label in enumerate(self.label_columns):
+        for label_column, label in self.label_columns.items():
+            i = self.label_ids[label]
 
-            if isinstance(metadata[label], (int, np.integer, float)):
+            if not label_column in metadata:
+                # Unknown pick
+                continue
+
+            if isinstance(metadata[label_column], (int, np.integer, float)):
                 # Handle single window case
-                onset = metadata[label]
-                y[i, :] = gaussian_pick(
+                onset = metadata[label_column]
+                label_val = gaussian_pick(
                     onset=onset, length=X.shape[width_dim], sigma=self.sigma
                 )
+                label_val[
+                    np.isnan(label_val)
+                ] = 0  # Set non-present pick probabilites to 0
+                y[i, :] = np.maximum(y[i, :], label_val)
             else:
                 # Handle multi-window case
                 for j in range(X.shape[sample_dim]):
-                    onset = metadata[label][j]
-                    y[j, i, :] = gaussian_pick(
+                    onset = metadata[label_column][j]
+                    label_val = gaussian_pick(
                         onset=onset, length=X.shape[width_dim], sigma=self.sigma
                     )
-
-        y[np.isnan(y)] = 0  # Set non-present pick probabilites to 0
+                    label_val[
+                        np.isnan(label_val)
+                    ] = 0  # Set non-present pick probabilites to 0
+                    y[j, i, :] = np.maximum(y[j, i, :], label_val)
 
         y /= np.maximum(
             1, np.nansum(y, axis=channel_dim, keepdims=True)
@@ -725,14 +784,14 @@ class ProbabilisticLabeller(SupervisedLabeller):
 
         # Construct noise label
         if self.ndim == 2:
-            y[len(self.label_columns), :] = 1 - np.nansum(y, axis=channel_dim)
+            y[self.label_ids["Noise"], :] = 1 - np.nansum(y, axis=channel_dim)
             y = self._swap_dimension_order(
                 y,
                 current_dim="CW",
                 expected_dim=config["dimension_order"].replace("N", ""),
             )
         elif self.ndim == 3:
-            y[:, len(self.label_columns), :] = 1 - np.nansum(y, axis=channel_dim)
+            y[:, self.label_ids["Noise"], :] = 1 - np.nansum(y, axis=channel_dim)
             y = self._swap_dimension_order(
                 y, current_dim="NCW", expected_dim=config["dimension_order"]
             )
@@ -743,7 +802,7 @@ class ProbabilisticLabeller(SupervisedLabeller):
         return f"ProbabilisticLabeller (label_type={self.label_type}, dim={self.dim})"
 
 
-class StandardLabeller(SupervisedLabeller):
+class StandardLabeller(PickLabeller):
     """
     Create supervised labels from picks. The entire example is labelled as a single class/pick.
     For cases where multiple picks overlap in the input window, a number of options can be specified:
@@ -759,15 +818,9 @@ class StandardLabeller(SupervisedLabeller):
     :type on_overlap: str, optional
     """
 
-    def __init__(
-        self,
-        label_columns=None,
-        dim=1,
-        on_overlap="label-first",
-    ):
-
+    def __init__(self, on_overlap="label-first", **kwargs):
+        kwargs["dim"] = kwargs.get("dim", 1)
         self.label_method = "standard"
-        self.label_columns = label_columns
         self.on_overlap = on_overlap
 
         if self.on_overlap not in ("label-first", "fixed-relevance", "random"):
@@ -775,31 +828,53 @@ class StandardLabeller(SupervisedLabeller):
                 "Unexpected value for `on_overlap` argument. Accepted values are: "
                 "`label-first`, `fixed-relevance`, `random`."
             )
-        super().__init__(label_type="multi_class", dim=dim)
 
-    def _get_pick_arrivals_as_array(self, metadata):
+        super().__init__(label_type="multi_class", **kwargs)
+
+    def _get_pick_arrivals_as_array(self, metadata, trace_length, add_sample_dim):
         """
         Convert picked arrivals to numpy array. Set arrivals outside
         window to null (NaN) values.
         """
-        arrival_array = np.array(
-            [metadata[col] for col in self.label_columns], dtype=float
-        ).T
-        arrival_array[arrival_array < 0] = np.nan
+        arrival_array = []
+        for col in self.label_columns:
+            if col in metadata:
+                if add_sample_dim:
+                    arrival_array.append(np.array([metadata[col]]))
+                else:
+                    arrival_array.append(metadata[col])
+            else:
+                arrival_array.append(None)
+
+        # Identify shape of entry
+        for x in arrival_array:
+            if not x is None:
+                nan_dummy = np.ones_like(x, dtype=float) * np.nan
+                break
+
+        # Replace all picks missing in metadata with NaN
+        new_arrival_array = []
+        for x in arrival_array:
+            if x is None:
+                new_arrival_array.append(nan_dummy)
+            else:
+                new_arrival_array.append(x)
+
+        arrival_array = np.array(new_arrival_array, dtype=float).T
+        arrival_array[arrival_array < 0] = np.nan  # Mask samples before window start
+        arrival_array[
+            arrival_array > trace_length
+        ] = np.nan  # Mask samples after window end
         nan_mask = np.isnan(arrival_array)
         return arrival_array, nan_mask
 
     def _label_first(self, row_id, arrival_array, nan_mask):
         """
         Label based on first arrival in time in window.
-        If no arrivals present, label as noise (class 0)
         """
         arrival_array[nan_mask] = np.inf
-        if np.isinf(arrival_array[row_id]).all():
-            return 0
-        else:
-            first_arrival = np.nanargmin(arrival_array[row_id])
-            return first_arrival + 1
+        first_arrival = np.nanargmin(arrival_array[row_id])
+        return first_arrival
 
     def _label_random(self, row_id, nan_mask):
         """
@@ -807,57 +882,67 @@ class StandardLabeller(SupervisedLabeller):
         If no arrivals present, label as noise (class 0)
         """
         non_null_columns = np.argwhere(~nan_mask[row_id])
-        if non_null_columns.any() > 0:
-            return np.random.choice(non_null_columns.reshape(-1)) + 1
-        else:
-            return 0
+        return np.random.choice(non_null_columns.reshape(-1))
 
-    def _label_fixed_relavence(self, row_id, arrival_array, midpoint):
+    def _label_fixed_relevance(self, row_id, arrival_array, midpoint):
         """
         Label using closest pick to centre of window.
         If no arrivals present, label as noise (class 0)
         """
-        if np.isnan(arrival_array[row_id]).all():
-            return 0
-        else:
-            return np.nanargmin(abs(arrival_array[row_id] - midpoint)) + 1
+        return np.nanargmin(abs(arrival_array[row_id] - midpoint))
 
     def label(self, X, metadata):
-
         if not self.label_columns:
-            self.label_columns = _auto_identify_picklabels(metadata)
+            label_columns = self._auto_identify_picklabels(metadata)
+            (
+                self.label_columns,
+                self.labels,
+                self.label_ids,
+            ) = self._colums_to_dict_and_labels(label_columns)
 
         sample_dim, _, width_dim = self._get_dimension_order_from_config(
             config, self.ndim
         )
 
-        # Add Noise as null class (class 0)
-        self.labels = [label.split("_")[1] for label in self.label_columns]
-        self.labels.insert(0, "Noise")
-
         # Construct pick labels
-        y = np.zeros(shape=(X.shape[sample_dim], 1))
+        if sample_dim is None:
+            y = np.zeros(shape=(1, 1))
+        else:
+            y = np.zeros(shape=(X.shape[sample_dim], 1))
 
-        arrival_array, nan_mask = self._get_pick_arrivals_as_array(metadata)
+        arrival_array, nan_mask = self._get_pick_arrivals_as_array(
+            metadata, X.shape[width_dim], sample_dim is None
+        )
         n_arrivals = nan_mask.shape[1] - nan_mask.sum(axis=1)
 
         for row_id, arrivals in enumerate(arrival_array):
             # Label
-            if n_arrivals[row_id] == 1:
-                y[row_id] = np.nanargmin(arrivals) + 1
-            # On potentially overlapping labels
+            if n_arrivals[row_id] == 0:
+                y[row_id] = self.label_ids["Noise"]
             else:
-                if self.on_overlap == "label-first":
-                    y[row_id] = self._label_first(row_id, arrival_array, nan_mask)
-                elif self.on_overlap == "random":
-                    y[row_id] = self._label_random(row_id, nan_mask)
-                elif self.on_overlap == "fixed-relevance":
-                    midpoint = X.shape[width_dim] // 2
-                    y[row_id] = self._label_fixed_relavence(
-                        row_id, arrival_array, midpoint
-                    )
+                if n_arrivals[row_id] == 1:
+                    label_column_id = np.nanargmin(arrivals)
+                # On potentially overlapping labels
+                else:
+                    if self.on_overlap == "label-first":
+                        label_column_id = self._label_first(
+                            row_id, arrival_array, nan_mask
+                        )
+                    elif self.on_overlap == "random":
+                        label_column_id = self._label_random(row_id, nan_mask)
+                    elif self.on_overlap == "fixed-relevance":
+                        midpoint = X.shape[width_dim] // 2
+                        label_column_id = self._label_fixed_relevance(
+                            row_id, arrival_array, midpoint
+                        )
 
-        return y
+                label_column = list(self.label_columns.keys())[label_column_id]
+                y[row_id] = self.label_ids[self.label_columns[label_column]]
+
+        if sample_dim is None:
+            y = y.reshape(y.shape[1:])  # Remove fake sample_dim
+
+        return y.astype(int)
 
     def __str__(self):
         return f"StandardLabeller (label_type={self.label_type}, dim={self.dim})"

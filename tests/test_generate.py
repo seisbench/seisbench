@@ -13,8 +13,6 @@ from seisbench.generate import (
     StandardLabeller,
 )
 
-from seisbench.generate.augmentation import _auto_identify_picklabels
-
 import numpy as np
 import copy
 import scipy.signal
@@ -649,7 +647,81 @@ def test_probabilistic_pick_labeller_overlap():
     )  # Minimum is close to 0, in particular noise is never negative
 
 
+def test_probabilistic_pick_labeller_pickgroups():
+    np.random.seed(42)
+    state_dict = {
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {
+                "trace_Pn_arrival_sample": 300,
+                "trace_Pg_arrival_sample": 900,
+                "trace_P1_arrival_sample": np.nan,  # Missing value is simply ignored
+                "trace_S_arrival_sample": 700,
+            },
+        )
+    }
+
+    label_columns = {
+        "trace_Pn_arrival_sample": "P",
+        "trace_Pg_arrival_sample": "P",
+        "trace_P1_arrival_sample": "P",
+        "trace_PmP_arrival_sample": "P",  # Sample not present in the metadata is ignored
+        "trace_S_arrival_sample": "S",
+    }
+
+    labeller = ProbabilisticLabeller(dim=0, label_columns=label_columns)
+    labeller(state_dict)
+
+    assert state_dict["y"][0].shape == (3, 1000)
+    assert np.isclose(state_dict["y"][0][0, 299], 1)  # P picks
+    assert np.isclose(state_dict["y"][0][0, 899], 1)  # P picks
+    assert np.argmax(state_dict["y"][0], axis=1)[1] == 699  # S pick
+
+
 def test_standard_pick_labeller():
+    np.random.seed(42)
+
+    state_dict = {
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {
+                "trace_Pn_arrival_sample": 300,
+                "trace_Pg_arrival_sample": 900,
+                "trace_P1_arrival_sample": np.nan,  # Missing value is simply ignored
+                "trace_S_arrival_sample": 500,
+            },
+        )
+    }
+
+    label_columns = {
+        "trace_Pn_arrival_sample": "P",
+        "trace_Pg_arrival_sample": "P",
+        "trace_P1_arrival_sample": "P",
+        "trace_PmP_arrival_sample": "P",  # Sample not present in the metadata is ignored
+        "trace_S_arrival_sample": "S",
+    }
+
+    def check_labels_against_ids(labeller, ids, labels):
+        assert len(labels) == len(ids.reshape(-1))
+        for label, i in zip(labels, ids.reshape(-1)):
+            assert label == labeller.labels[i]
+
+    # Check 'label-first' strategy on overlap
+    labeller = StandardLabeller(on_overlap="label-first", label_columns=label_columns)
+    labeller(state_dict)
+    assert state_dict["y"][0].shape == (1,)
+    check_labels_against_ids(labeller, state_dict["y"][0], ["P"])
+    assert labeller.labels == ["P", "S", "Noise"]
+
+    # Check 'fixed-relevance' strategy on overlap
+    labeller = StandardLabeller(
+        on_overlap="fixed-relevance", label_columns=label_columns
+    )
+    labeller(state_dict)
+    check_labels_against_ids(labeller, state_dict["y"][0], ["S"])
+
+
+def test_standard_pick_labeller_pickgroups():
     np.random.seed(42)
 
     # Test label construction for multiple windows
@@ -664,33 +736,32 @@ def test_standard_pick_labeller():
         )
     }
 
+    def check_labels_against_ids(labeller, ids, labels):
+        assert len(labels) == len(ids.reshape(-1))
+        for label, i in zip(labels, ids.reshape(-1)):
+            assert label == labeller.labels[i]
+
     # Check 'label-first' strategy on overlap
     labeller = StandardLabeller(on_overlap="label-first")
     labeller(state_dict)
     assert state_dict["y"][0].shape == (5, 1)
-    assert (
-        state_dict["y"][0] == np.array([2, 3, 2, 2, 2], dtype=float).reshape(-1, 1)
-    ).all()
-    assert labeller.labels == ["Noise", "g", "p", "s"]
+    check_labels_against_ids(labeller, state_dict["y"][0], ["p", "s", "p", "p", "p"])
+    assert labeller.labels == ["g", "p", "s", "Noise"]
 
     # Check 'fixed-relevance' strategy on overlap
     labeller = StandardLabeller(on_overlap="fixed-relevance")
     labeller(state_dict)
     assert state_dict["y"][0].shape == (5, 1)
-    assert (
-        state_dict["y"][0] == np.array([3, 3, 2, 3, 2], dtype=float).reshape(-1, 1)
-    ).all()
-    assert labeller.labels == ["Noise", "g", "p", "s"]
+    check_labels_against_ids(labeller, state_dict["y"][0], ["s", "s", "p", "s", "p"])
+    assert labeller.labels == ["g", "p", "s", "Noise"]
 
     # Check 'random' strategy on overlap
     np.random.seed(42)
     labeller = StandardLabeller(on_overlap="random")
     labeller(state_dict)
     assert state_dict["y"][0].shape == (5, 1)
-    assert (
-        state_dict["y"][0] == np.array([2, 3, 3, 2, 2], dtype=float).reshape(-1, 1)
-    ).all()
-    assert labeller.labels == ["Noise", "g", "p", "s"]
+    check_labels_against_ids(labeller, state_dict["y"][0], ["p", "s", "s", "p", "p"])
+    assert labeller.labels == ["g", "p", "s", "Noise"]
 
     # Fails if single sample provided for multiple windows
     state_dict = {
@@ -711,6 +782,41 @@ def test_standard_pick_labeller():
     with pytest.raises(ValueError):
         labeller = StandardLabeller(dim=1)
         labeller(state_dict)
+
+
+def test_colums_to_dict_and_labels():
+    label_columns = ["trace_p_arrival_sample", "trace_s_arrival_sample"]
+    (
+        label_columns,
+        labels,
+        label_ids,
+    ) = seisbench.generate.PickLabeller._colums_to_dict_and_labels(label_columns)
+
+    assert label_columns == {
+        "trace_p_arrival_sample": "p",
+        "trace_s_arrival_sample": "s",
+    }
+    assert labels == ["p", "s", "Noise"]
+    assert label_ids == {"p": 0, "s": 1, "Noise": 2}
+
+    label_columns = {
+        "trace_p_arrival_sample": "p",
+        "trace_Pg_arrival_sample": "p",
+        "trace_s_arrival_sample": "s",
+    }
+    (
+        label_columns,
+        labels,
+        label_ids,
+    ) = seisbench.generate.PickLabeller._colums_to_dict_and_labels(label_columns)
+
+    assert label_columns == {
+        "trace_p_arrival_sample": "p",
+        "trace_Pg_arrival_sample": "p",
+        "trace_s_arrival_sample": "s",
+    }
+    assert labels == ["p", "s", "Noise"]
+    assert label_ids == {"p": 0, "s": 1, "Noise": 2}
 
 
 def test_swap_dimension_order():
@@ -745,7 +851,7 @@ def test_autoidentify_pick_labels():
         "abc": None,
     }
 
-    assert _auto_identify_picklabels(state_dict) == [
+    assert seisbench.generate.PickLabeller._auto_identify_picklabels(state_dict) == [
         "trace_Pg_arrival_sample",
         "trace_Pn_arrival_sample",
         "trace_Sg_arrival_sample",
