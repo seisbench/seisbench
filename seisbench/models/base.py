@@ -991,8 +991,8 @@ class WaveformModel(SeisBenchModel, ABC):
                 t0 = trace.stats.starttime + times[s0]
                 t1 = trace.stats.starttime + times[s1]
 
-                peak_value = np.max(trace.data[s0:s1])
-                s_peak = s0 + np.argmax(trace.data[s0:s1])
+                peak_value = np.max(trace.data[s0 : s1 + 1])
+                s_peak = s0 + np.argmax(trace.data[s0 : s1 + 1])
                 t_peak = trace.stats.starttime + times[s_peak]
 
                 pick = util.Pick(
@@ -1029,7 +1029,7 @@ class WaveformModel(SeisBenchModel, ABC):
             for s0, s1 in triggers:
                 t0 = trace.stats.starttime + times[s0]
                 t1 = trace.stats.starttime + times[s1]
-                peak_value = np.max(trace.data[s0:s1])
+                peak_value = np.max(trace.data[s0 : s1 + 1])
 
                 detection = util.Detection(
                     trace_id=trace_id, start_time=t0, end_time=t1, peak_value=peak_value
