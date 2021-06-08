@@ -12,4 +12,5 @@ from .augmentation import (
     PickLabeller,
     ProbabilisticLabeller,
     StandardLabeller,
+    OneOf,
 )

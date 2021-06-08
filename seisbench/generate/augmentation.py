@@ -946,3 +946,40 @@ class StandardLabeller(PickLabeller):
 
     def __str__(self):
         return f"StandardLabeller (label_type={self.label_type}, dim={self.dim})"
+
+
+class OneOf:
+    """
+    Runs one of the augmentations provided, choosing randomly each time called.
+
+    :param augmentations: A list of augmentations
+    :param probabilities: Probability for each augmentation to be used.
+                          Probabilities will automatically be normed to sum to 1.
+                          If None, equal probability is assigned to each augmentation.
+    """
+
+    def __init__(self, augmentations, probabilities=None):
+        self.augmentations = augmentations
+        self.probabilities = probabilities
+
+    @property
+    def probabilities(self):
+        return self._probabilities
+
+    @probabilities.setter
+    def probabilities(self, value):
+        if value is None:
+            self._probabilities = np.array(
+                [1 / len(self.augmentations)] * len(self.augmentations)
+            )
+        else:
+            if len(value) != len(self.augmentations):
+                raise ValueError(
+                    f"Number of augmentations and probabilities need to be identical, "
+                    f"but got {len(self.augmentations)} and {len(value)}."
+                )
+            self._probabilities = np.array(value) / np.sum(value)
+
+    def __call__(self, state_dict):
+        augmentation = np.random.choice(self.augmentations, p=self.probabilities)
+        augmentation(state_dict)

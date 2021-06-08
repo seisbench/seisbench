@@ -873,3 +873,32 @@ def test_add_augmentations():
         return
 
     assert generator._augmentations == [f, 1, 2, g]
+
+
+def test_oneof():
+    def aug1(state_dict):
+        state_dict["a"] = 1
+
+    def aug2(state_dict):
+        state_dict["b"] = 2
+
+    # Automatic uniform distribution
+    oneof = seisbench.generate.OneOf([aug1, aug2])
+    assert np.allclose(oneof.probabilities, 1 / 2)
+
+    # ValueError for incompatible lists
+    with pytest.raises(ValueError):
+        seisbench.generate.OneOf([aug1, aug2], [4, 1, 1])
+
+    # Automatic norm of probabilities to 1
+    oneof = seisbench.generate.OneOf([aug1, aug2], [4, 1])
+    assert np.allclose(oneof.probabilities, [0.8, 0.2])
+
+    # Correct probabilities are passed to numpy.random.choice
+    with patch("numpy.random.choice") as choice:
+        choice.return_value = aug1
+        state_dict = {}
+        oneof(state_dict)
+        assert state_dict == {"a": 1}
+        assert choice.call_args[0] == ([aug1, aug2],)
+        assert np.allclose(choice.call_args[1]["p"], [0.8, 0.2])
