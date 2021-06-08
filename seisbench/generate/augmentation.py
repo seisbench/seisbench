@@ -983,3 +983,16 @@ class OneOf:
     def __call__(self, state_dict):
         augmentation = np.random.choice(self.augmentations, p=self.probabilities)
         augmentation(state_dict)
+
+
+class NullAugmentation:
+    """
+    This augmentation does not perform any modification on the state dict.
+    It is primarily intended to be used as a no-op for :py:class:`OneOf`.
+    """
+
+    def __call__(self, state_dict):
+        pass
+
+    def __str__(self):
+        return "NullAugmentation"
