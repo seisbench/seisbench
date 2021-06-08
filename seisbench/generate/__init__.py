@@ -13,4 +13,5 @@ from .augmentation import (
     ProbabilisticLabeller,
     StandardLabeller,
     OneOf,
+    NullAugmentation,
 )
