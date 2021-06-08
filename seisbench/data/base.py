@@ -989,21 +989,26 @@ class BenchmarkDataset(WaveformDataset, ABC):
 
             def download_callback(files):
                 chunk_str = f'Chunk "{chunk}" of ' if chunk != "" else ""
-                seisbench.logger.info(f"{chunk_str}Dataset {self.name} not in cache.")
+                seisbench.logger.warning(
+                    f"{chunk_str}Dataset {self.name} not in cache."
+                )
                 successful_repository_download = False
                 if repository_lookup:
-                    seisbench.logger.info(
+                    seisbench.logger.warning(
                         "Trying to download preprocessed version from SeisBench repository."
                     )
                     try:
                         self._download_preprocessed(*files, chunk=chunk)
                         successful_repository_download = True
                     except ValueError:
-                        seisbench.logger.info(
-                            f"{chunk_str}Dataset {self.name} not SeisBench repository. Starting download and conversion from source."
-                        )
+                        pass
 
                 if not successful_repository_download:
+                    seisbench.logger.warning(
+                        f"{chunk_str}Dataset {self.name} not in SeisBench repository. "
+                        f"Starting download and conversion from source."
+                    )
+
                     download_dataset_parameters = inspect.signature(
                         self._download_dataset
                     ).parameters
