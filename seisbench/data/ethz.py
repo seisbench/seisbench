@@ -10,29 +10,21 @@ import random
 import string
 import requests
 import sys
-import pandas as pd
 import numpy as np
-from pathlib import Path
 from tqdm import tqdm
+from collections import defaultdict
 
 import obspy
 from obspy.clients.fdsn.header import FDSNNoDataException
-from obspy.io.mseed import InternalMSEEDError
 from obspy.geodetics import gps2dist_azimuth
-from obspy.core.util.obspy_types import ObsPyException
 from obspy.clients.fdsn import Client
 
 
 class ETHZ(BenchmarkDataset):
     def __init__(self, **kwargs):
         citation = "ETHZ dataset"
-        self.downloaded_raw = False
+        self._client = None
         super().__init__(citation=citation, repository_lookup=True, **kwargs)
-
-        # If raw data downloaded, merge metadata rows linked to same underlying data
-        if self.downloaded_raw:
-            self._metadata = self._merge_metadata(self._metadata)
-            self._metadata.to_csv(str(self.path / "metadata.csv"))
 
     @classmethod
     def _fdsn_client(cls):
@@ -40,7 +32,9 @@ class ETHZ(BenchmarkDataset):
 
     @property
     def client(self):
-        return self._fdsn_client()
+        if self._client is None:
+            self._client = self._fdsn_client()
+        return self._client
 
     def _download_dataset(self, writer, time_before=60, time_after=60, **kwargs):
         seisbench.logger.info(
@@ -75,11 +69,17 @@ class ETHZ(BenchmarkDataset):
             origin, mag, fm, event_params = self._get_event_params(event)
             seisbench.logger.info(f"Downloading {event.resource_id}")
 
-            picks = sorted(event.picks, key=lambda x: x.time)
-            for pick in picks:
+            station_groups = defaultdict(list)
+            for pick in event.picks:
+                if pick.phase_hint is None:
+                    continue
+
+                station_groups[pick.waveform_id.id[:-1]].append(pick)
+
+            for picks in station_groups.values():
                 try:
                     trace_params = self._get_trace_params(
-                        pick, inventory_mapper, event_params
+                        picks[0], inventory_mapper, event_params
                     )
                 except KeyError as e:
                     self.not_in_inv_catches += 1
@@ -94,7 +94,7 @@ class ETHZ(BenchmarkDataset):
                         network=trace_params["station_network_code"],
                         station=trace_params["station_code"],
                         location="*",
-                        channel=f"{trace_params['station_channel_code']}*",
+                        channel=f"{trace_params['trace_channel']}*",
                         starttime=t_start,
                         endtime=t_end,
                     )
@@ -103,9 +103,11 @@ class ETHZ(BenchmarkDataset):
                     self.no_data_catches += 1
                     continue
 
+                _rotate_stream_to_ZNE(waveforms, inv)
+
                 if len(waveforms) == 0:
                     seisbench.logger.debug(
-                        f'Found no waveforms for {pick.waveform_id.id[:-1]} in event {event_params["source_id"]}'
+                        f'Found no waveforms for {picks[0].waveform_id.id[:-1]} in event {event_params["source_id"]}'
                     )
                     continue
 
@@ -114,12 +116,14 @@ class ETHZ(BenchmarkDataset):
                     trace.stats.sampling_rate != sampling_rate for trace in waveforms
                 ):
                     seisbench.logger.warning(
-                        f"Found inconsistent sampling rates for {pick.waveform_id.id[:-1]} in event {event}"
+                        f"Found inconsistent sampling rates for {picks[0].waveform_id.id[:-1]} in event {event}."
+                        f"Resampling traces to common sampling rate."
                     )
+                    waveforms.resample(sampling_rate)
 
                 trace_params[
                     "trace_name"
-                ] = f"{event_params['source_id']}_{pick.waveform_id.id[:-1]}"
+                ] = f"{event_params['source_id']}_{picks[0].waveform_id.id[:-1]}"
 
                 stream = waveforms.slice(t_start, t_end)
 
@@ -139,20 +143,24 @@ class ETHZ(BenchmarkDataset):
                 trace_params["trace_has_spikes"] = _trace_has_spikes(data)
                 trace_params["trace_start_time"] = str(actual_t_start)
 
-                sample = (pick.time - actual_t_start) * sampling_rate
-                trace_params[f"trace_{pick.phase_hint}_arrival_sample"] = int(sample)
-                trace_params[f"trace_{pick.phase_hint}_status"] = pick.evaluation_mode
-
-                try:
-                    writer.add_trace({**event_params, **trace_params}, data)
-                except ValueError as e:
-                    # For multiple metadata rows picking same waveform, store seperatley for now.
-                    seisbench.logger.debug(
-                        f"Received: {e}. Extra phase type is {pick.phase_hint}. Stored in seperate metadata row."
+                for pick in picks:
+                    sample = (pick.time - actual_t_start) * sampling_rate
+                    trace_params[f"trace_{pick.phase_hint}_arrival_sample"] = int(
+                        sample
                     )
-                    continue
+                    trace_params[
+                        f"trace_{pick.phase_hint}_status"
+                    ] = pick.evaluation_mode
+                    if pick.polarity is None:
+                        trace_params[
+                            f"trace_{pick.phase_hint}_polarity"
+                        ] = "undecidable"
+                    else:
+                        trace_params[
+                            f"trace_{pick.phase_hint}_polarity"
+                        ] = pick.polarity
 
-        self.downloaded_raw = True
+                writer.add_trace({**event_params, **trace_params}, data)
 
     def _download_ethz_events_xml(
         self,
@@ -206,6 +214,14 @@ class ETHZ(BenchmarkDataset):
             "source_depth_km": origin.depth / 1e3,
             "source_depth_uncertainty_km": origin.depth_errors["uncertainty"] / 1e3,
         }
+
+        if str(origin.time) < "2019-01-08":
+            split = "train"
+        elif str(origin.time) < "2019-09-04":
+            split = "dev"
+        else:
+            split = "test"
+        event_params["split"] = split
 
         if mag is not None:
             event_params["source_magnitude"] = mag.mag
@@ -266,57 +282,6 @@ class ETHZ(BenchmarkDataset):
         }
 
         return trace_params
-
-    @staticmethod
-    def _merge_metadata(metadata):
-        """
-        Merges all rows in metadata which have same 'trace_name' into a single row.
-
-        If any matched rows contain multiple values for a specific column, a warning is logged
-        and the first value (row with lowest index) is kept as the value for the column.
-
-        If rows for specific column contain combination of NaN and one other value, the
-        value is assigned to the row.
-        """
-        unique_metadata, parsed_metadata = [], []
-
-        def _dataframe_to_dicts(dataframe):
-            parsed_rows = []
-            for _, row in dataframe.iterrows():
-                parsed_rows.append(row.dropna().to_dict())
-
-            return parsed_rows
-
-        def _merge_dicts_w_check(dicts, error_callback_print_key="trace_name"):
-            _merged_dict = {}
-            for dictionary in dicts:
-                for key, value in dictionary.items():
-                    if key not in _merged_dict:
-                        _merged_dict[key] = value
-                    else:
-                        if not _merged_dict[key] == value:
-                            seisbench.logger.warning(
-                                f"Differing values recieved for key {key}. "
-                                f"Recieved: {value}, and {_merged_dict[key]}, "
-                                f"{error_callback_print_key}: {_merged_dict[error_callback_print_key]}"
-                            )
-
-            return _merged_dict
-
-        # Get all rows with same underlying trace data
-        for _, row in metadata.iterrows():
-            sel_rows = metadata.loc[metadata["trace_name"] == row["trace_name"]]
-
-            if len(sel_rows) > 1:
-                # Convert metadata to dict and merge into single row
-                parsed_rows = _dataframe_to_dicts(sel_rows)
-                merged_metadata_dict = _merge_dicts_w_check(parsed_rows, "trace_name")
-                parsed_metadata.append(merged_metadata_dict)
-            else:
-                unique_metadata_dict = row.to_dict()
-                unique_metadata.append(unique_metadata_dict)
-
-        return pd.DataFrame(unique_metadata + parsed_metadata).drop_duplicates()
 
 
 class InventoryMapper:

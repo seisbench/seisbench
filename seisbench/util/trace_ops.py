@@ -57,3 +57,6 @@ def _rotate_stream_to_ZNE(stream, inventory):
         pass
     except ObsPyException as e:
         pass
+    except Exception as e:
+        # Required, because obspy throws a plain Exception for missing channel metadata
+        pass
