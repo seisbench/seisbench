@@ -211,7 +211,7 @@ class WindowAroundSample(FixedWindow):
     Creates a window around a sample defined in the metadata.
     :param metadata_keys: Metadata key or list of metadata keys to use for window selection.
     The corresponding metadata entries are assumed to be in sample units.
-    The generator will fail if for a sample all values are NaN.
+    The generator will return a window starting at the first sample, if all relevant metadata entries are NaN.
 
     :param samples_before: The number of samples to include before the target sample.
     :param selection: Selection strategy in case multiple metadata keys are provided and have non-NaN values.
@@ -238,11 +238,14 @@ class WindowAroundSample(FixedWindow):
     def __call__(self, state_dict, windowlen=None):
         _, metadata = state_dict[self.key[0]]
         cand = [
-            metadata[key] for key in self.metadata_keys if not np.isnan(metadata[key])
+            metadata[key]
+            for key in self.metadata_keys
+            if key in metadata and not np.isnan(metadata[key])
         ]
 
         if len(cand) == 0:
-            raise ValueError("Found no possible candidate for window selection")
+            cand = [self.samples_before]
+            # raise ValueError("Found no possible candidate for window selection")
 
         if self.selection == "first":
             p0 = cand[0]

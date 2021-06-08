@@ -408,9 +408,9 @@ def test_window_around_sample():
     window(state_dict)
     assert (state_dict["X"][0] == base_state_dict["X"][0][:, 200:400]).all()
 
-    # Two key, both valid, strategy first
+    # Three key, two valid, one not in metadata, strategy first
     window = WindowAroundSample(
-        ["trace_p_arrival_sample", "trace_s_arrival_sample"],
+        ["trace_p_arrival_sample", "trace_s_arrival_sample", "trace_g_arrival_sample"],
         samples_before=100,
         windowlen=200,
         selection="first",
@@ -461,8 +461,8 @@ def test_window_around_sample():
     state_dict = copy.deepcopy(base_state_dict)
     state_dict["X"][1]["trace_p_arrival_sample"] = np.nan
     state_dict["X"][1]["trace_s_arrival_sample"] = np.nan
-    with pytest.raises(ValueError):
-        window(state_dict)
+    window(state_dict)
+    assert (state_dict["X"][0] == base_state_dict["X"][0][:, :200]).all()
 
 
 def test_random_window():
