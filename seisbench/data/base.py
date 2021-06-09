@@ -56,6 +56,13 @@ class WaveformDataset:
     :type cache: str, optional
     :param chunks: Specify particular chunk prefixes to load, defaults to None.
     :type chunks: list, optional
+    :param missing_components: Strategy to deal with missing components. Options are:
+                               - "pad": Fill with zeros.
+                               - "copy": Fill with values from first existing traces.
+                               - "ignore": Order all existing components in the requested order,
+                                           but ignore missing ones. This will raise an error if traces with different
+                                           numbers of components are requested together.
+    :type missing_components: str
     :param kwargs:
     """
 
@@ -68,6 +75,7 @@ class WaveformDataset:
         sampling_rate=None,
         cache=None,
         chunks=None,  # Which chunks should be loaded. If None, load all chunks.
+        missing_components="pad",
         **kwargs,
     ):
         if name is None:
@@ -86,10 +94,12 @@ class WaveformDataset:
         if chunks is not None:
             self._chunks = sorted(chunks)
 
-        self._dimension_order = None
-        self._dimension_mapping = None
-        self._component_order = None
-        self._component_mapping = None
+        self._missing_components = None
+
+        self._dimension_order = None  # Target dimension order
+        self._dimension_mapping = None  # List for reordering input to target dimensions
+        self._component_order = None  # Target component order
+        self._component_mapping = None  # Dict [source_component_order -> list for reordering source to target components]
         self.sampling_rate = sampling_rate
 
         self._verify_dataset()
@@ -107,9 +117,11 @@ class WaveformDataset:
         self._data_format = self._read_data_format()
 
         self._unify_sampling_rate()
+        self._unify_component_order()
 
         self.dimension_order = dimension_order
         self.component_order = component_order
+        self.missing_components = missing_components
 
         self._waveform_cache = {}
 
@@ -165,10 +177,27 @@ class WaveformDataset:
         if value is None:
             value = seisbench.config["dimension_order"]
 
-        self._dimension_mapping = self._get_order_mapping(
+        self._dimension_mapping = self._get_dimension_mapping(
             "N" + self._data_format["dimension_order"], value
         )
         self._dimension_order = value
+
+    @property
+    def missing_components(self):
+        return self._missing_components
+
+    @missing_components.setter
+    def missing_components(self, value):
+        if value not in ["pad", "copy", "ignore"]:
+            raise ValueError(
+                f"Unknown missing components strategy '{value}'. "
+                f"Allowed values are 'pad', 'copy' and 'ignore'."
+            )
+
+        self._missing_components = value
+        self.component_order = (
+            self.component_order
+        )  # Recalculate component order transfer arrays
 
     @property
     def component_order(self):
@@ -179,9 +208,15 @@ class WaveformDataset:
         if value is None:
             value = seisbench.config["component_order"]
 
-        self._component_mapping = self._get_order_mapping(
-            self._data_format["component_order"], value
-        )
+        if self.missing_components is not None:
+            # In init, missing_components will be None in the first call,
+            # but the component_mapping will be calculated when setting missing_components.
+            self._component_mapping = {}
+            for source_order in self.metadata["trace_component_order"].unique():
+                self._component_mapping[source_order] = self._get_component_mapping(
+                    source_order, value
+                )
+
         self._component_order = value
 
     @property
@@ -320,8 +355,33 @@ class WaveformDataset:
                     "get_waveforms will return mixed sampling rate waveforms."
                 )
 
+    def _get_component_mapping(self, source, target):
+        """
+        Calculates the mapping from source to target components while taking into account the missing_components setting.
+
+        :param source:
+        :param target:
+        :return:
+        """
+        source = list(source)
+        target = list(target)
+
+        mapping = []
+        for t in target:
+            if t in source:
+                mapping.append(source.index(t))
+            else:
+                if self.missing_components == "pad":
+                    mapping.append(len(source))  # Will be padded with zero later
+                elif self.missing_components == "copy":
+                    mapping.append(0)  # Use first component
+                else:  # missing_components == "ignore"
+                    pass
+
+        return mapping
+
     @staticmethod
-    def _get_order_mapping(source, target):
+    def _get_dimension_mapping(source, target):
         source = list(source)
         target = list(target)
 
@@ -392,13 +452,37 @@ class WaveformDataset:
                 "Dimension order not specified in data set. Assuming CW."
             )
             data_format["dimension_order"] = "CW"
-        if "component_order" not in data_format:
-            seisbench.logger.warning(
-                "Component order not specified in data set. Assuming ZNE."
-            )
-            data_format["component_order"] = "ZNE"
 
         return data_format
+
+    def _unify_component_order(self):
+        """
+        Unify different ways to pass component order, i.e., through data_format or metadata column trace_component_order.
+        This function writes the component order into trace_component_order in the metadata for unified access in the later processing.
+        If the component order is specified in multiple ways and inconsistencies are detected, a warning is logged.
+
+        :return: None
+        """
+        if "component_order" in self.data_format:
+            if "trace_component_order" in self.metadata.columns:
+                if (
+                    self.metadata["trace_component_order"]
+                    != self.data_format["component_order"]
+                ).any():
+                    seisbench.logger.warning(
+                        "Found inconsistent component orders between data format and metadata. "
+                        "Using values from metadata."
+                    )
+            else:
+                self._metadata["trace_component_order"] = self.data_format[
+                    "component_order"
+                ]
+        else:
+            if "trace_component_order" not in self.metadata.columns:
+                seisbench.logger.warning(
+                    "Component order not specified in data set. "
+                    "Keeping original components."
+                )
 
     def preload_waveforms(self, pbar=False):
         """
@@ -633,10 +717,11 @@ class WaveformDataset:
         waveforms = []
         chunks, metadata_paths, waveforms_path = self._chunks_with_paths()
         with LoadingContext(chunks, waveforms_path) as context:
-            for trace_name, chunk, trace_sampling_rate in zip(
+            for trace_name, chunk, trace_sampling_rate, trace_component_order in zip(
                 load_metadata["trace_name"],
                 load_metadata["trace_chunk"],
                 load_metadata["trace_sampling_rate_hz"],
+                load_metadata["trace_component_order"],
             ):
                 waveforms.append(
                     self._get_single_waveform(
@@ -645,13 +730,21 @@ class WaveformDataset:
                         context=context,
                         target_sampling_rate=sampling_rate,
                         source_sampling_rate=trace_sampling_rate,
+                        source_component_order=trace_component_order,
                     )
                 )
 
+        if self.missing_components == "ignore":
+            # Check consistent number of components
+            component_dimension = list(self._data_format["dimension_order"]).index("C")
+            n_components = np.array([x.shape[component_dimension] for x in waveforms])
+            if (n_components[0] != n_components).any():
+                raise ValueError(
+                    "Requested traces with mixed number of components. "
+                    "Change missing_components or request traces separately."
+                )
+
         waveforms = self._pad_packed_sequence(waveforms)
-        # Impose correct component order
-        component_dimension = list(self._data_format["dimension_order"]).index("C") + 1
-        waveforms = waveforms.take(self._component_mapping, axis=component_dimension)
 
         # Impose correct dimension order
         waveforms = waveforms.transpose(*self._dimension_mapping)
@@ -669,6 +762,7 @@ class WaveformDataset:
         context,
         target_sampling_rate=None,
         source_sampling_rate=None,
+        source_component_order=None,
     ):
         """
         Returns waveforms for single traces while handling caching and resampling.
@@ -678,6 +772,7 @@ class WaveformDataset:
         :param context: A LoadingContext instance holding the pointers to the hdf5 files
         :param target_sampling_rate: Sampling rate for the output. If None keeps input sampling rate.
         :param source_sampling_rate: Sampling rate of the original trace
+        :param source_component_order: Component order of the original trace
         :return: Array with trace waveforms at target_sampling_rate
         """
         trace_name = str(trace_name)
@@ -721,6 +816,23 @@ class WaveformDataset:
                 waveform = self._resample(
                     waveform, target_sampling_rate, source_sampling_rate
                 )
+
+        if source_component_order is not None:
+            # Impose correct component order
+            component_dimension = list(self._data_format["dimension_order"]).index("C")
+            component_mapping = self._component_mapping[source_component_order]
+
+            if waveform.shape[component_dimension] == max(component_mapping):
+                # Add zero dimension used for padding
+                pad = []
+                for i in range(waveform.ndim):
+                    if i == component_dimension:
+                        pad += [(0, 1)]
+                    else:
+                        pad += [(0, 0)]
+                waveform = np.pad(waveform, pad, "constant", constant_values=0)
+
+            waveform = waveform.take(component_mapping, axis=component_dimension)
 
         return waveform
 

@@ -11,29 +11,61 @@ import pandas as pd
 from unittest.mock import patch
 
 
-def test_get_order_mapping():
+def test_get_dimension_mapping():
+    # For legacy reasons test dimensions are called "ZNE".
+    # However, component mapping is now handled by _get_component_mapping.
+
     # Test ordering and list/string format
-    assert [0, 1, 2] == seisbench.data.WaveformDataset._get_order_mapping("ZNE", "ZNE")
-    assert [1, 2, 0] == seisbench.data.WaveformDataset._get_order_mapping("ZNE", "NEZ")
-    assert [0, 1, 2] == seisbench.data.WaveformDataset._get_order_mapping(
+    assert [0, 1, 2] == seisbench.data.WaveformDataset._get_dimension_mapping(
+        "ZNE", "ZNE"
+    )
+    assert [1, 2, 0] == seisbench.data.WaveformDataset._get_dimension_mapping(
+        "ZNE", "NEZ"
+    )
+    assert [0, 1, 2] == seisbench.data.WaveformDataset._get_dimension_mapping(
         ["Z", "N", "E"], "ZNE"
     )
-    assert [0, 1, 2] == seisbench.data.WaveformDataset._get_order_mapping(
+    assert [0, 1, 2] == seisbench.data.WaveformDataset._get_dimension_mapping(
         "ZNE", ["Z", "N", "E"]
     )
-    assert [0, 2, 1] == seisbench.data.WaveformDataset._get_order_mapping(
+    assert [0, 2, 1] == seisbench.data.WaveformDataset._get_dimension_mapping(
         ["Z", "E", "N"], ["Z", "N", "E"]
     )
 
     # Test failures
     with pytest.raises(ValueError):
-        seisbench.data.WaveformDataset._get_order_mapping("ZNE", "Z")
+        seisbench.data.WaveformDataset._get_dimension_mapping("ZNE", "Z")
     with pytest.raises(ValueError):
-        seisbench.data.WaveformDataset._get_order_mapping("ZNE", "ZZE")
+        seisbench.data.WaveformDataset._get_dimension_mapping("ZNE", "ZZE")
     with pytest.raises(ValueError):
-        seisbench.data.WaveformDataset._get_order_mapping("ZEZ", "ZNE")
+        seisbench.data.WaveformDataset._get_dimension_mapping("ZEZ", "ZNE")
     with pytest.raises(ValueError):
-        seisbench.data.WaveformDataset._get_order_mapping("ZNE", "ZRT")
+        seisbench.data.WaveformDataset._get_dimension_mapping("ZNE", "ZRT")
+
+
+def test_get_component_mapping():
+    # Strategy "pad"
+    dummy = seisbench.data.DummyDataset(missing_components="pad")
+    assert dummy._get_component_mapping("Z", "ZNE") == [0, 1, 1]
+    assert dummy._get_component_mapping("ZE", "ZNE") == [0, 2, 1]
+    assert dummy._get_component_mapping("ZNE", "ZNE") == [0, 1, 2]
+    assert dummy._get_component_mapping("ENZ", "ZNE") == [2, 1, 0]
+    assert dummy._get_component_mapping("ZNE", "ZNEH") == [0, 1, 2, 3]
+
+    # Strategy "copy"
+    dummy = seisbench.data.DummyDataset(missing_components="copy")
+    assert dummy._get_component_mapping("Z", "ZNE") == [0, 0, 0]
+    assert dummy._get_component_mapping("N", "ZNE") == [0, 0, 0]
+    assert dummy._get_component_mapping("ZNE", "ZNE") == [0, 1, 2]
+    assert dummy._get_component_mapping("ENZ", "ZNE") == [2, 1, 0]
+    assert dummy._get_component_mapping("ZNE", "ZNEH") == [0, 1, 2, 0]
+
+    # Strategy "ignore"
+    dummy = seisbench.data.DummyDataset(missing_components="ignore")
+    assert dummy._get_component_mapping("Z", "ZNE") == [0]
+    assert dummy._get_component_mapping("ZNE", "ZNE") == [0, 1, 2]
+    assert dummy._get_component_mapping("ENZ", "ZNE") == [2, 1, 0]
+    assert dummy._get_component_mapping("ZNE", "ZNEH") == [0, 1, 2]
 
 
 def test_pad_packed_sequence():
@@ -426,6 +458,41 @@ def test_unify_sampling_rate(caplog):
     assert caplog.text == ""
 
 
+def test_unify_component_order(caplog):
+    # Component order not specified
+    dummy = seisbench.data.DummyDataset()
+    del dummy._metadata["trace_component_order"]
+    del dummy._data_format["component_order"]
+    with caplog.at_level(logging.WARNING):
+        dummy._unify_component_order()
+    assert "Component order not specified in data set." in caplog.text
+
+    # Component order inconsistent
+    caplog.clear()
+    dummy = seisbench.data.DummyDataset()
+    dummy._metadata["trace_component_order"] = "ZNE"
+    dummy._metadata["trace_component_order"].values[10] = "ZEN"
+    dummy._data_format["component_order"] = "ZNE"
+    order = dummy._metadata["trace_component_order"].values.copy()
+    with caplog.at_level(logging.WARNING):
+        dummy._unify_component_order()
+    assert (
+        "Found inconsistent component orders between data format and metadata."
+        in caplog.text
+    )
+    assert (dummy._metadata["trace_component_order"].values == order).all()
+
+    # Component order only in data_format
+    caplog.clear()
+    dummy = seisbench.data.DummyDataset()
+    del dummy._metadata["trace_component_order"]
+    dummy._data_format["component_order"] = "ZNE"
+    with caplog.at_level(logging.WARNING):
+        dummy._unify_component_order()
+    assert len(caplog.text) == 0
+    assert (dummy._metadata["trace_component_order"] == "ZNE").all()
+
+
 def test_resample():
     dummy = seisbench.data.DummyDataset()
     dummy._metadata["trace_sampling_rate_hz"] = 20.0
@@ -734,6 +801,7 @@ def test_writer_padding_reader_unpadding(tmp_path: Path):
     with seisbench.data.WaveformDataWriter(
         data_path / "metadata.csv", data_path / "waveforms.hdf5"
     ) as writer:
+        writer.data_format["component_order"] = "ZNE"
         writer.bucketer = seisbench.data.GeometricBucketer(minbucket=100, factor=1.2)
 
         writer.add_trace({}, trace1)
@@ -749,3 +817,60 @@ def test_writer_padding_reader_unpadding(tmp_path: Path):
     assert (data.get_waveforms(1) == trace2).all()
     assert (data.get_waveforms(2) == trace3).all()
     assert (data.get_waveforms(3) == trace4).all()
+
+
+def test_get_waveforms_component_orders():
+    dummy = seisbench.data.DummyDataset(component_order="ZNE", dimension_order="NCW")
+    wv_org = dummy.get_waveforms(0)
+    wv_org1 = dummy.get_waveforms(1)
+
+    dummy.component_order = "ZNEH"
+    dummy.missing_components = "pad"
+    wv = dummy.get_waveforms(0)
+    assert wv.shape[0] == 4
+    assert (wv_org == wv[:3]).all()
+    assert (wv[3] == 0).all()
+
+    dummy.component_order = "ZNEH"
+    dummy.missing_components = "copy"
+    wv = dummy.get_waveforms(0)
+    assert wv.shape[0] == 4
+    assert (wv_org == wv[:3]).all()
+    assert (wv[3] == wv_org[0]).all()
+
+    dummy.component_order = "ZNEH"
+    dummy.missing_components = "ignore"
+    wv = dummy.get_waveforms(0)
+    assert wv.shape[0] == 3
+    assert (wv_org == wv).all()
+
+    dummy._metadata["trace_component_order"].values[1] = "NEZ"
+    dummy.component_order = "ZNE"
+    dummy.missing_components = "ignore"
+
+    wv = dummy.get_waveforms(0)
+    assert wv.shape[0] == 3
+    assert (wv_org == wv).all()
+
+    wv = dummy.get_waveforms(1)
+    assert wv.shape[0] == 3
+    assert (wv_org1[[2, 0, 1]] == wv).all()
+
+
+def test_get_waveform_component_order_mismatching():
+    # Tests different strategies for mismatching traces
+    dummy = seisbench.data.DummyDataset(component_order="ZNE", dimension_order="NCW")
+    dummy._metadata["trace_component_order"].values[1] = "Z"
+
+    dummy.missing_components = "pad"
+    wv = dummy.get_waveforms([0, 1])
+    assert wv.shape[1] == 3
+
+    dummy.missing_components = "copy"
+    wv = dummy.get_waveforms([0, 1])
+    assert wv.shape[1] == 3
+
+    dummy.missing_components = "ignore"
+    with pytest.raises(ValueError) as e:
+        dummy.get_waveforms([0, 1])
+        assert "Requested traces with mixed number of components." in str(e)
