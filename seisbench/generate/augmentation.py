@@ -715,8 +715,6 @@ class ProbabilisticLabeller(PickLabeller):
 
     All picks with NaN sample are treated as not present.
 
-    :param dim: Dimension over which labelling will be applied, defaults to 1
-    :type dim: int, optional
     :param sigma: Variance of Gaussian representation in samples, defaults to 10
     :type sigma: int, optional
     """
@@ -809,22 +807,31 @@ class StandardLabeller(PickLabeller):
     """
     Create supervised labels from picks. The entire example is labelled as a single class/pick.
     For cases where multiple picks overlap in the input window, a number of options can be specified:
+
       - 'label-first' Only use first pick as label example.
       - 'fixed-relevance' Use pick closest to centre point of window as example.
       - 'random' Use random choice as example label.
 
-    :param label_columns: Specify the columns to use for pick labelling, defaults to None and columns are inferred from metadata
-    :type label_columns: list, optional
-    :param dim: Dimension over which labelling will be applied, defaults to 1
-    :type dim: int, optional
+    In general, it is recommended to set low and high, as it is very difficult for models to spot if a pick is just
+    inside or outside the window. This can lead to noisy predicitions that strongly depend on the marginal label
+    distribution in the training set.
+
+    :param low: Only take into account picks after or at this sample. If None, uses low=0.
+                If negative, counts from the end of the trace.
+    :type low: int, None
+    :param high: Only take into account picks before this sample. If None, uses high=num_samples.
+                 If negative, counts from the end of the trace.
+    :type high: int, None
     :param on_overlap: Method used to label when multiple picks present in window, defaults to "label-first"
     :type on_overlap: str, optional
     """
 
-    def __init__(self, on_overlap="label-first", **kwargs):
+    def __init__(self, on_overlap="label-first", low=None, high=None, **kwargs):
         kwargs["dim"] = kwargs.get("dim", 1)
         self.label_method = "standard"
         self.on_overlap = on_overlap
+        self.low = low
+        self.high = high
 
         if self.on_overlap not in ("label-first", "fixed-relevance", "random"):
             raise ValueError(
@@ -864,10 +871,25 @@ class StandardLabeller(PickLabeller):
                 new_arrival_array.append(x)
 
         arrival_array = np.array(new_arrival_array, dtype=float).T
-        arrival_array[arrival_array < 0] = np.nan  # Mask samples before window start
-        arrival_array[
-            arrival_array > trace_length
-        ] = np.nan  # Mask samples after window end
+
+        if self.low is None:
+            low = 0
+        else:
+            if self.low > 0:
+                low = self.low
+            else:
+                low = trace_length + self.low
+
+        if self.high is None:
+            high = trace_length
+        else:
+            if self.high > 0:
+                high = self.high
+            else:
+                high = trace_length + self.high
+
+        arrival_array[arrival_array < low] = np.nan  # Mask samples before low
+        arrival_array[arrival_array >= high] = np.nan  # Mask samples after high
         nan_mask = np.isnan(arrival_array)
         return arrival_array, nan_mask
 

@@ -721,6 +721,39 @@ def test_standard_pick_labeller():
     check_labels_against_ids(labeller, state_dict["y"][0], ["S"])
 
 
+def test_standard_labeller_low_high():
+    np.random.seed(42)
+
+    # Test label construction for multiple windows
+    state_dict = {
+        "X": (
+            np.random.rand(5, 3, 1000),
+            {"trace_p_arrival_sample": [320, -100, 1200, 500, 600]},
+        )
+    }
+
+    labeller = StandardLabeller()  # Low is None, high is None
+
+    labeller(state_dict)
+    assert (state_dict["y"][0][:, 0] == [0, 1, 1, 0, 0]).all()
+
+    labeller.low = 400
+    labeller(state_dict)
+    assert (state_dict["y"][0][:, 0] == [1, 1, 1, 0, 0]).all()
+
+    labeller.low = -600
+    labeller(state_dict)
+    assert (state_dict["y"][0][:, 0] == [1, 1, 1, 0, 0]).all()
+
+    labeller.high = 600
+    labeller(state_dict)
+    assert (state_dict["y"][0][:, 0] == [1, 1, 1, 0, 1]).all()
+
+    labeller.high = -400
+    labeller(state_dict)
+    assert (state_dict["y"][0][:, 0] == [1, 1, 1, 0, 1]).all()
+
+
 def test_standard_pick_labeller_pickgroups():
     np.random.seed(42)
 
