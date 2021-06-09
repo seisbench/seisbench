@@ -1162,17 +1162,30 @@ class GeometricBucketer(Bucketer):
     :param factor: Factor for the geometric spacing.
     :param splits: If true, returns separate buckets for each split. Defaults to true.
                    If no split is defined in the metadata, this parameter is ignored.
+    :param track_channels: If true, uses the shape of the input waveform along all axis except the one defined in axis,
+                           to determine the bucket. Only traces agreeing in all dimensions except the given axis will be
+                           assigned to the same bucket.
     :param axis: Axis to take into account for determining the length of the trace.
     """
 
-    def __init__(self, minbucket=100, factor=1.2, splits=True, axis=-1):
+    def __init__(
+        self, minbucket=100, factor=1.2, splits=True, track_channels=True, axis=-1
+    ):
         self.minbucket = minbucket
         self.factor = factor
         self.split = splits
+        self.track_channels = track_channels
         self.axis = axis
 
     def get_bucket(self, metadata, waveform):
         length = waveform.shape[self.axis]
+        if self.track_channels:
+            shape = list(waveform.shape)
+            del shape[self.axis]  # Ignore sample axis
+            shape = [str(x) for x in shape]
+            channel_str = f"({','.join(shape)})_"
+        else:
+            channel_str = ""
 
         if self.split and "split" in metadata:
             split_str = str(metadata["split"])
@@ -1184,7 +1197,7 @@ class GeometricBucketer(Bucketer):
         else:
             bucket_id = int(np.log(length / self.minbucket) / np.log(self.factor) + 1)
 
-        return split_str + str(bucket_id)
+        return split_str + channel_str + str(bucket_id)
 
 
 class WaveformDataWriter:

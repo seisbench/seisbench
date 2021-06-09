@@ -590,7 +590,7 @@ def test_bucketer_type(tmp_path: Path):
 def test_geometric_bucketer():
     # Split is false
     bucketer = seisbench.data.GeometricBucketer(
-        minbucket=100, factor=1.2, splits=False, axis=-1
+        minbucket=100, factor=1.2, splits=False, track_channels=False, axis=-1
     )
 
     # Minimum bucket
@@ -607,7 +607,7 @@ def test_geometric_bucketer():
 
     # Split is true
     bucketer = seisbench.data.GeometricBucketer(
-        minbucket=100, factor=1.2, splits=True, axis=-1
+        minbucket=100, factor=1.2, splits=True, track_channels=False, axis=-1
     )
 
     # Minimum bucket
@@ -623,6 +623,23 @@ def test_geometric_bucketer():
 
     # Ignores missing split
     assert "0" == bucketer.get_bucket({}, np.ones((3, 99)))
+
+    # track_channels is true
+    bucketer = seisbench.data.GeometricBucketer(
+        minbucket=100, factor=1.2, splits=False, track_channels=True, axis=-1
+    )
+
+    # Minimum bucket
+    assert "(3)_0" == bucketer.get_bucket({}, np.ones((3, 99)))
+
+    # First bucket
+    assert "(1)_1" == bucketer.get_bucket({}, np.ones((1, 101)))
+
+    # Later bucket
+    assert "(3)_10" == bucketer.get_bucket({}, np.ones((3, int(100 * 1.2 ** 9 + 1))))
+
+    # Ignores split
+    assert "(3)_0" == bucketer.get_bucket({"split": "train"}, np.ones((3, 99)))
 
 
 def test_pack_arrays():
@@ -642,6 +659,7 @@ def test_bucketer_cache(tmp_path: Path):
         data_path / "metadata.csv", data_path / "waveforms.hdf5"
     ) as writer:
         writer.bucket_size = 10
+        writer.bucketer.track_channels = False
 
         # Traces are kept in bucket
         for i in range(9):
