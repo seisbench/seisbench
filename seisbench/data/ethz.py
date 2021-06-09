@@ -4,6 +4,7 @@ from seisbench.util.trace_ops import (
     _rotate_stream_to_ZNE,
     _stream_to_array,
     _trace_has_spikes,
+    waveform_id_to_network_station_location,
 )
 
 import random
@@ -74,7 +75,9 @@ class ETHZ(BenchmarkDataset):
                 if pick.phase_hint is None:
                     continue
 
-                station_groups[pick.waveform_id.id[:-1]].append(pick)
+                station_groups[
+                    waveform_id_to_network_station_location(pick.waveform_id.id)
+                ].append(pick)
 
             for picks in station_groups.values():
                 try:
@@ -107,7 +110,7 @@ class ETHZ(BenchmarkDataset):
 
                 if len(waveforms) == 0:
                     seisbench.logger.debug(
-                        f'Found no waveforms for {picks[0].waveform_id.id[:-1]} in event {event_params["source_id"]}'
+                        f'Found no waveforms for {waveform_id_to_network_station_location(picks[0].waveform_id.id)} in event {event_params["source_id"]}'
                     )
                     continue
 
@@ -116,14 +119,14 @@ class ETHZ(BenchmarkDataset):
                     trace.stats.sampling_rate != sampling_rate for trace in waveforms
                 ):
                     seisbench.logger.warning(
-                        f"Found inconsistent sampling rates for {picks[0].waveform_id.id[:-1]} in event {event}."
+                        f"Found inconsistent sampling rates for {waveform_id_to_network_station_location(picks[0].waveform_id.id)} in event {event}."
                         f"Resampling traces to common sampling rate."
                     )
                     waveforms.resample(sampling_rate)
 
                 trace_params[
                     "trace_name"
-                ] = f"{event_params['source_id']}_{picks[0].waveform_id.id[:-1]}"
+                ] = f"{event_params['source_id']}_{waveform_id_to_network_station_location(picks[0].waveform_id.id)}"
 
                 stream = waveforms.slice(t_start, t_end)
 
@@ -274,7 +277,7 @@ class ETHZ(BenchmarkDataset):
             "path_back_azimuth_deg": back_azimuth,
             "station_network_code": net,
             "station_code": sta,
-            "trace_channel": pick.waveform_id.channel_code[:-1],
+            "trace_channel": pick.waveform_id.channel_code[:2],
             "station_location_code": pick.waveform_id.location_code,
             "station_latitude_deg": lat,
             "station_longitude_deg": lon,

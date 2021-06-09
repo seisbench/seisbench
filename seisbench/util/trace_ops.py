@@ -60,3 +60,21 @@ def _rotate_stream_to_ZNE(stream, inventory):
     except Exception as e:
         # Required, because obspy throws a plain Exception for missing channel metadata
         pass
+
+
+def waveform_id_to_network_station_location(waveform_id):
+    """
+    Takes a waveform_id as string in the format Network.Station.Location.Channel and
+    returns a string with channel dropped. If the wavform_id does not conform to the format,
+    the input string is returned.
+
+    :param waveform_id: Waveform ID in format Network.Station.Location.Channel
+    :type waveform_id: str
+    :return: Waveform ID in format Network.Station.Location
+    :rtype: str
+    """
+    parts = waveform_id.split(".")
+    if len(parts) != 4:
+        return waveform_id
+    else:
+        return ".".join(parts[:-1])

@@ -1,4 +1,5 @@
 import seisbench.util
+from seisbench.util.trace_ops import waveform_id_to_network_station_location
 
 from pathlib import Path
 import pytest
@@ -68,3 +69,9 @@ def test_callback_if_uncached(tmp_path: Path):
             tmp_path / "dummy6", callback, wait_for_file=True
         )
         assert (tmp_path / "dummy6").is_file()
+
+
+def test_waveform_id_to_network_station_location():
+    assert waveform_id_to_network_station_location("NET.STA.LOC.CHA") == "NET.STA.LOC"
+    assert waveform_id_to_network_station_location("NET.STA..CHA") == "NET.STA."
+    assert waveform_id_to_network_station_location("invalid") == "invalid"
