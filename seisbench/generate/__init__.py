@@ -14,4 +14,5 @@ from .augmentation import (
     StandardLabeller,
     OneOf,
     NullAugmentation,
+    DetectionLabeller,
 )

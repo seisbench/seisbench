@@ -935,3 +935,127 @@ def test_oneof():
         assert state_dict == {"a": 1}
         assert choice.call_args[0] == ([aug1, aug2],)
         assert np.allclose(choice.call_args[1]["p"], [0.8, 0.2])
+
+
+def test_detection_labeller_parameters():
+    labeller = seisbench.generate.DetectionLabeller("P", "S")
+    assert labeller.p_phases == ["P"]
+    assert labeller.s_phases == ["S"]
+
+    labeller = seisbench.generate.DetectionLabeller(["P1", "P2"], ["S"])
+    assert labeller.p_phases == ["P1", "P2"]
+    assert labeller.s_phases == ["S"]
+
+
+def test_detection_labeller_3d():
+    np.random.seed(42)
+
+    state_dict = {
+        "X": (
+            np.random.rand(5, 3, 1000),
+            {
+                "trace_p_arrival_sample": [100, 150, np.nan, 100, np.nan],
+                "trace_p2_arrival_sample": [np.nan, 100, np.nan, 120, np.nan],
+                "trace_s_arrival_sample": [200, 300, 810, np.nan, np.nan],
+            },
+        )
+    }
+
+    target0 = np.zeros(1000)
+    target0[100:340] = 1
+    target1 = np.zeros(1000)
+    target1[100:580] = 1
+
+    p_phases = [f"trace_{x}_arrival_sample" for x in ["p", "p2", "p3"]]
+    s_phases = "trace_s_arrival_sample"
+    labeller = seisbench.generate.DetectionLabeller(p_phases, s_phases, factor=1.4)
+    labeller(state_dict)
+    y = state_dict["y"][0][:, 0, :]
+    assert y.shape == (5, 1000)
+    assert (y[[2, 3, 4]] == 0).all()
+    assert np.allclose(y[0], target0)
+    assert np.allclose(y[1], target1)
+
+
+def test_detection_labeller_2d():
+    np.random.seed(42)
+
+    state_dict = {
+        "X": (
+            np.random.rand(3, 1000),
+            {
+                "trace_p_arrival_sample": 100,
+                "trace_p2_arrival_sample": np.nan,
+                "trace_s_arrival_sample": 200,
+            },
+        )
+    }
+
+    target = np.zeros(1000)
+    target[100:340] = 1
+
+    p_phases = [f"trace_{x}_arrival_sample" for x in ["p", "p2", "p3"]]
+    s_phases = "trace_s_arrival_sample"
+    labeller = seisbench.generate.DetectionLabeller(p_phases, s_phases, factor=1.4)
+    labeller(state_dict)
+    y = state_dict["y"][0][0, :]
+    assert y.shape == (1000,)
+    assert np.allclose(y, target)
+
+    state_dict = {
+        "X": (
+            np.random.rand(3, 1000),
+            {
+                "trace_p_arrival_sample": np.nan,
+                "trace_p2_arrival_sample": np.nan,
+                "trace_s_arrival_sample": 200,
+            },
+        )
+    }
+
+    target = np.zeros(1000)
+    target[100:340] = 1
+    labeller(state_dict)
+    y = state_dict["y"][0][0, :]
+    assert y.shape == (1000,)
+    assert np.allclose(y, 0)
+
+    state_dict = {
+        "X": (
+            np.random.rand(3, 1000),
+            {
+                "trace_p_arrival_sample": 100,
+                "trace_p2_arrival_sample": np.nan,
+                "trace_s_arrival_sample": np.nan,
+            },
+        )
+    }
+
+    target = np.zeros(1000)
+    target[100:340] = 1
+    labeller(state_dict)
+    y = state_dict["y"][0][0, :]
+    assert y.shape == (1000,)
+    assert np.allclose(y, 0)
+
+    state_dict = {
+        "X": (
+            np.random.rand(3, 1000),
+            {
+                "trace_p_arrival_sample": 150,
+                "trace_p2_arrival_sample": 100,
+                "trace_s_arrival_sample": 200,
+            },
+        )
+    }
+
+    target = np.zeros(1000)
+    target[100:340] = 1
+
+    p_phases = [f"trace_{x}_arrival_sample" for x in ["p", "p2", "p3"]]
+    s_phases = "trace_s_arrival_sample"
+    labeller = seisbench.generate.DetectionLabeller(p_phases, s_phases, factor=1.4)
+    labeller(state_dict)
+    y = state_dict["y"][0][0, :]
+    assert y.shape == (1000,)
+    assert np.allclose(y, target)

@@ -803,6 +803,117 @@ class ProbabilisticLabeller(PickLabeller):
         return f"ProbabilisticLabeller (label_type={self.label_type}, dim={self.dim})"
 
 
+class DetectionLabeller(SupervisedLabeller):
+    """
+    Create detection labels from picks as in Mousavi et al. (2020, Nature communications).
+    Detections range from P to S + factor * (S - P) and are represented through a boxcar time series with the same
+    length as the input waveforms.
+    Detections are only annotated if both P and S phases are present.
+    For both P and S, lists of phases can be passed of which the sequentially first one will be used.
+    All picks with NaN sample are treated as not present.
+
+    :param p_phases: (List of) P phase metadata columns
+    :type p_phases: str, list[str]
+    :param s_phases: (List of) S phase metadata columns
+    :type s_phases: str, list[str]
+    :param factor: Factor for length of window after S onset
+    :type factor: float
+    """
+
+    def __init__(self, p_phases, s_phases, factor=1.4, **kwargs):
+        self.label_method = "probabilistic"
+        self.label_columns = "detections"
+        if isinstance(p_phases, str):
+            self.p_phases = [p_phases]
+        else:
+            self.p_phases = p_phases
+
+        if isinstance(s_phases, str):
+            self.s_phases = [s_phases]
+        else:
+            self.s_phases = s_phases
+
+        self.factor = factor
+
+        kwargs["dim"] = kwargs.get("dim", -2)
+        super().__init__(label_type="multi_class", **kwargs)
+
+    def label(self, X, metadata):
+        sample_dim, channel_dim, width_dim = self._get_dimension_order_from_config(
+            config, self.ndim
+        )
+
+        if self.ndim == 2:
+            y = np.zeros((1, X.shape[width_dim]))
+            p_arrivals = [
+                metadata[phase]
+                for phase in self.p_phases
+                if phase in metadata and not np.isnan(metadata[phase])
+            ]
+            s_arrivals = [
+                metadata[phase]
+                for phase in self.s_phases
+                if phase in metadata and not np.isnan(metadata[phase])
+            ]
+
+            if len(p_arrivals) != 0 and len(s_arrivals) != 0:
+                p_arrival = min(p_arrivals)
+                s_arrival = min(s_arrivals)
+                p_to_s = s_arrival - p_arrival
+                if s_arrival >= p_arrival:
+                    # Only annotate valid options
+                    y[0, int(p_arrival) : int(s_arrival + self.factor * p_to_s)] = 1
+
+        elif self.ndim == 3:
+            y = np.zeros(
+                shape=(
+                    X.shape[sample_dim],
+                    1,
+                    X.shape[width_dim],
+                )
+            )
+            p_arrivals = [
+                metadata[phase] for phase in self.p_phases if phase in metadata
+            ]
+            s_arrivals = [
+                metadata[phase] for phase in self.s_phases if phase in metadata
+            ]
+
+            if len(p_arrivals) != 0 and len(s_arrivals) != 0:
+                p_arrivals = np.stack(p_arrivals, axis=-1)  # Shape (samples, phases)
+                s_arrivals = np.stack(s_arrivals, axis=-1)
+
+                mask = np.logical_and(
+                    np.any(~np.isnan(p_arrivals), axis=1),
+                    np.any(~np.isnan(s_arrivals), axis=1),
+                )
+                if not mask.any():
+                    return y
+
+                p_arrivals = np.nanmin(
+                    p_arrivals[mask, :], axis=1
+                )  # Shape (samples (which are present),)
+                s_arrivals = np.nanmin(s_arrivals[mask, :], axis=1)
+                p_to_s = s_arrivals - p_arrivals
+
+                starts = p_arrivals.astype(int)
+                ends = (s_arrivals + self.factor * p_to_s).astype(int)
+
+                # print(mask, starts, ends)
+                for i, s, e in zip(np.arange(len(mask))[mask], starts, ends):
+                    y[i, 0, s:e] = 1
+
+        else:
+            raise ValueError(
+                f"Illegal number of input dimensions for DetectionLabeller (ndim={self.ndim})."
+            )
+
+        return y
+
+    def __str__(self):
+        return f"DetectionLabeller (label_type={self.label_type}, dim={self.dim})"
+
+
 class StandardLabeller(PickLabeller):
     """
     Create supervised labels from picks. The entire example is labelled as a single class/pick.
