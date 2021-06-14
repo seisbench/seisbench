@@ -8,14 +8,14 @@ from .augmentation import (
     NullAugmentation,
     ChannelDropout,
 )
-from seisbench.generate.labeling import (
+from .labeling import (
     SupervisedLabeller,
     PickLabeller,
     ProbabilisticLabeller,
     DetectionLabeller,
     StandardLabeller,
 )
-from seisbench.generate.windows import (
+from .windows import (
     FixedWindow,
     SlidingWindow,
     WindowAroundSample,
