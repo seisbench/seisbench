@@ -1106,3 +1106,40 @@ def test_channel_dropout():
     assert (state_dict["X"][0] == new_state_dict["X"][0]).all()
     assert state_dict["X"][1] == new_state_dict["X"][1]
     assert "y" in new_state_dict
+
+
+def test_add_gap():
+    np.random.seed(42)
+
+    gap = seisbench.generate.AddGap(axis=2)  # Positively defined axis
+    state_dict = {"X": (np.random.rand(5, 3, 1000), {})}
+    gap(state_dict)
+    assert state_dict["X"][0].shape == (5, 3, 1000)
+
+    gap = seisbench.generate.AddGap(axis=-1)  # Negatively defined axis
+    state_dict = {"X": (np.random.rand(5, 3, 1000), {})}
+    gap(state_dict)
+    assert state_dict["X"][0].shape == (5, 3, 1000)
+
+    with patch("numpy.random.randint") as randint:
+        randint.side_effect = [100, 200]
+        state_dict = {"X": (np.random.rand(5, 3, 1000), {})}
+        gap(state_dict)
+        assert state_dict["X"][0].shape == (5, 3, 1000)
+        assert (state_dict["X"][0][:, :, 100:200] == 0).all()  # Correct part is blinded
+        assert not (
+            state_dict["X"][0][:, :, :100] == 0
+        ).all()  # Before are non-zero entries
+        assert not (
+            state_dict["X"][0][:, :, 200:] == 0
+        ).all()  # After are non-zero entries
+
+    # No inplace modification occurs for different input and output keys
+    gap = seisbench.generate.ChannelDropout(axis=1, key=("X", "y"))  # Check key
+    state_dict = {"X": (np.random.rand(5, 3, 1000), {})}
+    new_state_dict = copy.deepcopy(state_dict)
+    gap(new_state_dict)
+
+    assert (state_dict["X"][0] == new_state_dict["X"][0]).all()
+    assert state_dict["X"][1] == new_state_dict["X"][1]
+    assert "y" in new_state_dict

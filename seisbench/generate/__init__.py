@@ -7,6 +7,7 @@ from .augmentation import (
     OneOf,
     NullAugmentation,
     ChannelDropout,
+    AddGap,
 )
 from .labeling import (
     SupervisedLabeller,

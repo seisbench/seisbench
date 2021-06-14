@@ -306,3 +306,51 @@ class ChannelDropout:
             np.put_along_axis(x, drop_channels, 0, axis=axis)
 
         state_dict[self.key[1]] = (x, metadata)
+
+
+class AddGap:
+    """
+    Adds a gap into the data by zeroing out entries.
+
+    :param axis: Sample dimension, defaults to -1.
+    :param key: The keys for reading from and writing to the state dict.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key
+                to read from and the second one the key to write to.
+    """
+
+    def __init__(self, axis=-1, key="X"):
+        if isinstance(key, str):
+            self.key = (key, key)
+        else:
+            self.key = key
+
+        self.axis = axis
+
+    def __call__(self, state_dict):
+        x, metadata = state_dict[self.key[0]]
+
+        if self.key[0] != self.key[1]:
+            # Ensure data and metadata are not modified inplace unless input and output key are anyhow identical
+            metadata = copy.deepcopy(metadata)
+            x = x.copy()
+
+        axis = self.axis
+        if axis < 0:
+            axis += x.ndim
+
+        n_samples = x.shape[axis]
+
+        gap_start = np.random.randint(n_samples - 1)
+        gap_end = np.random.randint(gap_start, n_samples)
+        gap = np.arange(gap_start, gap_end, dtype=int)
+
+        for i in range(x.ndim):
+            if i < axis:
+                gap = np.expand_dims(gap, 0)
+            elif i > axis:
+                gap = np.expand_dims(gap, -1)
+
+        np.put_along_axis(x, gap, 0, axis=axis)
+
+        state_dict[self.key[1]] = (x, metadata)
