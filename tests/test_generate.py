@@ -1059,3 +1059,37 @@ def test_detection_labeller_2d():
     y = state_dict["y"][0][0, :]
     assert y.shape == (1000,)
     assert np.allclose(y, target)
+
+
+def test_channel_dropout():
+    np.random.seed(42)
+
+    dropout = seisbench.generate.ChannelDropout(axis=1)  # Positively defined axis
+    state_dict = {"X": (np.random.rand(5, 3, 1000), {})}
+    dropout(state_dict)
+    assert state_dict["X"][0].shape == (5, 3, 1000)
+
+    dropout = seisbench.generate.ChannelDropout(axis=-2)  # Negatively defined axis
+    state_dict = {"X": (np.random.rand(5, 3, 1000), {})}
+    dropout(state_dict)
+    assert state_dict["X"][0].shape == (5, 3, 1000)
+
+    with patch("numpy.random.randint") as randint:
+        randint.return_value = 2
+        state_dict = {"X": (np.random.rand(5, 3, 1000), {})}
+        dropout(state_dict)
+        x = state_dict["X"][0]
+        assert x.shape == (5, 3, 1000)
+        assert (
+            np.sum((x == 0).all(axis=(0, 2))) == 2
+        )  # Exactly two axis have been dropped
+
+    # No inplace modification occurs for different input and output keys
+    dropout = seisbench.generate.ChannelDropout(axis=1, key=("X", "y"))  # Check key
+    state_dict = {"X": (np.random.rand(5, 3, 1000), {})}
+    new_state_dict = copy.deepcopy(state_dict)
+    dropout(new_state_dict)
+
+    assert (state_dict["X"][0] == new_state_dict["X"][0]).all()
+    assert state_dict["X"][1] == new_state_dict["X"][1]
+    assert "y" in new_state_dict

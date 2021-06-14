@@ -15,4 +15,5 @@ from .augmentation import (
     OneOf,
     NullAugmentation,
     DetectionLabeller,
+    ChannelDropout,
 )

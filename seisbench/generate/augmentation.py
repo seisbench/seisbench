@@ -1132,3 +1132,55 @@ class NullAugmentation:
 
     def __str__(self):
         return "NullAugmentation"
+
+
+class ChannelDropout:
+    """
+    Similar to Dropout, zeros out between 0 and the c - 1 channels randomly.
+    Outputs are multipled by the inverse of the fraction of remaining channels.
+    As for regular Dropout, this ensures that the output "energy" is unchanged.
+
+    :param axis: Channel dimension, defaults to -2.
+    :param key: The keys for reading from and writing to the state dict.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key
+                to read from and the second one the key to write to.
+    """
+
+    def __init__(self, axis=-2, key="X"):
+        if isinstance(key, str):
+            self.key = (key, key)
+        else:
+            self.key = key
+
+        self.axis = axis
+
+    def __call__(self, state_dict):
+        x, metadata = state_dict[self.key[0]]
+
+        if self.key[0] != self.key[1]:
+            # Ensure data and metadata are not modified inplace unless input and output key are anyhow identical
+            metadata = copy.deepcopy(metadata)
+            x = x.copy()
+
+        axis = self.axis
+        if axis < 0:
+            axis += x.ndim
+
+        n_channels = x.shape[axis]
+        n_drop = np.random.randint(n_channels)  # Number of channels to drop
+
+        if n_drop > 0:
+            drop_channels = np.arange(n_channels)
+            np.random.shuffle(drop_channels)
+            drop_channels = drop_channels[:n_drop]
+
+            for i in range(x.ndim):
+                if i < axis:
+                    drop_channels = np.expand_dims(drop_channels, 0)
+                elif i > axis:
+                    drop_channels = np.expand_dims(drop_channels, -1)
+
+            np.put_along_axis(x, drop_channels, 0, axis=axis)
+
+        state_dict[self.key[1]] = (x, metadata)
