@@ -1,4 +1,5 @@
 import seisbench.generate
+import seisbench.generate.labeling
 from seisbench.generate import (
     Normalize,
     Filter,
@@ -823,7 +824,9 @@ def test_colums_to_dict_and_labels():
         label_columns,
         labels,
         label_ids,
-    ) = seisbench.generate.PickLabeller._colums_to_dict_and_labels(label_columns)
+    ) = seisbench.generate.labeling.PickLabeller._colums_to_dict_and_labels(
+        label_columns
+    )
 
     assert label_columns == {
         "trace_p_arrival_sample": "p",
@@ -841,7 +844,9 @@ def test_colums_to_dict_and_labels():
         label_columns,
         labels,
         label_ids,
-    ) = seisbench.generate.PickLabeller._colums_to_dict_and_labels(label_columns)
+    ) = seisbench.generate.labeling.PickLabeller._colums_to_dict_and_labels(
+        label_columns
+    )
 
     assert label_columns == {
         "trace_p_arrival_sample": "p",
@@ -884,7 +889,9 @@ def test_autoidentify_pick_labels():
         "abc": None,
     }
 
-    assert seisbench.generate.PickLabeller._auto_identify_picklabels(state_dict) == [
+    assert seisbench.generate.labeling.PickLabeller._auto_identify_picklabels(
+        state_dict
+    ) == [
         "trace_Pg_arrival_sample",
         "trace_Pn_arrival_sample",
         "trace_Sg_arrival_sample",
@@ -938,11 +945,11 @@ def test_oneof():
 
 
 def test_detection_labeller_parameters():
-    labeller = seisbench.generate.DetectionLabeller("P", "S")
+    labeller = seisbench.generate.labeling.DetectionLabeller("P", "S")
     assert labeller.p_phases == ["P"]
     assert labeller.s_phases == ["S"]
 
-    labeller = seisbench.generate.DetectionLabeller(["P1", "P2"], ["S"])
+    labeller = seisbench.generate.labeling.DetectionLabeller(["P1", "P2"], ["S"])
     assert labeller.p_phases == ["P1", "P2"]
     assert labeller.s_phases == ["S"]
 
@@ -968,7 +975,9 @@ def test_detection_labeller_3d():
 
     p_phases = [f"trace_{x}_arrival_sample" for x in ["p", "p2", "p3"]]
     s_phases = "trace_s_arrival_sample"
-    labeller = seisbench.generate.DetectionLabeller(p_phases, s_phases, factor=1.4)
+    labeller = seisbench.generate.labeling.DetectionLabeller(
+        p_phases, s_phases, factor=1.4
+    )
     labeller(state_dict)
     y = state_dict["y"][0][:, 0, :]
     assert y.shape == (5, 1000)
@@ -996,7 +1005,9 @@ def test_detection_labeller_2d():
 
     p_phases = [f"trace_{x}_arrival_sample" for x in ["p", "p2", "p3"]]
     s_phases = "trace_s_arrival_sample"
-    labeller = seisbench.generate.DetectionLabeller(p_phases, s_phases, factor=1.4)
+    labeller = seisbench.generate.labeling.DetectionLabeller(
+        p_phases, s_phases, factor=1.4
+    )
     labeller(state_dict)
     y = state_dict["y"][0][0, :]
     assert y.shape == (1000,)
@@ -1054,7 +1065,9 @@ def test_detection_labeller_2d():
 
     p_phases = [f"trace_{x}_arrival_sample" for x in ["p", "p2", "p3"]]
     s_phases = "trace_s_arrival_sample"
-    labeller = seisbench.generate.DetectionLabeller(p_phases, s_phases, factor=1.4)
+    labeller = seisbench.generate.labeling.DetectionLabeller(
+        p_phases, s_phases, factor=1.4
+    )
     labeller(state_dict)
     y = state_dict["y"][0][0, :]
     assert y.shape == (1000,)
