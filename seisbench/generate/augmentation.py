@@ -417,3 +417,38 @@ class RandomArrayRotation:
             x = np.roll(x, rotation, axis=axis)
 
             state_dict[key[1]] = (x, metadata)
+
+
+class GaussianNoise:
+    """
+    Adds point-wise independent Gaussian noise to an array.
+
+    :param scale: Tuple of minimum and maximum relative amplitude of the noise.
+                  Relative amplitude is defined as the quotient of the standard deviation of the noise and
+                  the absolute maximum of the input array.
+    :param key: The keys for reading from and writing to the state dict.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key
+                to read from and the second one the key to write to.
+    """
+
+    def __init__(self, scale=(0, 0.15), key="X"):
+        if isinstance(key, str):
+            self.key = (key, key)
+        else:
+            self.key = key
+
+        self.scale = scale
+
+    def __call__(self, state_dict):
+        x, metadata = state_dict[self.key[0]]
+
+        if self.key[0] != self.key[1]:
+            # Ensure metadata is not modified inplace unless input and output key are anyhow identical
+            metadata = copy.deepcopy(metadata)
+
+        scale = np.random.uniform(*self.scale) * np.max(x)
+        noise = np.random.randn(*x.shape).astype(x.dtype) * scale
+        x = x + noise
+
+        state_dict[self.key[1]] = (x, metadata)

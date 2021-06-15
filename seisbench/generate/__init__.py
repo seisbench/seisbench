@@ -9,6 +9,7 @@ from .augmentation import (
     ChannelDropout,
     AddGap,
     RandomArrayRotation,
+    GaussianNoise,
 )
 from .labeling import (
     SupervisedLabeller,

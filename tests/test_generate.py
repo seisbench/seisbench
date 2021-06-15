@@ -1191,3 +1191,25 @@ def test_random_array_rotation():
 
     assert (np.roll(state_dict["X"][0], 105, axis=-1) == state_dict["X2"][0]).all()
     assert (np.roll(state_dict["y"][0], 105, axis=1) == state_dict["y2"][0]).all()
+
+
+def test_gaussian_noise():
+    np.random.seed(42)
+
+    noise = seisbench.generate.GaussianNoise()
+    state_dict = {"X": (np.random.rand(5, 3, 1000), {})}
+    noise(state_dict)
+    assert state_dict["X"][0].shape == (5, 3, 1000)
+
+    noise = seisbench.generate.GaussianNoise(key=("X", "y"))
+    state_dict = {"X": (np.random.rand(5, 3, 1000), {})}
+    with patch("numpy.random.uniform") as uniform:
+        uniform.return_value = 0.15
+        noise(state_dict)
+        uniform.assert_called_once_with(*noise.scale)
+
+    x = state_dict["X"][0]
+    y = state_dict["y"][0]
+    assert (
+        0.14 < np.std(y - x) < 0.16
+    )  # Bounds are rather liberal to ensure a stable test
