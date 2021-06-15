@@ -235,10 +235,6 @@ class EQTransformer(WaveformModel):
         else:
             return list(range(self.classes))
 
-    def _parse_metadata(self):
-        super()._parse_metadata()
-        self._phases = self._weights_metadata.get("phases", None)
-
     def classify_aggregate(self, annotations, argdict):
         """
         Converts the annotations to discrete picks using :py:func:`~seisbench.models.base.WaveformModel.picks_from_annotations`

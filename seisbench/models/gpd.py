@@ -97,10 +97,6 @@ class GPD(WaveformModel):
         else:
             return list(range(self.classes))
 
-    def _parse_metadata(self):
-        super()._parse_metadata()
-        self._phases = self._weights_metadata.get("phases", None)
-
     def annotate_window_pre(self, window, argdict):
         # Add a demean step to the preprocessing
         return window - np.mean(window, axis=-1, keepdims=True)
