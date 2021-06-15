@@ -1143,3 +1143,51 @@ def test_add_gap():
     assert (state_dict["X"][0] == new_state_dict["X"][0]).all()
     assert state_dict["X"][1] == new_state_dict["X"][1]
     assert "y" in new_state_dict
+
+
+def test_random_array_rotation_keys():
+    rot = seisbench.generate.RandomArrayRotation(keys="X")
+    assert rot.keys == [("X", "X")]
+
+    rot = seisbench.generate.RandomArrayRotation(keys=("X", "y"))
+    assert rot.keys == [("X", "y")]
+
+    rot = seisbench.generate.RandomArrayRotation(keys=["X", ("X1", "X2")])
+    assert rot.keys == [("X", "X"), ("X1", "X2")]
+
+
+def test_random_array_rotation():
+    np.random.seed(42)
+
+    roll = seisbench.generate.RandomArrayRotation(
+        keys=["X", "y"], axis=-1
+    )  # Broadcast axis
+    state_dict = {
+        "X": (np.random.rand(5, 3, 1000), {}),
+        "y": (np.random.rand(3, 1000), {}),
+    }
+    roll(state_dict)
+
+    # Incompatible axis
+    state_dict = {
+        "X": (np.random.rand(5, 3, 1000), {}),
+        "y": (np.random.rand(3, 2000), {}),
+    }
+    with pytest.raises(ValueError):
+        roll(state_dict)
+
+    # Check identical rolling
+    roll = seisbench.generate.RandomArrayRotation(
+        keys=[("X", "X2"), ("y", "y2")], axis=[-1, 1]
+    )
+    state_dict = {
+        "X": (np.random.rand(5, 3, 1000), {}),
+        "y": (np.random.rand(3, 1000, 1), {}),
+    }
+    with patch("numpy.random.randint") as randint:
+        randint.return_value = 105
+        roll(state_dict)
+        randint.assert_called_once()
+
+    assert (np.roll(state_dict["X"][0], 105, axis=-1) == state_dict["X2"][0]).all()
+    assert (np.roll(state_dict["y"][0], 105, axis=1) == state_dict["y2"][0]).all()

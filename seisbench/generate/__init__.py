@@ -8,6 +8,7 @@ from .augmentation import (
     NullAugmentation,
     ChannelDropout,
     AddGap,
+    RandomArrayRotation,
 )
 from .labeling import (
     SupervisedLabeller,

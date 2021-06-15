@@ -354,3 +354,66 @@ class AddGap:
         np.put_along_axis(x, gap, 0, axis=axis)
 
         state_dict[self.key[1]] = (x, metadata)
+
+
+class RandomArrayRotation:
+    """
+    Randomly rotates a set of arrays, i.e., shifts samples along an axis and puts the end samples to the start.
+    The same rotation will be applied to each array.
+    All arrays need to have the same length along the target axis.
+
+    .. warning::
+        This augmentation does **not** modify the metadata, as positional entries anyhow become non-unique after rotation.
+        Workflows should therefore always first generate labels from metadata and then jointly rotate data and labels.
+
+    :param keys: Single key specification or list of key specifications.
+                 Each key specification is either a string, for identical input and output keys,
+                 or as a tuple of two strings, input and output keys.
+                 Defaults to "X".
+    :param axis: Sample axis. Either a single integer or a list of integers for multiple keys.
+                 If a single integer but multiple keys are provided, the same axis will be used for each key.
+                 Defaults to -1.
+    """
+
+    def __init__(self, keys="X", axis=-1):
+        # Single key
+        if not isinstance(keys, list):
+            keys = [keys]
+
+        # Resolve identical input and output keys
+        self.keys = []
+        for key in keys:
+            if isinstance(key, tuple):
+                self.keys.append(key)
+            else:
+                self.keys.append((key, key))
+
+        if isinstance(axis, list):
+            self.axis = axis
+        else:
+            self.axis = [axis] * len(self.keys)
+
+    def __call__(self, state_dict):
+        rotation = None
+        n_samples = None
+
+        for key, axis in zip(self.keys, self.axis):
+            x, metadata = state_dict[key[0]]
+
+            if key[0] != key[1]:
+                # Ensure metadata is not modified inplace unless input and output key are anyhow identical
+                metadata = copy.deepcopy(metadata)
+
+            if n_samples is None:
+                n_samples = x.shape[axis]
+                rotation = np.random.randint(n_samples)
+            else:
+                if n_samples != x.shape[axis]:
+                    raise ValueError(
+                        "RandomArrayRotation requires all inputs to be of identical length along "
+                        "the provided axis."
+                    )
+
+            x = np.roll(x, rotation, axis=axis)
+
+            state_dict[key[1]] = (x, metadata)
