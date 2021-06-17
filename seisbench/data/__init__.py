@@ -13,4 +13,4 @@ from .lendb import LenDB
 from .neic import NEIC
 from .scedc import SCEDC, Ross2018JGRFM, Ross2018JGRPick, Ross2018GPD, Meier2019JGR
 from .ethz import ETHZ
-from .instance import InstanceNoise, InstanceCounts, InstanceGM
+from .instance import InstanceNoise, InstanceCounts, InstanceGM, InstanceCountsCombined

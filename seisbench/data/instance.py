@@ -1,6 +1,6 @@
 import seisbench
 import seisbench.util
-from .base import BenchmarkDataset
+from .base import BenchmarkDataset, MultiWaveformDataset
 
 import shutil
 import bz2
@@ -154,3 +154,14 @@ class InstanceGM(InstanceTypeDataset):
         data_url = "http://repo.pi.ingv.it/instance/Instance_events_gm.hdf5.bz2"
 
         self._download_helper(writer, metadata_url, data_url, **kwargs)
+
+
+class InstanceCountsCombined(MultiWaveformDataset):
+    """
+    Convenience class to jointly load :py:class:`InstanceCounts` and :py:class:`InstanceNoise`.
+
+    :param kwargs: Passed to the constructors of both :py:class:`InstanceCounts` and :py:class:`InstanceNoise`
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__([InstanceCounts(**kwargs), InstanceNoise(**kwargs)])
