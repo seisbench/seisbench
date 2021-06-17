@@ -1,5 +1,6 @@
 from .base import (
     WaveformDataset,
+    MultiWaveformDataset,
     BenchmarkDataset,
     WaveformDataWriter,
     Bucketer,

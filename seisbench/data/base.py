@@ -13,6 +13,7 @@ import inspect
 import scipy.signal
 import copy
 from collections import defaultdict
+from collections.abc import Iterable
 
 
 class WaveformDataset:
@@ -83,12 +84,7 @@ class WaveformDataset:
         else:
             self._name = name
 
-        if cache not in ["full", "trace", None]:
-            raise ValueError(
-                f"Unknown cache strategy '{cache}'. Allowed values are 'full', 'trace' and None."
-            )
-
-        self._cache = cache
+        self.cache = cache
         self._path = path
         self._chunks = chunks
         if chunks is not None:
@@ -128,6 +124,16 @@ class WaveformDataset:
     def __str__(self):
         return f"{self._name} - {len(self)} traces"
 
+    def __add__(self, other):
+        if isinstance(other, WaveformDataset):
+            return MultiWaveformDataset([self, other])
+        elif isinstance(other, MultiWaveformDataset):
+            return MultiWaveformDataset([self] + other.datasets)
+        else:
+            raise TypeError(
+                "Can only add WaveformDataset and MultiWaveformDataset to WaveformDataset."
+            )
+
     def copy(self):
         """
         Create a copy of the data set. All attributes are copied by value, except waveform cache entries.
@@ -156,6 +162,15 @@ class WaveformDataset:
     @property
     def cache(self):
         return self._cache
+
+    @cache.setter
+    def cache(self, cache):
+        if cache not in ["full", "trace", None]:
+            raise ValueError(
+                f"Unknown cache strategy '{cache}'. Allowed values are 'full', 'trace' and None."
+            )
+
+        self._cache = cache
 
     @property
     def path(self):
@@ -513,6 +528,8 @@ class WaveformDataset:
 
         :param mask: Boolean mask to apple to metadata.
         :type mask: masked-array
+        :param inplace: If true, filter inplace.
+        :type inplace: bool
 
         Example usage:
 
@@ -520,7 +537,7 @@ class WaveformDataset:
 
             dataset.filter(dataset["p_status"] == "manual")
 
-        :return:
+        :return: None if inplace=True, otherwise the filtered dataset.
         """
         if inplace:
             self._metadata = self._metadata[mask]
@@ -532,7 +549,7 @@ class WaveformDataset:
 
     # NOTE: lat/lon columns are specified to enhance generalisability as naming convention may
     # change between datasets and users may also want to filter as a function of  recievers/sources
-    def region_filter(self, domain, lat_col, lon_col):
+    def region_filter(self, domain, lat_col, lon_col, inplace=True):
         """
         In place filtering of dataset based on predefined region or geometry.
         See also convenience functions region_filter_[source|receiver]
@@ -548,17 +565,23 @@ class WaveformDataset:
         check_domain = lambda metadata: domain.is_in_domain(
             metadata[lat_col], metadata[lon_col]
         )
-        mask = self._metadata.apply(check_domain, axis=1)
-        self.filter(mask)
+        mask = self.metadata.apply(check_domain, axis=1)
+        self.filter(mask, inplace=inplace)
 
-    def region_filter_source(self, domain):
+    def region_filter_source(self, domain, inplace=True):
         self.region_filter(
-            domain, lat_col="source_latitude_deg", lon_col="source_longitude_deg"
+            domain,
+            lat_col="source_latitude_deg",
+            lon_col="source_longitude_deg",
+            inplace=inplace,
         )
 
-    def region_filter_receiver(self, domain):
+    def region_filter_receiver(self, domain, inplace=True):
         self.region_filter(
-            domain, lat_col="station_latitude_deg", lon_col="station_longitude_deg"
+            domain,
+            lat_col="station_latitude_deg",
+            lon_col="station_longitude_deg",
+            inplace=inplace,
         )
 
     def get_split(self, split):
@@ -692,15 +715,16 @@ class WaveformDataset:
         Collects waveforms and returns them as an array.
 
         :param idx: Idx or list of idx to obtain waveforms for
-        :param mask: Binary mask on the metadata, indicating which traces should be returned. Can not be used jointly with split.
+        :param mask: Binary mask on the metadata, indicating which traces should be returned. Can not be used jointly with idx.
         :param sampling_rate: Target sampling rate, overwrites sampling rate for dataset
-        :return: Waveform array with dimensions ordered according to dimension_order e.g. default 'NCW' (number of traces, number of components, record samples). If the number of components or record samples varies between different entries, all entries are padded to the maximum length.
+        :return: Waveform array with dimensions ordered according to dimension_order e.g. default 'NCW' (number of traces, number of components, record samples).
+                 If the number of record samples varies between different entries, all entries are padded to the maximum length.
         """
         squeeze = False
         if idx is not None:
             if mask is not None:
                 raise ValueError("Mask can not be used jointly with idx.")
-            if isinstance(idx, int):
+            if not isinstance(idx, Iterable):
                 idx = [idx]
                 squeeze = True
 
@@ -1026,6 +1050,339 @@ class WaveformDataset:
         return fig
 
 
+class MultiWaveformDataset:
+    """
+    A :py:class:`MultiWaveformDataset` is an ordered collection of :py:class:`WaveformDataset`.
+    It exposes mostly the same API as a single :py:class:`WaveformDataset`.
+
+    The constructor checks for compatibility of `dimension_order`, `component_order` and `sampling_rate`.
+    The caching strategy of each contained dataset is left unmodified,
+    but a warning is issued if different caching schemes are found.
+
+    :param datasets: List of :py:class:`WaveformDataset`.
+                     The constructor will create a copy of each dataset using the :py:func:`WaveformDataset.copy` method.
+    """
+
+    def __init__(self, datasets):
+        if not isinstance(datasets, list) or not all(
+            isinstance(x, WaveformDataset) for x in datasets
+        ):
+            raise TypeError(
+                "MultiWaveformDataset expects a list of WaveformDataset as input."
+            )
+
+        if len(datasets) == 0:
+            raise ValueError("MultiWaveformDatasets need to have at least one member.")
+
+        self._datasets = [dataset.copy() for dataset in datasets]
+        self._metadata = pd.concat(x.metadata for x in datasets)
+        self._homogenize_dataformat(datasets)
+
+    def __add__(self, other):
+        if isinstance(other, WaveformDataset):
+            return MultiWaveformDataset(self.datasets + [other])
+        elif isinstance(other, MultiWaveformDataset):
+            return MultiWaveformDataset(self.datasets + other.datasets)
+        else:
+            raise TypeError(
+                "Can only add WaveformDataset and MultiWaveformDataset to MultiWaveformDataset."
+            )
+
+    def _homogenize_dataformat(self, datasets):
+        has_split = ["split" in dataset.metadata.columns for dataset in datasets]
+        if (
+            np.sum(has_split) % len(datasets) != 0
+        ):  # Check if all or no dataset has a split
+            seisbench.logger.warning(
+                "Combining datasets with and without split. "
+                "get_split and all derived methods will never return any samples from "
+                "the datasets without split."
+            )
+        if not self._test_attribute_equal(datasets, "cache"):
+            seisbench.logger.warning(
+                "Found inconsistent caching strategies. "
+                "This does not cause an error, but is usually unintended."
+            )
+        if not self._test_attribute_equal(datasets, "sampling_rate"):
+            seisbench.logger.warning(
+                "Found mismatching sampling rates between datasets. "
+                "Setting sampling rate to None, i.e., deactivating automatic resampling. "
+                "You can change the sampling rate for all datasets through "
+                "the sampling_rate property."
+            )
+            self.sampling_rate = None
+
+        if self.sampling_rate is None and len(self) > 0:
+            sr = self.metadata["trace_sampling_rate_hz"].values
+            q = sr / sr[0]
+            if not np.allclose(q, 1):
+                seisbench.logger.warning(
+                    "Data set contains mixed sampling rate, but no sampling rate was specified for the dataset."
+                    "get_waveforms will return mixed sampling rate waveforms."
+                )
+
+        if not self._test_attribute_equal(datasets, "component_order"):
+            seisbench.logger.warning(
+                "Found inconsistent component orders. "
+                f"Using component order from first dataset ({self.datasets[0].component_order})."
+            )
+            self.component_order = self.datasets[0].component_order
+
+        if not self._test_attribute_equal(datasets, "dimension_order"):
+            seisbench.logger.warning(
+                "Found inconsistent dimension orders. "
+                f"Using dimension order from first dataset ({self.datasets[0].dimension_order})."
+            )
+            self.dimension_order = self.datasets[0].dimension_order
+
+        if not self._test_attribute_equal(datasets, "missing_components"):
+            seisbench.logger.warning(
+                "Found inconsistent missing_components. "
+                f"Using missing_components from first dataset ({self.datasets[0].missing_components})."
+            )
+            self.missing_components = self.datasets[0].missing_components
+
+    @property
+    def datasets(self):
+        return list(self._datasets)
+
+    @property
+    def metadata(self):
+        return self._metadata
+
+    @property
+    def sampling_rate(self):
+        return self.datasets[0].sampling_rate
+
+    @sampling_rate.setter
+    def sampling_rate(self, sampling_rate):
+        for dataset in self.datasets:
+            dataset.sampling_rate = sampling_rate
+
+    @property
+    def dimension_order(self):
+        return self.datasets[0].dimension_order
+
+    @dimension_order.setter
+    def dimension_order(self, value):
+        for dataset in self.datasets:
+            dataset.dimension_order = value
+
+    @property
+    def missing_components(self):
+        return self.datasets[0].missing_components
+
+    @missing_components.setter
+    def missing_components(self, value):
+        for dataset in self.datasets:
+            dataset.missing_components = value
+
+    @property
+    def component_order(self):
+        return self.datasets[0].component_order
+
+    @component_order.setter
+    def component_order(self, value):
+        for dataset in self.datasets:
+            dataset.component_order = value
+
+    @property
+    def cache(self):
+        if self._test_attribute_equal(self.datasets, "cache"):
+            return self.datasets[0].cache
+        else:
+            return "Inconsistent"
+
+    @cache.setter
+    def cache(self, value):
+        for dataset in self.datasets:
+            dataset.cache = value
+
+    @staticmethod
+    def _test_attribute_equal(datasets, attribute):
+        """
+        Checks whether the given attribute is equal in all datasets.
+
+        :param datasets: List of WaveformDatasets
+        :param attribute: attribute as string
+        :return: True if attribute is identical in all datasets, false otherwise
+        """
+        attribute_list = [dataset.__getattribute__(attribute) for dataset in datasets]
+        return all(x == attribute_list[0] for x in attribute_list)
+
+    def __getitem__(self, item):
+        if not isinstance(item, str):
+            raise TypeError("Can only use strings to access metadata parameters")
+        return self.metadata[item]
+
+    def __len__(self):
+        return len(self.metadata)
+
+    def get_sample(self, idx, *args, **kwargs):
+        """
+        Wraps :py:func:`WaveformDataset.get_sample`
+
+        :param idx: Index of the sample
+        :param args: passed to parent function
+        :param kwargs: passed to parent function
+        :return: Return value of parent function
+        """
+        dataset_idx, local_idx = self._resolve_idx(idx)
+        return self.datasets[dataset_idx].get_sample(local_idx, *args, **kwargs)
+
+    def get_waveforms(self, idx=None, mask=None, **kwargs):
+        """
+        Collects waveforms and returns them as an array.
+
+        :param idx: Idx or list of idx to obtain waveforms for
+        :param mask: Binary mask on the metadata, indicating which traces should be returned. Can not be used jointly with idx.
+        :param kwargs: Passed to :py:func:`WaveformDataset.get_waveforms`
+        :return: Waveform array with dimensions ordered according to dimension_order e.g. default 'NCW' (number of traces, number of components, record samples).
+                 If the number record samples varies between different entries, all entries are padded to the maximum length.
+        """
+        squeeze = False
+        waveforms = []
+        if idx is not None:
+            if mask is not None:
+                raise ValueError("Mask can not be used jointly with idx.")
+            if not isinstance(idx, Iterable):
+                idx = [idx]
+                squeeze = True
+
+            for i in idx:
+                dataset_idx, local_idx = self._resolve_idx(i)
+                waveforms.append(
+                    self.datasets[dataset_idx].get_waveforms(idx=[local_idx], **kwargs)
+                )
+        else:
+            if mask is None:
+                mask = np.ones(len(self), dtype=bool)
+
+            submasks = self._split_mask(mask)
+
+            for submask, dataset in zip(submasks, self.datasets):
+                if submask.any():
+                    waveforms.append(dataset.get_waveforms(mask=submask, **kwargs))
+
+        if self.missing_components == "ignore":
+            # Check consistent number of components
+            component_dimension = list(self.dimension_order).index("C")
+            n_components = np.array([x.shape[component_dimension] for x in waveforms])
+            if (n_components[0] != n_components).any():
+                raise ValueError(
+                    "Requested traces with mixed number of components. "
+                    "Change missing_components or request traces separately."
+                )
+
+        batch_dimension = list(self.dimension_order).index("N")
+        waveforms = self._pad_pack_along_axis(waveforms, axis=batch_dimension)
+
+        if squeeze:
+            waveforms = np.squeeze(waveforms, axis=batch_dimension)
+
+        return waveforms
+
+    @staticmethod
+    def _pad_pack_along_axis(seq, axis):
+        """
+        Concatenate arrays along axis. In each but the given axis, all input arrays are padded with zeros
+        to the maximum size of any input array.
+
+        :param seq: List of arrays
+        :param axis: Axis along which to concatenate
+        :return:
+        """
+        max_size = np.array(
+            [max([x.shape[i] for x in seq]) for i in range(seq[0].ndim)]
+        )
+
+        new_seq = []
+        for i, elem in enumerate(seq):
+            d = max_size - np.array(elem.shape)
+            if (d != 0).any():
+                pad = [(0, d_dim) for d_dim in d]
+                pad[axis] = (0, 0)
+                new_seq.append(np.pad(elem, pad, "constant", constant_values=0))
+            else:
+                new_seq.append(elem)
+
+        return np.concatenate(new_seq, axis=axis)
+
+    def filter(self, mask, inplace=True):
+        """
+        Filters dataset, similar to :py:func:`WaveformDataset.filter`.
+
+        :param mask: Boolean mask to apple to metadata.
+        :type mask: masked-array
+        :param inplace: If true, filter inplace.
+        :type inplace: bool
+        :return: None if filter=true, otherwise the filtered dataset.
+        """
+        submasks = self._split_mask(mask)
+        if inplace:
+            for submask, dataset in zip(submasks, self.datasets):
+                dataset.filter(submask, inplace=True)
+            # Calculate new metadata
+            self._metadata = pd.concat(x.metadata for x in self.datasets)
+
+        else:
+            return MultiWaveformDataset(
+                [
+                    dataset.filter(submask, inplace=False)
+                    for submask, dataset in zip(submasks, self.datasets)
+                ]
+            )
+
+    def _resolve_idx(self, idx):
+        """
+        Translates an index into the dataset index and the index within the dataset
+
+        :param idx: Index of the sample
+        :return: Dataset index, index within the dataset
+        """
+        borders = np.cumsum([len(x) for x in self.datasets])
+        if idx < 0:
+            idx += len(self)
+
+        if idx >= len(self) or idx < 0:
+            raise IndexError("Sample index out out range.")
+
+        dataset_idx = np.argmax(idx < borders)
+        local_idx = (
+            idx - borders[dataset_idx] + len(self.datasets[dataset_idx])
+        )  # Resolve the negative indexing
+
+        return dataset_idx, local_idx
+
+    def _split_mask(self, mask):
+        # Split one mask for the full dataset into sevearl masks for each subset
+        if not len(mask) == len(self):
+            raise ValueError("Mask does not match dataset.")
+
+        masks = []
+        p = 0
+        for dataset in self.datasets:
+            masks.append(mask[p : p + len(dataset)])
+            p += len(dataset)
+
+        return masks
+
+    def preload_waveforms(self, *args, **kwargs):
+        for dataset in self.datasets:
+            dataset.preload_waveforms(*args, **kwargs)
+
+    # Copy compatible parts from WaveformDataset
+    region_filter = WaveformDataset.region_filter
+    region_filter_source = WaveformDataset.region_filter_source
+    region_filter_receiver = WaveformDataset.region_filter_receiver
+    plot_map = WaveformDataset.plot_map
+    get_split = WaveformDataset.get_split
+    train = WaveformDataset.train
+    dev = WaveformDataset.dev
+    test = WaveformDataset.test
+    train_dev_test = WaveformDataset.train_dev_test
+
+
 class LoadingContext:
     """
     The LoadingContext is a dict of pointers to the hdf5 files for the chunks.
@@ -1096,7 +1453,6 @@ class BenchmarkDataset(WaveformDataset, ABC):
         if chunks is None:
             chunks = self.available_chunks(force=force, wait_for_file=wait_for_file)
 
-        # TODO: Validate if cached dataset was downloaded with the same parameters
         for chunk in chunks:
 
             def download_callback(files):

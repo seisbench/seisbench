@@ -874,3 +874,296 @@ def test_get_waveform_component_order_mismatching():
     with pytest.raises(ValueError) as e:
         dummy.get_waveforms([0, 1])
         assert "Requested traces with mixed number of components." in str(e)
+
+
+def test_multi_waveform_dataset_type():
+    dummy = seisbench.data.DummyDataset()
+
+    # Works
+    seisbench.data.MultiWaveformDataset([dummy])
+
+    # Not a list as input
+    with pytest.raises(TypeError):
+        seisbench.data.MultiWaveformDataset(dummy)
+
+    # List entry not a WaveformDataset
+    with pytest.raises(TypeError):
+        seisbench.data.MultiWaveformDataset([dummy, 2])
+
+    # Empty list
+    with pytest.raises(ValueError):
+        seisbench.data.MultiWaveformDataset([])
+
+
+def test_test_attribute_equal():
+    datasets = [
+        seisbench.data.DummyDataset(cache=None),
+        seisbench.data.DummyDataset(cache=None),
+    ]
+    assert seisbench.data.MultiWaveformDataset._test_attribute_equal(datasets, "cache")
+
+    datasets = [
+        seisbench.data.DummyDataset(cache="full"),
+        seisbench.data.DummyDataset(cache=None),
+    ]
+    assert not seisbench.data.MultiWaveformDataset._test_attribute_equal(
+        datasets, "cache"
+    )
+
+
+def test_multi_waveform_dataset_split_warning(caplog):
+    datasets = [seisbench.data.DummyDataset(), seisbench.data.DummyDataset()]
+    with caplog.at_level(logging.WARNING):
+        seisbench.data.MultiWaveformDataset(datasets)
+    assert "Combining datasets with and without split." not in caplog.text
+
+    caplog.clear()
+
+    del datasets[0].metadata["split"]
+    with caplog.at_level(logging.WARNING):
+        seisbench.data.MultiWaveformDataset(datasets)
+    assert "Combining datasets with and without split." in caplog.text
+
+
+def test_multi_waveform_dataset_cache_warning(caplog):
+    datasets = [
+        seisbench.data.DummyDataset(cache=None),
+        seisbench.data.DummyDataset(cache=None),
+    ]
+    with caplog.at_level(logging.WARNING):
+        seisbench.data.MultiWaveformDataset(datasets)
+    assert "Found inconsistent caching strategies." not in caplog.text
+
+    caplog.clear()
+
+    datasets = [
+        seisbench.data.DummyDataset(cache="full"),
+        seisbench.data.DummyDataset(cache=None),
+    ]
+    with caplog.at_level(logging.WARNING):
+        seisbench.data.MultiWaveformDataset(datasets)
+    assert "Found inconsistent caching strategies." in caplog.text
+
+
+def test_multi_waveform_dataset_sampling_rate(caplog):
+    datasets = [
+        seisbench.data.DummyDataset(sampling_rate=100),
+        seisbench.data.DummyDataset(sampling_rate=100),
+    ]
+    with caplog.at_level(logging.WARNING):
+        seisbench.data.MultiWaveformDataset(datasets)
+    assert "Found mismatching sampling rates between datasets." not in caplog.text
+
+    datasets = [
+        seisbench.data.DummyDataset(sampling_rate=100),
+        seisbench.data.DummyDataset(sampling_rate=200),
+    ]
+    with caplog.at_level(logging.WARNING):
+        multi = seisbench.data.MultiWaveformDataset(datasets)
+    assert "Found mismatching sampling rates between datasets." in caplog.text
+    assert all(x.sampling_rate is None for x in multi.datasets)
+
+
+def test_multi_waveform_dataset_component_warning(caplog):
+    datasets = [
+        seisbench.data.DummyDataset(component_order="ZNE"),
+        seisbench.data.DummyDataset(component_order="ZNE"),
+    ]
+    with caplog.at_level(logging.WARNING):
+        seisbench.data.MultiWaveformDataset(datasets)
+    assert "Found inconsistent component orders." not in caplog.text
+
+    datasets = [
+        seisbench.data.DummyDataset(component_order="ZNE"),
+        seisbench.data.DummyDataset(component_order="NEZ"),
+    ]
+    with caplog.at_level(logging.WARNING):
+        multi = seisbench.data.MultiWaveformDataset(datasets)
+    assert "Found inconsistent component orders." in caplog.text
+    assert all(x.component_order == "ZNE" for x in multi.datasets)
+
+
+def test_multi_waveform_dataset_dimension_warning(caplog):
+    datasets = [
+        seisbench.data.DummyDataset(dimension_order="NCW"),
+        seisbench.data.DummyDataset(dimension_order="NCW"),
+    ]
+    with caplog.at_level(logging.WARNING):
+        seisbench.data.MultiWaveformDataset(datasets)
+    assert "Found inconsistent dimension orders." not in caplog.text
+
+    datasets = [
+        seisbench.data.DummyDataset(dimension_order="NCW"),
+        seisbench.data.DummyDataset(dimension_order="NWC"),
+    ]
+    with caplog.at_level(logging.WARNING):
+        multi = seisbench.data.MultiWaveformDataset(datasets)
+    assert "Found inconsistent dimension orders." in caplog.text
+    assert all(x.dimension_order == "NCW" for x in multi.datasets)
+
+
+def test_multi_waveform_dataset_missing_component_warning(caplog):
+    datasets = [
+        seisbench.data.DummyDataset(missing_components="pad"),
+        seisbench.data.DummyDataset(missing_components="pad"),
+    ]
+    with caplog.at_level(logging.WARNING):
+        seisbench.data.MultiWaveformDataset(datasets)
+    assert "Found inconsistent missing_components." not in caplog.text
+
+    datasets = [
+        seisbench.data.DummyDataset(missing_components="pad"),
+        seisbench.data.DummyDataset(missing_components="copy"),
+    ]
+    with caplog.at_level(logging.WARNING):
+        multi = seisbench.data.MultiWaveformDataset(datasets)
+    assert "Found inconsistent missing_components." in caplog.text
+    assert all(x.dimension_order == "NCW" for x in multi.datasets)
+
+
+def test_multi_waveform_dataset_resolve_idx():
+    datasets = [seisbench.data.DummyDataset(), seisbench.data.DummyDataset()]
+    multi = seisbench.data.MultiWaveformDataset(datasets)
+
+    assert multi._resolve_idx(0) == (0, 0)
+    assert multi._resolve_idx(55) == (0, 55)
+    assert multi._resolve_idx(-150) == (0, 50)
+    assert multi._resolve_idx(100) == (1, 0)
+    assert multi._resolve_idx(114) == (1, 14)
+    assert multi._resolve_idx(-70) == (1, 30)
+
+    with pytest.raises(IndexError):
+        multi._resolve_idx(200)
+
+    with pytest.raises(IndexError):
+        multi._resolve_idx(-201)
+
+    with pytest.raises(IndexError):
+        multi._resolve_idx(205)
+
+    with pytest.raises(IndexError):
+        multi._resolve_idx(-205)
+
+
+def test_multi_waveform_dataset_test_get_sample():
+    datasets = [seisbench.data.DummyDataset(), seisbench.data.DummyDataset()]
+    multi = seisbench.data.MultiWaveformDataset(datasets)
+
+    waveform1, metadata1 = datasets[0].get_sample(10)
+    waveform2, metadata2 = multi.get_sample(10)
+
+    assert (waveform1 == waveform2).all()
+    assert metadata1 == metadata2
+
+
+def test_multi_waveform_dataset_split_mask():
+    np.random.seed(42)
+    dummy = seisbench.data.DummyDataset()
+    multi = seisbench.data.MultiWaveformDataset(list(dummy.train_dev_test()))
+
+    mask = np.random.rand(100) > 0.5
+
+    mask1, mask2, mask3 = multi._split_mask(mask)
+
+    assert (mask1 == mask[:60]).all()
+    assert (mask2 == mask[60:70]).all()
+    assert (mask3 == mask[70:]).all()
+
+
+def test_pad_pack_along_axis():
+    np.random.seed(42)
+
+    x = np.random.rand(5, 2, 3)
+    y = np.random.rand(2, 3, 2)
+
+    packed = seisbench.data.MultiWaveformDataset._pad_pack_along_axis([x, y], axis=1)
+    assert packed.shape == (5, 5, 3)
+    assert (packed[:5, :2, :3] == x).all()
+    assert (packed[:2, 2:5, :2] == y).all()
+
+
+def test_multi_waveform_dataset_test_get_waveforms():
+    datasets = [seisbench.data.DummyDataset(), seisbench.data.DummyDataset()]
+    multi = seisbench.data.MultiWaveformDataset(datasets)
+
+    # Single idx
+    waveform1 = datasets[0].get_waveforms(10)
+    waveform2 = multi.get_waveforms(10)
+    assert (waveform1 == waveform2).all()
+
+    # Single idx
+    waveform1 = datasets[1].get_waveforms(10)
+    waveform2 = multi.get_waveforms(110)
+    assert (waveform1 == waveform2).all()
+
+    # Multiple idx
+    waveform1 = datasets[0].get_waveforms([1, 10])
+    waveform2 = datasets[1].get_waveforms(11)
+    waveform3 = multi.get_waveforms([1, 10, 111])
+    assert (waveform3[:2] == waveform1).all()
+    assert (waveform3[2] == waveform2).all()
+
+    # Mask - empty for one datasets
+    mask = np.zeros(len(multi), dtype=bool)
+    mask[10:20] = True
+    waveform1 = datasets[0].get_waveforms(mask=mask[:100])
+    waveform2 = multi.get_waveforms(mask=mask)
+    assert (waveform1 == waveform2).all()
+
+    # Mask - non-empty for both datasets
+    mask = np.zeros(len(multi), dtype=bool)
+    mask[10:20] = True
+    mask[120:130] = True
+    waveform1 = datasets[0].get_waveforms(mask=mask[:100])
+    waveform2 = datasets[1].get_waveforms(mask=mask[100:])
+    waveform3 = multi.get_waveforms(mask=mask)
+    assert (waveform1 == waveform3[:10]).all()
+    assert (waveform2 == waveform3[10:]).all()
+
+
+def test_multi_waveform_dataset_filter():
+    np.random.seed(42)
+    dummy = seisbench.data.DummyDataset()
+    multi = seisbench.data.MultiWaveformDataset(list(dummy.train_dev_test()))
+
+    # Empty output
+    mask = np.zeros(100, dtype=bool)
+    filtered = multi.filter(mask, inplace=False)
+    assert len(filtered) == 0
+    assert len(multi) == 100
+
+    # Random mask
+    mask = np.random.rand(len(multi)) > 0.5
+    filtered = multi.filter(mask, inplace=False)
+    assert len(filtered) == np.sum(mask)
+    assert len(multi) == 100
+
+    # Random mask - Inplace
+    mask = np.random.rand(len(multi)) > 0.5
+    multi.filter(mask, inplace=True)
+    assert len(multi) == np.sum(mask)
+
+
+def test_waveform_dataset_add():
+    dummy = seisbench.data.DummyDataset()
+    train, dev, test = dummy.train_dev_test()
+
+    with pytest.raises(TypeError):
+        _ = train + 1
+
+    td = train + dev
+    assert len(td.datasets) == 2
+    assert len(td.datasets[0]) == len(train)
+    assert len(td.datasets[1]) == len(dev)
+
+    ttd = test + td
+    assert len(ttd.datasets) == 3
+    assert len(ttd.datasets[0]) == len(test)
+    assert len(ttd.datasets[1]) == len(train)
+    assert len(ttd.datasets[2]) == len(dev)
+
+    tdt = td + test
+    assert len(tdt.datasets) == 3
+    assert len(tdt.datasets[0]) == len(train)
+    assert len(tdt.datasets[1]) == len(dev)
+    assert len(tdt.datasets[2]) == len(test)
