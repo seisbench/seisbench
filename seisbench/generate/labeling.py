@@ -3,6 +3,7 @@ import re
 from abc import ABC, abstractmethod
 
 import numpy as np
+import seisbench
 from seisbench import config
 from seisbench.util.ml import gaussian_pick
 
@@ -282,7 +283,7 @@ class ProbabilisticPointLabeller(ProbabilisticLabeller):
 
         _, _, width_dim = self._get_dimension_order_from_config(config, self.ndim)
 
-        position_sample = int(self.position * y.shape[width_dim])
+        position_sample = int(self.position * (y.shape[width_dim] - 1))
         y = np.take(y, position_sample, axis=width_dim)
 
         return y
@@ -295,10 +296,11 @@ class ProbabilisticPointLabeller(ProbabilisticLabeller):
 
 class DetectionLabeller(SupervisedLabeller):
     """
-    Create detection labels from picks as in Mousavi et al. (2020, Nature communications).
-    Detections range from P to S + factor * (S - P) and are represented through a boxcar time series with the same
-    length as the input waveforms.
-    Detections are only annotated if both P and S phases are present.
+    Create detection labels from picks.
+    The labeler can either use fixed detection length or determine the lenght from the P to S time as in
+    Mousavi et al. (2020, Nature communications). In the latter case, detections range from P to S + factor * (S - P)
+    and are only annotated if both P and S phases are present.
+    All detections are represented through a boxcar time series with the same length as the input waveforms.
     For both P and S, lists of phases can be passed of which the sequentially first one will be used.
     All picks with NaN sample are treated as not present.
 
@@ -308,9 +310,13 @@ class DetectionLabeller(SupervisedLabeller):
     :type s_phases: str, list[str]
     :param factor: Factor for length of window after S onset
     :type factor: float
+    :param fixed_window: Number of samples for fixed window detections. If none, will determine length from P to S time.
+    :type fixed_window: int
     """
 
-    def __init__(self, p_phases, s_phases, factor=1.4, **kwargs):
+    def __init__(
+        self, p_phases, s_phases=None, factor=1.4, fixed_window=None, **kwargs
+    ):
         self.label_method = "probabilistic"
         self.label_columns = "detections"
         if isinstance(p_phases, str):
@@ -320,10 +326,19 @@ class DetectionLabeller(SupervisedLabeller):
 
         if isinstance(s_phases, str):
             self.s_phases = [s_phases]
+        elif s_phases is None:
+            self.s_phases = []
         else:
             self.s_phases = s_phases
 
+        if s_phases is not None and fixed_window is not None:
+            seisbench.logger.warning(
+                "Provided both S phases and fixed window length to DetectionLabeller. "
+                "Will use fixed window size and ignore S phases."
+            )
+
         self.factor = factor
+        self.fixed_window = fixed_window
 
         kwargs["dim"] = kwargs.get("dim", -2)
         super().__init__(label_type="multi_class", **kwargs)
@@ -333,6 +348,12 @@ class DetectionLabeller(SupervisedLabeller):
             config, self.ndim
         )
 
+        if self.fixed_window:
+            # Only label until end of fixed window
+            factor = 0
+        else:
+            factor = self.factor
+
         if self.ndim == 2:
             y = np.zeros((1, X.shape[width_dim]))
             p_arrivals = [
@@ -340,11 +361,15 @@ class DetectionLabeller(SupervisedLabeller):
                 for phase in self.p_phases
                 if phase in metadata and not np.isnan(metadata[phase])
             ]
-            s_arrivals = [
-                metadata[phase]
-                for phase in self.s_phases
-                if phase in metadata and not np.isnan(metadata[phase])
-            ]
+            if self.fixed_window is not None:
+                # Fake S arrivals for simulating fixed window
+                s_arrivals = [x + self.fixed_window for x in p_arrivals]
+            else:
+                s_arrivals = [
+                    metadata[phase]
+                    for phase in self.s_phases
+                    if phase in metadata and not np.isnan(metadata[phase])
+                ]
 
             if len(p_arrivals) != 0 and len(s_arrivals) != 0:
                 p_arrival = min(p_arrivals)
@@ -352,7 +377,7 @@ class DetectionLabeller(SupervisedLabeller):
                 p_to_s = s_arrival - p_arrival
                 if s_arrival >= p_arrival:
                     # Only annotate valid options
-                    y[0, int(p_arrival) : int(s_arrival + self.factor * p_to_s)] = 1
+                    y[0, int(p_arrival) : int(s_arrival + factor * p_to_s)] = 1
 
         elif self.ndim == 3:
             y = np.zeros(
@@ -365,9 +390,14 @@ class DetectionLabeller(SupervisedLabeller):
             p_arrivals = [
                 metadata[phase] for phase in self.p_phases if phase in metadata
             ]
-            s_arrivals = [
-                metadata[phase] for phase in self.s_phases if phase in metadata
-            ]
+
+            if self.fixed_window is not None:
+                # Fake S arrivals for simulating fixed window
+                s_arrivals = [x + self.fixed_window for x in p_arrivals]
+            else:
+                s_arrivals = [
+                    metadata[phase] for phase in self.s_phases if phase in metadata
+                ]
 
             if len(p_arrivals) != 0 and len(s_arrivals) != 0:
                 p_arrivals = np.stack(p_arrivals, axis=-1)  # Shape (samples, phases)
@@ -387,10 +417,11 @@ class DetectionLabeller(SupervisedLabeller):
                 p_to_s = s_arrivals - p_arrivals
 
                 starts = p_arrivals.astype(int)
-                ends = (s_arrivals + self.factor * p_to_s).astype(int)
+                ends = (s_arrivals + factor * p_to_s).astype(int)
 
                 # print(mask, starts, ends)
                 for i, s, e in zip(np.arange(len(mask))[mask], starts, ends):
+                    print(i, s, e)
                     y[i, 0, s:e] = 1
 
         else:

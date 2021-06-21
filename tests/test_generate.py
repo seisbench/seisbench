@@ -13,11 +13,13 @@ from seisbench.generate import (
     ProbabilisticLabeller,
     ProbabilisticPointLabeller,
     StandardLabeller,
+    DetectionLabeller,
 )
 
 import numpy as np
 import copy
 import scipy.signal
+import logging
 import pytest
 from unittest.mock import patch
 
@@ -987,6 +989,38 @@ def test_detection_labeller_3d():
     assert np.allclose(y[1], target1)
 
 
+def test_detection_labeller_3d_fixed():
+    np.random.seed(42)
+
+    state_dict = {
+        "X": (
+            np.random.rand(5, 3, 1000),
+            {
+                "trace_p_arrival_sample": np.array([100, 150, np.nan, 900, np.nan]),
+            },
+        )
+    }
+
+    target0 = np.zeros(1000)
+    target0[100:300] = 1
+    target1 = np.zeros(1000)
+    target1[150:350] = 1
+    target3 = np.zeros(1000)
+    target3[900:] = 1
+
+    p_phases = [f"trace_{x}_arrival_sample" for x in ["p", "p2", "p3"]]
+    labeller = seisbench.generate.labeling.DetectionLabeller(p_phases, fixed_window=200)
+    labeller(state_dict)
+    y = state_dict["y"][0][:, 0, :]
+    assert y.shape == (5, 1000)
+    assert (y[[2, 4]] == 0).all()
+    print(np.sum(y[0]))
+    print(np.sum(target0))
+    assert np.allclose(y[0], target0)
+    assert np.allclose(y[1], target1)
+    assert np.allclose(y[3], target3)
+
+
 def test_detection_labeller_2d():
     np.random.seed(42)
 
@@ -1073,6 +1107,43 @@ def test_detection_labeller_2d():
     y = state_dict["y"][0][0, :]
     assert y.shape == (1000,)
     assert np.allclose(y, target)
+
+
+def test_detection_labeller_2d_fixed():
+    np.random.seed(42)
+
+    state_dict = {
+        "X": (
+            np.random.rand(3, 1000),
+            {
+                "trace_p_arrival_sample": 100,
+            },
+        )
+    }
+
+    target = np.zeros(1000)
+    target[100:300] = 1
+
+    p_phases = [f"trace_{x}_arrival_sample" for x in ["p", "p2", "p3"]]
+    labeller = DetectionLabeller(p_phases, fixed_window=200)
+    labeller(state_dict)
+    y = state_dict["y"][0][0, :]
+    assert y.shape == (1000,)
+    assert np.allclose(y, target)
+
+    state_dict = {
+        "X": (
+            np.random.rand(3, 1000),
+            {
+                "trace_p_arrival_sample": np.nan,
+            },
+        )
+    }
+
+    labeller(state_dict)
+    y = state_dict["y"][0][0, :]
+    assert y.shape == (1000,)
+    assert np.allclose(y, 0)
 
 
 def test_channel_dropout():
@@ -1269,3 +1340,23 @@ def test_probabilistic_point_labeller():
     y = state_dict["y"][0]
     assert y.shape == (5, 3)
     assert np.allclose(np.sum(y, axis=-1), 1)
+
+
+def test_detection_labeller_warning_fixed_and_s_phase(caplog):
+    with caplog.at_level(logging.WARNING):
+        DetectionLabeller(p_phases=["P"], s_phases=["S"])
+
+    assert caplog.text == ""
+
+    with caplog.at_level(logging.WARNING):
+        DetectionLabeller(p_phases=["P"], fixed_window=100)
+
+    assert caplog.text == ""
+
+    with caplog.at_level(logging.WARNING):
+        DetectionLabeller(p_phases=["P"], s_phases=["S"], fixed_window=100)
+
+    assert (
+        "Provided both S phases and fixed window length to DetectionLabeller."
+        in caplog.text
+    )
