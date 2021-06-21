@@ -254,6 +254,45 @@ class ProbabilisticLabeller(PickLabeller):
         return f"ProbabilisticLabeller (label_type={self.label_type}, dim={self.dim})"
 
 
+class ProbabilisticPointLabeller(ProbabilisticLabeller):
+    """
+    This labeller annotates windows true their pick probabilities at a certain point in the window.
+    The output is a probability vector, i.e., [0.5, 0.2, 0.3] could indicate 50 % P wave, 20 % S wave, 30 % noise.
+    This labelling scheme is more flexible than the :py:class:`StandardLabeller` and can encode for example the
+    centrality of a pick within a window or multiple picks within the same window.
+
+    This class relies on the ProbabilisticLabeller, but instead of probability curves only returns the probabilities
+    at one point.
+
+    :param position: Position to label as fraction of the total trace length. Defaults to 0.5, i.e., the center of the window.
+    :type position: float
+    :param kwargs: Passed to ProbabilisticLabeller
+    """
+
+    def __init__(self, position=0.5, **kwargs):
+        self.label_method = "probabilistic"
+        self.position = position
+        if not 0 <= position <= 1:
+            raise ValueError("position must be between 0 and 1.")
+        kwargs["dim"] = kwargs.get("dim", 0)
+        super().__init__(**kwargs)
+
+    def label(self, X, metadata):
+        y = super().label(X, metadata)
+
+        _, _, width_dim = self._get_dimension_order_from_config(config, self.ndim)
+
+        position_sample = int(self.position * y.shape[width_dim])
+        y = np.take(y, position_sample, axis=width_dim)
+
+        return y
+
+    def __str__(self):
+        return (
+            f"ProbabilisticPointLabeller (label_type={self.label_type}, dim={self.dim})"
+        )
+
+
 class DetectionLabeller(SupervisedLabeller):
     """
     Create detection labels from picks as in Mousavi et al. (2020, Nature communications).

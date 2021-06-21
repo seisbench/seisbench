@@ -17,6 +17,7 @@ from .labeling import (
     ProbabilisticLabeller,
     DetectionLabeller,
     StandardLabeller,
+    ProbabilisticPointLabeller,
 )
 from .windows import (
     FixedWindow,

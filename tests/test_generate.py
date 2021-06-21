@@ -11,6 +11,7 @@ from seisbench.generate import (
     ChangeDtype,
     SupervisedLabeller,
     ProbabilisticLabeller,
+    ProbabilisticPointLabeller,
     StandardLabeller,
 )
 
@@ -1213,3 +1214,58 @@ def test_gaussian_noise():
     assert (
         0.14 < np.std(y - x) < 0.16
     )  # Bounds are rather liberal to ensure a stable test
+
+
+def test_probabilistic_point_labeller():
+    np.random.seed(42)
+    state_dict = {
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {
+                "trace_p_arrival_sample": 500,
+                "trace_s_arrival_sample": 700,
+            },
+        )
+    }
+
+    # Assumes standard config['dimension_order'] = 'NCW'
+    # Test label construction for single window, handling NaN values
+    labeller = ProbabilisticPointLabeller(sigma=100)
+    labeller(state_dict)
+
+    p = 1  # P probability
+    s = np.exp(-2)  # S probability
+    y = state_dict["y"][0]
+    assert y.shape == (3,)
+    assert np.isclose(np.sum(y), 1)
+    assert np.isclose(y[0], p / (p + s), atol=1e-2, rtol=1e-2)
+    assert np.isclose(y[1], s / (p + s), atol=1e-2, rtol=1e-2)
+    assert np.isclose(y[2], 0)
+
+    # Label position between p and s
+    labeller = ProbabilisticPointLabeller(sigma=100, position=0.6)
+    labeller(state_dict)
+
+    y = state_dict["y"][0]
+    assert y.shape == (3,)
+    assert np.isclose(np.sum(y), 1)
+    assert np.isclose(y[0], 0.5, atol=1e-2, rtol=1e-2)
+    assert np.isclose(y[1], 0.5, atol=1e-2, rtol=1e-2)
+    assert np.isclose(y[2], 0)
+
+    # Test label construction for multiple windows
+    state_dict = {
+        "X": (
+            np.random.rand(5, 3, 1000),
+            {
+                "trace_p_arrival_sample": [320, -100, 490, 220, 440],
+                "trace_s_arrival_sample": [540, 880, 810, 380, 740],
+            },
+        )
+    }
+    labeller = ProbabilisticPointLabeller(sigma=100, dim=1)
+    labeller(state_dict)
+
+    y = state_dict["y"][0]
+    assert y.shape == (5, 3)
+    assert np.allclose(np.sum(y, axis=-1), 1)
