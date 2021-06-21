@@ -952,10 +952,14 @@ class WaveformModel(SeisBenchModel, ABC):
                 t1 = min(trace.stats.endtime for trace in traces)
 
                 short_traces = [trace.slice(t0, t1) for trace in traces]
-                data = np.zeros((len(component_order), len(short_traces[0].data)))
+                data = np.zeros(
+                    (len(component_order), len(short_traces[0].data) + 2)
+                )  # +2 avoids fractional errors
                 for trace in short_traces:
                     cidx = comp_dict[trace.id[-1]]
-                    data[cidx] = trace.data
+                    data[cidx, : len(trace.data)] = trace.data
+
+                data = data[:, :-2]  # Remove fractional error +2
 
                 output_times.append(t0)
                 output_data.append(data)
