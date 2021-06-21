@@ -377,7 +377,9 @@ class DetectionLabeller(SupervisedLabeller):
                 p_to_s = s_arrival - p_arrival
                 if s_arrival >= p_arrival:
                     # Only annotate valid options
-                    y[0, int(p_arrival) : int(s_arrival + factor * p_to_s)] = 1
+                    p0 = max(int(p_arrival), 0)
+                    p1 = max(int(s_arrival + factor * p_to_s), 0)
+                    y[0, p0:p1] = 1
 
         elif self.ndim == 3:
             y = np.zeros(
@@ -421,7 +423,8 @@ class DetectionLabeller(SupervisedLabeller):
 
                 # print(mask, starts, ends)
                 for i, s, e in zip(np.arange(len(mask))[mask], starts, ends):
-                    print(i, s, e)
+                    s = max(0, s)
+                    e = max(0, e)
                     y[i, 0, s:e] = 1
 
         else:
