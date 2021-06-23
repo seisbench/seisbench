@@ -79,3 +79,56 @@ class GenericGenerator(Dataset):
         state_dict = {k: v[0] for k, v in state_dict.items()}
 
         return state_dict
+
+
+class SteeredGenerator(GenericGenerator):
+    """
+    This data generator follows the same principles as the GenericGenerator.
+    However, in contrast to the GenericGenerator it holds a dataframe with additional information for each sample.
+    This additional information is stored in state_dict["_control_"] as a dict.
+    The generator also loads the trace name from the dataframe as key "trace_name".
+    This generator is particularly useful for evaluation, e.g., when extracting predefined windows from a trace.
+
+    Note that the "_control_" group will usually not be modified by augmentations.
+    This means, that for example after a window selection, sample positions might be of.
+    To automatically handle these, you must explicitly put the relevant control information
+    into the state_dict metadata of the relevant key.
+
+    .. warning::
+        This generator should in most cases not be used for resampling the dataset.
+        For this application, we recommend using a
+        `pytorch Sampler <https://pytorch.org/docs/stable/data.html#data-loading-order-and-sampler`_.
+
+    :param dataset: The underlying SeisBench data set
+    :param metadata: The additional information as pandas dataframe.
+                     Each row corresponds to one sample from the generator.
+    """
+
+    def __init__(self, dataset, metadata):
+        self.metadata = metadata
+        super().__init__(dataset)
+
+    def __str__(self):
+        summary = f"SteeredGenerator with {len(self._augmentations)} augmentations:\n"
+        for i, aug in enumerate(self._augmentations):
+            summary += f" {i + 1}.\t{str(aug)}\n"
+        return summary
+
+    def __len__(self):
+        return len(self.metadata)
+
+    def __getitem__(self, idx):
+        control = self.metadata.iloc[idx].to_dict()
+        data_idx = self.dataset.get_idx_from_trace_name(control["trace_name"])
+        state_dict = {"X": self.dataset.get_sample(data_idx), "_control_": control}
+
+        # Recursive application of augmentation processing methods
+        for func in self._augmentations:
+            func(state_dict)
+
+        # Remove control information
+        del state_dict["_control_"]
+        # Remove all metadata from the output
+        state_dict = {k: v[0] for k, v in state_dict.items()}
+
+        return state_dict

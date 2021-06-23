@@ -346,3 +346,88 @@ class RandomWindow(FixedWindow):
 
     def __str__(self):
         return f"RandomWindow (low={self.low}, high={self.high})"
+
+
+class SteeredWindow(FixedWindow):
+    """
+    Window selection that relies on the "_control_" dict from the :py:class:`SteeredGenerator`.
+    Selects a window of given length with the window defined by start and end sample in the middle.
+    If no length is given, the window between start and end sample is returned.
+    If there are insufficient samples on one side of the target window, the window will be moved.
+    If the total number of samples is insufficient, the window will start at the earliest possible sample.
+    The behavior in this case depends on the chosen strategy for :py:class:`FixedWindow`.
+
+    :param windowlen: Length of the window to be returned.
+                      If None, will be determined using the start and end samples from the "_control_" dict.
+    :type windowlen: int or None
+    :param start_key: Key of the start sample in the "_control_" dict
+    :type start_key: str
+    :param end_key: Key of the end sample in the "_control_" dict
+    :type end_key: str
+    :param window_output_key: The sample start and end will be written as numpy array to this key in the state_dict
+    :type window_output_key: str
+    :param kwargs: Parameters passed to the init method of FixedWindow.
+    """
+
+    def __init__(
+        self,
+        windowlen,
+        start_key="start_sample",
+        end_key="end_sample",
+        window_output_key="window_borders",
+        **kwargs,
+    ):
+        super().__init__(windowlen=windowlen, **kwargs)
+
+        self.start_key = start_key
+        self.end_key = end_key
+        self.window_output_key = window_output_key
+
+    def __call__(self, state_dict):
+        control = state_dict["_control_"]
+
+        start_sample = int(control[self.start_key])
+        end_sample = int(control[self.end_key])
+
+        if self.windowlen is None:
+            windowlen = end_sample - start_sample
+        else:
+            windowlen = self.windowlen
+
+        x, _ = state_dict[self.key[0]]
+        n_samples = x.shape[self.axis]
+
+        sample_range = end_sample - start_sample
+        if sample_range > windowlen:
+            raise ValueError(
+                f"Requested window length is {windowlen}, but the difference between start and end sample "
+                f"is already {end_sample - start_sample}. Can't return window."
+            )
+
+        elif sample_range == windowlen:
+            p0 = max(0, start_sample)
+
+        else:
+            p0 = (
+                start_sample - (windowlen - sample_range) // 2
+            )  # Try to put the window into the center
+
+            if p0 + windowlen > n_samples:
+                p0 = (
+                    n_samples - windowlen
+                )  # If the window end is behind the trace end, move it backward
+
+            p0 = max(
+                0, p0
+            )  # If the window start is before the trace start, move it forward
+
+        window_borders = np.array([start_sample - p0, end_sample - p0])
+        state_dict[self.window_output_key] = (
+            window_borders,
+            {},
+        )  # No metadata associated
+
+        super().__call__(state_dict, p0=p0, windowlen=windowlen)
+
+    def __str__(self):
+        return f"SteeredWindow"

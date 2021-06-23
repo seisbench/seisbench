@@ -1167,3 +1167,35 @@ def test_waveform_dataset_add():
     assert len(tdt.datasets[0]) == len(train)
     assert len(tdt.datasets[1]) == len(dev)
     assert len(tdt.datasets[2]) == len(test)
+
+
+def test_get_idx_from_trace_name():
+    np.random.seed(42)
+
+    dummy = seisbench.data.DummyDataset()
+    assert dummy.get_idx_from_trace_name(dummy["trace_name"].values[0]) == 0
+    assert dummy.get_idx_from_trace_name(dummy["trace_name"].values[90]) == 90
+
+    mask = np.random.rand(len(dummy)) > 0.5
+    dummy.filter(mask, inplace=True)
+
+    assert dummy.get_idx_from_trace_name(dummy["trace_name"].values[0]) == 0
+    assert dummy.get_idx_from_trace_name(dummy["trace_name"].values[20]) == 20
+
+
+def test_get_idx_from_trace_name_multi():
+    # Test for MultiWaveformDataset
+    np.random.seed(42)
+
+    dummy_ = seisbench.data.DummyDataset()
+    train, dev, test = dummy_.train_dev_test()
+    dummy = train + dev + test
+
+    assert dummy.get_idx_from_trace_name(dummy["trace_name"].values[0]) == 0
+    assert dummy.get_idx_from_trace_name(dummy["trace_name"].values[90]) == 90
+
+    mask = np.random.rand(len(dummy)) > 0.5
+    dummy.filter(mask, inplace=True)
+
+    assert dummy.get_idx_from_trace_name(dummy["trace_name"].values[0]) == 0
+    assert dummy.get_idx_from_trace_name(dummy["trace_name"].values[20]) == 20
