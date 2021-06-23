@@ -114,6 +114,7 @@ class WaveformDataset:
 
         self._unify_sampling_rate()
         self._unify_component_order()
+        self._build_trace_name_to_idx_dict()
 
         self.dimension_order = dimension_order
         self.component_order = component_order
@@ -499,6 +500,31 @@ class WaveformDataset:
                     "Keeping original components."
                 )
 
+    def get_idx_from_trace_name(self, trace_name):
+        """
+        Returns the index of the
+
+        :param trace_name: Trace name as in metadata["trace_name"]
+        :return: Index of the sample
+        """
+        if trace_name in self._trace_name_to_idx:
+            return self._trace_name_to_idx[trace_name]
+        else:
+            raise KeyError("The dataset does not contain the requested trace.")
+
+    def _build_trace_name_to_idx_dict(self):
+        """
+        Builds mapping of trace_names to idx.
+        """
+        self._trace_name_to_idx = {
+            trace_name: i for i, trace_name in enumerate(self.metadata["trace_name"])
+        }
+        if len(self._trace_name_to_idx) != len(self.metadata):
+            seisbench.logger.warning(
+                "Found non-unique trace names. "
+                "get_idx_from_trace_name will return only one possible matching trace."
+            )
+
     def preload_waveforms(self, pbar=False):
         """
         Loads waveform data from hdf5 file into cache
@@ -542,6 +568,7 @@ class WaveformDataset:
         if inplace:
             self._metadata = self._metadata[mask]
             self._evict_cache()
+            self._build_trace_name_to_idx_dict()
         else:
             other = self.copy()
             other.filter(mask, inplace=True)
@@ -1077,6 +1104,7 @@ class MultiWaveformDataset:
         self._datasets = [dataset.copy() for dataset in datasets]
         self._metadata = pd.concat(x.metadata for x in datasets)
         self._homogenize_dataformat(datasets)
+        self._build_trace_name_to_idx_dict()
 
     def __add__(self, other):
         if isinstance(other, WaveformDataset):
@@ -1324,6 +1352,7 @@ class MultiWaveformDataset:
                 dataset.filter(submask, inplace=True)
             # Calculate new metadata
             self._metadata = pd.concat(x.metadata for x in self.datasets)
+            self._build_trace_name_to_idx_dict()
 
         else:
             return MultiWaveformDataset(
@@ -1381,6 +1410,8 @@ class MultiWaveformDataset:
     dev = WaveformDataset.dev
     test = WaveformDataset.test
     train_dev_test = WaveformDataset.train_dev_test
+    _build_trace_name_to_idx_dict = WaveformDataset._build_trace_name_to_idx_dict
+    get_idx_from_trace_name = WaveformDataset.get_idx_from_trace_name
 
 
 class LoadingContext:
