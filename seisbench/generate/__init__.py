@@ -1,4 +1,4 @@
-from .generator import GenericGenerator
+from .generator import GenericGenerator, SteeredGenerator
 from .augmentation import (
     Normalize,
     Filter,

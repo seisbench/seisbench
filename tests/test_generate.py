@@ -9,19 +9,20 @@ from seisbench.generate import (
     WindowAroundSample,
     RandomWindow,
     ChangeDtype,
-    SupervisedLabeller,
     ProbabilisticLabeller,
     ProbabilisticPointLabeller,
     StandardLabeller,
     DetectionLabeller,
 )
+from seisbench.data import DummyDataset
 
 import numpy as np
+import pandas as pd
 import copy
 import scipy.signal
 import logging
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 
 def test_normalize():
@@ -1360,3 +1361,28 @@ def test_detection_labeller_warning_fixed_and_s_phase(caplog):
         "Provided both S phases and fixed window length to DetectionLabeller."
         in caplog.text
     )
+
+
+def test_steered_generator():
+    dummy = DummyDataset()
+
+    def raise_on_check(state_dict):
+        if "X" in state_dict and "_control_" in state_dict:
+            if state_dict["_control_"]["x"] == 100:
+                raise ValueError()
+
+    augmentation = MagicMock(side_effect=raise_on_check)
+
+    metadata = [
+        {"trace_name": dummy["trace_name"].values[i], "x": 2 * i}
+        for i in range(50, 100)
+    ]
+    metadata = pd.DataFrame(metadata)
+
+    generator = seisbench.generate.SteeredGenerator(dummy, metadata)
+    generator.augmentation(augmentation)
+
+    assert len(generator) == 50
+
+    with pytest.raises(ValueError):
+        generator[0]
