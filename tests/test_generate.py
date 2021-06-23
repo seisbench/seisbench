@@ -8,6 +8,7 @@ from seisbench.generate import (
     FilterKeys,
     WindowAroundSample,
     RandomWindow,
+    SteeredWindow,
     ChangeDtype,
     ProbabilisticLabeller,
     ProbabilisticPointLabeller,
@@ -1386,3 +1387,79 @@ def test_steered_generator():
 
     with pytest.raises(ValueError):
         generator[0]
+
+
+def test_steered_window():
+    np.random.seed(42)
+    base_state_dict = {"X": (np.random.rand(3, 1000), {})}
+
+    # Variable window size
+    window = SteeredWindow(windowlen=None, strategy="pad")
+
+    # Sample shorter than trace
+    state_dict = copy.deepcopy(base_state_dict)
+    state_dict["_control_"] = {"start_sample": 100, "end_sample": 900}
+    window(state_dict)
+
+    assert np.all(state_dict["X"][0] == base_state_dict["X"][0][:, 100:900])
+    assert np.all(state_dict["window_borders"][0] == [0, 800])
+
+    # Sample longer than trace
+    state_dict = copy.deepcopy(base_state_dict)
+    state_dict["_control_"] = {"start_sample": -100, "end_sample": 1100}
+    window(state_dict)
+
+    assert state_dict["X"][0].shape == (3, 1200)
+    assert np.all(state_dict["X"][0][:, :1000] == base_state_dict["X"][0])
+    assert np.all(state_dict["window_borders"][0] == [-100, 1100])
+
+    # Fixed window size
+    window = SteeredWindow(windowlen=500)
+
+    # Range longer than window length
+    state_dict = copy.deepcopy(base_state_dict)
+    state_dict["_control_"] = {"start_sample": 100, "end_sample": 900}
+    # Requested window is too long
+    with pytest.raises(ValueError):
+        window(state_dict)
+
+    # Range with sufficient samples around
+    state_dict = copy.deepcopy(base_state_dict)
+    state_dict["_control_"] = {"start_sample": 200, "end_sample": 500}
+
+    window(state_dict)
+
+    assert state_dict["X"][0].shape == (3, 500)
+    assert np.all(state_dict["X"][0] == base_state_dict["X"][0][:, 100:600])
+    assert np.all(state_dict["window_borders"][0] == [100, 400])
+
+    # Range with insufficient samples at the end
+    state_dict = copy.deepcopy(base_state_dict)
+    state_dict["_control_"] = {"start_sample": 700, "end_sample": 900}
+
+    window(state_dict)
+
+    assert state_dict["X"][0].shape == (3, 500)
+    assert np.all(state_dict["X"][0] == base_state_dict["X"][0][:, 500:])
+    assert np.all(state_dict["window_borders"][0] == [200, 400])
+
+    # Range with insufficient samples at the start
+    state_dict = copy.deepcopy(base_state_dict)
+    state_dict["_control_"] = {"start_sample": 50, "end_sample": 200}
+
+    window(state_dict)
+
+    assert state_dict["X"][0].shape == (3, 500)
+    assert np.all(state_dict["X"][0] == base_state_dict["X"][0][:, :500])
+    assert np.all(state_dict["window_borders"][0] == [50, 200])
+
+    # Range longer than trace samples
+    window = SteeredWindow(windowlen=1200, strategy="pad")
+    state_dict = copy.deepcopy(base_state_dict)
+    state_dict["_control_"] = {"start_sample": 50, "end_sample": 200}
+
+    window(state_dict)
+
+    assert state_dict["X"][0].shape == (3, 1200)
+    assert np.all(state_dict["X"][0][:, :1000] == base_state_dict["X"][0])
+    assert np.all(state_dict["window_borders"][0] == [50, 200])

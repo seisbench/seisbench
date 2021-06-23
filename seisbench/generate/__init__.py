@@ -24,4 +24,5 @@ from .windows import (
     SlidingWindow,
     WindowAroundSample,
     RandomWindow,
+    SteeredWindow,
 )
