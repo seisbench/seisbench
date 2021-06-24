@@ -15,6 +15,14 @@ def transcode(data_in, data_out):
         # Otherwise interpret data_in as path
         dataset = sbd.WaveformDataset(data_in)
 
+    # Fix inconsistent component order entries
+    if (
+        len(dataset["trace_component_order"].unique()) > 1
+        and "component_order" in dataset._data_format
+    ):
+        print("Removing inconsistent component order from data format.")
+        del dataset._data_format["component_order"]
+
     if len(dataset.chunks) > 0:
         metadata_path = dataset.path / f"metadata{dataset.chunks[0]}.csv"
     else:
