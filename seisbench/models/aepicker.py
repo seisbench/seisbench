@@ -32,10 +32,10 @@ class BasicPhaseAE(WaveformModel):
 
         super().__init__(
             citation=citation,
-            in_samples=601,
+            in_samples=600,
             output_type="array",
             default_args={"overlap": 100},
-            pred_sample=(0, 601),
+            pred_sample=(0, 600),
             labels=phases,
             sampling_rate=sampling_rate,
             **kwargs,
