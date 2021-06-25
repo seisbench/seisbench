@@ -8,12 +8,13 @@ from tqdm import tqdm
 
 
 def transcode(data_in, data_out):
+    dataset_args = {"missing_components": "ignore"}
     try:
         # Check if dataset is available in SeisBench
-        dataset = sbd.__getattribute__(data_in)()
+        dataset = sbd.__getattribute__(data_in)(**dataset_args)
     except AttributeError:
         # Otherwise interpret data_in as path
-        dataset = sbd.WaveformDataset(data_in)
+        dataset = sbd.WaveformDataset(data_in, **dataset_args)
 
     # Fix inconsistent component order entries
     if (
@@ -22,6 +23,13 @@ def transcode(data_in, data_out):
     ):
         print("Removing inconsistent component order from data format.")
         del dataset._data_format["component_order"]
+
+    component_order_mapping = get_component_order_mapping(dataset)
+
+    if "component_order" in dataset._data_format:
+        dataset._data_format["component_order"] = component_order_mapping[
+            dataset._data_format["component_order"]
+        ]
 
     if len(dataset.chunks) > 0:
         metadata_path = dataset.path / f"metadata{dataset.chunks[0]}.csv"
@@ -45,7 +53,35 @@ def transcode(data_in, data_out):
             metadata = {
                 key: val for key, val in metadata.items() if key in columns
             }  # Filter metadata
+            if "trace_component_order" in metadata:
+                metadata["trace_component_order"] = component_order_mapping[
+                    metadata["trace_component_order"]
+                ]
             writer.add_trace(metadata, waveform)
+
+
+def get_component_order_mapping(dataset):
+    """
+    Calculates for each input component order the actual order that will be returned by the dataset.
+    Assumes missing_components == "ignore".
+
+    :param dataset:
+    :return:
+    """
+    assert dataset.missing_components == "ignore"
+
+    mapping = {}
+    target_order = dataset.component_order
+    for order in dataset["trace_component_order"].unique():
+        new_order = "".join([x for x in target_order if x in order])
+        if len(order) != len(new_order):
+            raise ValueError(
+                f"Writing order {new_order} in format {target_order} will lead to data loss."
+            )
+
+        mapping[order] = new_order
+
+    return mapping
 
 
 if __name__ == "__main__":
