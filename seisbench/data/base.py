@@ -943,6 +943,12 @@ class WaveformDataset:
                     "Trace can not be resampled because of missing or incorrect dimension order."
                 )
 
+            if waveform.shape[sample_axis] == 0:
+                seisbench.logger.info(
+                    "Trying to resample empty trace, skipping resampling."
+                )
+                return waveform
+
             if (source_sampling_rate % target_sampling_rate) < eps:
                 q = int(source_sampling_rate // target_sampling_rate)
                 return scipy.signal.decimate(waveform, q, axis=sample_axis)

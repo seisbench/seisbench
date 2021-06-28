@@ -534,6 +534,15 @@ def test_resample():
     assert wv20.shape[1] * 100 / 20 == wv100.shape[1]
 
 
+def test_resample_empty_trace(caplog):
+    # Check that resampling does not crash for empty trace and issues a warning
+    dummy = seisbench.data.DummyDataset()
+    waveform = np.ones((3, 0))
+    with caplog.at_level(logging.INFO):
+        dummy._resample(waveform, 19, 20)
+    assert "Trying to resample empty trace, skipping resampling." in caplog.text
+
+
 def test_get_sample():
     # Checks that the parameters are correctly overwritten, when the sampling_rate is changed
     dummy = seisbench.data.DummyDataset()
