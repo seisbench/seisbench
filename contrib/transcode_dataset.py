@@ -37,7 +37,7 @@ def transcode(data_in, data_out):
         metadata_path = dataset.path / "metadata.csv"
 
     # Load original columns to avoid writing auxiliary columns
-    columns = set(pd.read_csv(metadata_path, index_col=0, nrows=0).columns.tolist())
+    columns = set(pd.read_csv(metadata_path, index_col=False, nrows=0).columns.tolist())
 
     if os.path.exists(data_out):
         raise ValueError("Output path must not exist.")
