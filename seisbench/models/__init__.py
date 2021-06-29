@@ -1,4 +1,4 @@
-from .base import SeisBenchModel, WaveformModel, Conv1dSame
+from .base import SeisBenchModel, WaveformModel
 from .gpd import GPD
 from .eqtransformer import EQTransformer
 from .phasenet import PhaseNet
