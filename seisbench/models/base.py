@@ -77,8 +77,8 @@ class SeisBenchModel(nn.Module):
         :type force: bool, optional
         :param wait_for_file: Whether to wait on partially downloaded files, defaults to False
         :type wait_for_file: bool, optional
-        :return: PyTorch model instance
-        :rtype: torch.nn.Module
+        :return: Model instance
+        :rtype: SeisBenchModel
         """
         weight_path, metadata_path = cls._pretrained_path(name)
 
@@ -1042,6 +1042,194 @@ class WaveformModel(SeisBenchModel, ABC):
                 detections.append(detection)
 
         return detections
+
+
+class WaveformPipeline(ABC):
+    """
+    A waveform pipeline is a collection of models that together expose an :py:func:`annotate` and
+    a :py:func:`classify` function. Examples of waveform pipelines would be multi-step picking models,
+    conducting first a detection with one model and then a pick identification with a second model.
+    This could also easily be extended by adding further models, e.g., estimating magnitude for each detection.
+
+    In contrast to :py:class:`WaveformModel`, a waveform pipeline is not a pytorch module and has no forward function.
+    This also means, that all components of a pipeline will usually be trained separately. As a rule of thumb,
+    if the pipeline can be trained end to end, it should most likely rather be a :py:class:`WaveformModel`.
+    For a waveform pipeline, the :py:func:`annotate` and :py:func:`classify` functions are not automatically generated,
+    but need to be implemented manually.
+
+    Waveform pipelines offer functionality for downloading pipeline configurations from the SeisBench repository.
+    Similarly to :py:class:`SeisBenchModel`, waveform pipelines expose a :py:func:`from_pretrained` function,
+    that will download the configuration for a pipeline and its components.
+
+    To implement a waveform pipeline, this class needs to be subclassed. This class will throw an exception when
+    trying to instantiate.
+
+    :param components: Dictionary of components contained in the model. This should contain all models used in the
+                       pipeline.
+    :type components: dict [str, SeisBenchModel]
+    """
+
+    def __init__(self, components):
+        self.components = components
+        self._docstring = None
+
+    @classmethod
+    @abstractmethod
+    def component_classes(cls):
+        """
+        Returns a mapping of component names to their classes. This function needs to be defined in each pipeline,
+        as it is required to load configurations.
+
+        :return: Dictionary mapping component names to their classes.
+        :rtype: Dict[str, SeisBenchModel classes]
+        """
+        return {}
+
+    @property
+    def docstring(self):
+        return self._docstring
+
+    @property
+    def name(self):
+        return self._name_internal()
+
+    @classmethod
+    def _name_internal(cls):
+        return cls.__name__
+
+    @classmethod
+    def _remote_path(cls):
+        return os.path.join(
+            seisbench.remote_root, "pipelines", cls._name_internal().lower()
+        )
+
+    @classmethod
+    def _local_path(cls):
+        return Path(seisbench.cache_root, "pipelines", cls._name_internal().lower())
+
+    @classmethod
+    def _config_path(cls, name):
+        return cls._local_path() / f"{name}.json"
+
+    def annotate(self, stream, **kwargs):
+        raise NotImplementedError("This class does not expose an annotate function.")
+
+    def classify(self, stream, **kwargs):
+        raise NotImplementedError("This class does not expose a classify function.")
+
+    @classmethod
+    def from_pretrained(cls, name, force=False, wait_for_file=False):
+        """
+        Load pipeline from configuration. Automatically loads all dependent pretrained models weights.
+
+        A pipeline configuration is a json file. On the top level, it has three entries:
+
+        - "components": A dictionary listing all contained models and the pretrained weight to use for this model.
+                        The instances of these classes will be created using the
+                        :py:func:`~SeisBenchModel.from_pretrained` method.
+                        The components need to match the components from the dictionary returned by
+                        :py:func:`component_classes`.
+        - "docstring": A string documenting the pipeline. Usually also contains information on the author.
+        - "model_args": Argument dictionary passed to the init function of the pipeline. (optional)
+
+        :param name: Configuration name
+        :type name: str
+        :param force: Force execution of download callback, defaults to False
+        :type force: bool, optional
+        :param wait_for_file: Whether to wait on partially downloaded files, defaults to False
+        :type wait_for_file: bool, optional
+        :return: Pipeline instance
+        :rtype: WaveformPipeline
+        """
+        config_path = cls._config_path(name)
+        cls._local_path().mkdir(parents=True, exist_ok=True)
+
+        def download_callback(config_path):
+            remote_config_path = os.path.join(cls._remote_path(), f"{name}.json")
+            util.download_http(remote_config_path, config_path, progress_bar=False)
+
+        seisbench.util.callback_if_uncached(
+            config_path,
+            download_callback,
+            force=force,
+            wait_for_file=wait_for_file,
+        )
+
+        with open(config_path, "r") as f:
+            config = json.load(f)
+
+        component_classes = cls.component_classes()
+        component_weights = config.get("components", {})
+        if sorted(component_weights.keys()) != sorted(component_classes.keys()):
+            raise ValueError(
+                "Invalid configuration. Components don't match between configuration and class."
+            )
+
+        components = {
+            key: component_classes[key].from_pretrained(
+                component_weights[key], force=force, wait_for_file=wait_for_file
+            )
+            for key in component_weights
+        }
+
+        model_args = config.get("model_args", {})
+        model = cls(components, **model_args)
+
+        model._docstring = config.get("docstring", None)
+
+        return model
+
+    @classmethod
+    def list_pretrained(cls, details=False):
+        """
+        Returns list of available configurations and optionally their docstrings.
+
+        :param details: If true, instead of a returning only a list, also return their docstrings.
+                        Note that this requires to download the json files for each model in the background
+                        and is therefore slower. Defaults to false.
+        :type details: bool
+        :return: List of available weights or dict of weights and their docstrings
+        :rtype: list or dict
+        """
+        remote_path = cls._remote_path()
+
+        try:
+            configurations = [
+                x[:-5]
+                for x in seisbench.util.ls_webdav(remote_path)
+                if x.endswith(".json")
+            ]
+        except ValueError:
+            # No weights available
+            configurations = []
+
+        if details:
+            detail_configurations = {}
+
+            # Create path if necessary
+            cls._local_path().mkdir(parents=True, exist_ok=True)
+
+            for configuration in configurations:
+
+                def download_callback(config_path):
+                    remote_config_path = os.path.join(
+                        cls._remote_path(), f"{configuration}.json"
+                    )
+                    seisbench.util.download_http(
+                        remote_config_path, config_path, progress_bar=False
+                    )
+
+                config_path = cls._config_path(configuration)
+
+                seisbench.util.callback_if_uncached(config_path, download_callback)
+
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+                detail_configurations[configuration] = config.get("docstring", None)
+
+            configurations = detail_configurations
+
+        return configurations
 
 
 class Conv1dSame(nn.Module):

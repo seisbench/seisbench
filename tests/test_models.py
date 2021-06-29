@@ -6,6 +6,7 @@ from obspy import UTCDateTime
 import torch
 from unittest.mock import patch
 import logging
+import pytest
 
 
 def test_weights_docstring():
@@ -609,3 +610,67 @@ def test_detections_from_annotations():
     assert detections[1].start_time == t0 + 5
     assert detections[1].end_time == t0 + 7
     assert detections[1].peak_value == 0.6
+
+
+def test_waveform_pipeline_instantiation():
+    with pytest.raises(TypeError):
+        seisbench.models.WaveformPipeline({})
+
+    class MyPipeline(seisbench.models.WaveformPipeline):
+        @classmethod
+        def component_classes(cls):
+            return {}
+
+    MyPipeline({})
+
+
+def test_waveform_pipeline_list_pretrained(tmp_path):
+    class MyPipeline(seisbench.models.WaveformPipeline):
+        @classmethod
+        def component_classes(cls):
+            return {}
+
+    def write_config(*arg, **kwargs):
+        path = tmp_path / "pipelines" / "mypipeline" / "myconfig.json"
+        with open(path, "w") as f:
+            f.write('{"docstring": "test docstring"}\n')
+
+    with patch(
+        "seisbench.cache_root", tmp_path
+    ):  # Ensure test does not modify SeisBench cache
+        with patch("seisbench.util.ls_webdav") as ls_webdav:
+            ls_webdav.return_value = ["myconfig.json"]
+            with patch("seisbench.util.download_http") as download_http:
+                download_http.side_effect = write_config
+
+                configurations = MyPipeline.list_pretrained(details=True)
+                assert configurations == {"myconfig": "test docstring"}
+
+
+def test_waveform_pipeline_from_pretrained(tmp_path):
+    class MyPipeline(seisbench.models.WaveformPipeline):
+        @classmethod
+        def component_classes(cls):
+            return {"gpd": seisbench.models.GPD}
+
+    def write_config(*arg, **kwargs):
+        path = tmp_path / "pipelines" / "mypipeline" / "myconfig.json"
+        with open(path, "w") as f:
+            f.write('{"components": {"gpd": "dummy"}}\n')
+
+    with patch(
+        "seisbench.cache_root", tmp_path
+    ):  # Ensure test does not modify SeisBench cache
+        with patch("seisbench.util.download_http") as download_http:
+            download_http.side_effect = write_config
+
+            with patch("seisbench.models.GPD.from_pretrained") as gpd_from_pretrained:
+                gpd_from_pretrained.return_value = (
+                    seisbench.models.GPD()
+                )  # Return random GPD instance
+
+                MyPipeline.from_pretrained("myconfig")
+
+                gpd_from_pretrained.assert_called_once_with(
+                    "dummy", force=False, wait_for_file=False
+                )
