@@ -1,9 +1,9 @@
 import seisbench
 from .base import BenchmarkDataset
 from seisbench.util.trace_ops import (
-    _rotate_stream_to_ZNE,
-    _stream_to_array,
-    _trace_has_spikes,
+    rotate_stream_to_ZNE,
+    stream_to_array,
+    trace_has_spikes,
 )
 
 from pathlib import Path
@@ -264,7 +264,7 @@ class GEOFON(BenchmarkDataset):
             )
             return
 
-        _rotate_stream_to_ZNE(stream, inventory)
+        rotate_stream_to_ZNE(stream, inventory)
 
         t_start = min(pick.time for pick in picks) - time_before
         t_end = max(pick.time for pick in picks) + time_after
@@ -277,7 +277,7 @@ class GEOFON(BenchmarkDataset):
             )
             return
 
-        actual_t_start, data, completeness = _stream_to_array(stream, component_order)
+        actual_t_start, data, completeness = stream_to_array(stream, component_order)
 
         if int((t_end - t_start) * sampling_rate) + 1 > data.shape[1]:
             # Traces appear to be complete, but do not cover the intended time range
@@ -285,7 +285,7 @@ class GEOFON(BenchmarkDataset):
 
         trace_params["trace_sampling_rate_hz"] = sampling_rate
         trace_params["trace_completeness"] = completeness
-        trace_params["trace_has_spikes"] = _trace_has_spikes(data)
+        trace_params["trace_has_spikes"] = trace_has_spikes(data)
         trace_params["trace_start_time"] = str(actual_t_start)
         for pick in picks:
             sample = (pick.time - actual_t_start) * sampling_rate

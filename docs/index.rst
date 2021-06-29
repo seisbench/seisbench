@@ -35,7 +35,7 @@ be based of community feedback.
    pages/examples.rst
    pages/extending.rst
    pages/contributing.rst
-   pages/documentation.rst
+   pages/documentation/overview.rst
 
 
 Indices and tables

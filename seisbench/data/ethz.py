@@ -1,9 +1,9 @@
 import seisbench
 from seisbench.data.base import BenchmarkDataset
 from seisbench.util.trace_ops import (
-    _rotate_stream_to_ZNE,
-    _stream_to_array,
-    _trace_has_spikes,
+    rotate_stream_to_ZNE,
+    stream_to_array,
+    trace_has_spikes,
     waveform_id_to_network_station_location,
 )
 
@@ -106,7 +106,7 @@ class ETHZ(BenchmarkDataset):
                     self.no_data_catches += 1
                     continue
 
-                _rotate_stream_to_ZNE(waveforms, inv)
+                rotate_stream_to_ZNE(waveforms, inv)
 
                 if len(waveforms) == 0:
                     seisbench.logger.debug(
@@ -130,7 +130,7 @@ class ETHZ(BenchmarkDataset):
 
                 stream = waveforms.slice(t_start, t_end)
 
-                actual_t_start, data, completeness = _stream_to_array(
+                actual_t_start, data, completeness = stream_to_array(
                     stream,
                     component_order=writer.data_format["component_order"],
                 )
@@ -143,7 +143,7 @@ class ETHZ(BenchmarkDataset):
 
                 trace_params["trace_sampling_rate_hz"] = sampling_rate
                 trace_params["trace_completeness"] = completeness
-                trace_params["trace_has_spikes"] = _trace_has_spikes(data)
+                trace_params["trace_has_spikes"] = trace_has_spikes(data)
                 trace_params["trace_start_time"] = str(actual_t_start)
 
                 for pick in picks:
