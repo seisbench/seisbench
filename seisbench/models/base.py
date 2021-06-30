@@ -671,6 +671,8 @@ class WaveformModel(SeisBenchModel, ABC):
             return [self._recursive_torch_to_numpy(y) for y in x]
         elif isinstance(x, tuple):
             return tuple([self._recursive_torch_to_numpy(y) for y in x])
+        elif isinstance(x, np.ndarray):
+            return x
         else:
             raise ValueError(f"Can't unpack object of type {type(x)}.")
 
