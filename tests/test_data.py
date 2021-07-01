@@ -1208,3 +1208,18 @@ def test_get_idx_from_trace_name_multi():
 
     assert dummy.get_idx_from_trace_name(dummy["trace_name"].values[0]) == 0
     assert dummy.get_idx_from_trace_name(dummy["trace_name"].values[20]) == 20
+
+
+def test_sample_Without_replacement():
+    # Test random sampling without replacement
+    np.random.seed(42)
+
+    sel_idxs, rem_idxs = seisbench.data.SCEDC._sample_without_replacement(
+        np.arange(1000), 100
+    )
+
+    assert len(sel_idxs) == 100
+    assert len(rem_idxs) == 900
+    assert (
+        sorted(list(sel_idxs) + list(rem_idxs)) == np.arange(1000).astype(list)
+    ).all()
