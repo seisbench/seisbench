@@ -5,7 +5,7 @@
 Welcome to SeisBench's documentation!
 =====================================
 
-The Seismology Benchmark Colection (*SeisBench*) provides a unified API for accessing 
+The Seismology Benchmark collection (*SeisBench*) provides a unified API for accessing 
 and training of machine learning algorithms across seismic datasets. It has been built to 
 alleviate traditional bottlenecks when applying machine learning techniques to seismic data, 
 in particular the processes of data collection and labelling.
