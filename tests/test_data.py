@@ -1210,7 +1210,7 @@ def test_get_idx_from_trace_name_multi():
     assert dummy.get_idx_from_trace_name(dummy["trace_name"].values[20]) == 20
 
 
-def test_sample_Without_replacement():
+def test_sample_without_replacement():
     # Test random sampling without replacement
     np.random.seed(42)
 

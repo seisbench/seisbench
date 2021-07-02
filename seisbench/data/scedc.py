@@ -49,7 +49,7 @@ class SCEDC(BenchmarkDataset):
         complement_idxs = list(set(indexes).symmetric_difference(chosen_idxs))
         return chosen_idxs, complement_idxs
 
-    def set_splits_random_sampling(self, ratios=(0.6, 0.1, 0.3), random_seed=42):
+    def _set_splits_random_sampling(self, ratios=(0.6, 0.1, 0.3), random_seed=42):
         """
         Set train/dev/test split randomly, labelling examples from dataset.
         The number of random choices for each split is pre-defined with parameter ratios,
