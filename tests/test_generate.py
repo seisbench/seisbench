@@ -151,6 +151,22 @@ def test_filter():
     assert (state_dict["X"][0] == X_comp).all()
 
 
+def test_filter_sampling_rate_list():
+    np.random.seed(42)
+
+    filt = Filter(2, 1, "lowpass")
+    state_dict = {
+        "X": (10 * np.random.rand(3, 1000), {"trace_sampling_rate_hz": [20, 20]})
+    }
+    filt(state_dict)
+
+    state_dict = {
+        "X": (10 * np.random.rand(3, 1000), {"trace_sampling_rate_hz": [20, 25]})
+    }
+    with pytest.raises(NotImplementedError):
+        filt(state_dict)
+
+
 def test_fixed_window():
     np.random.seed(42)
     base_state_dict = {

@@ -120,7 +120,16 @@ class Filter:
 
     def __call__(self, state_dict):
         x, metadata = state_dict[self.key[0]]
+
         sampling_rate = metadata["trace_sampling_rate_hz"]
+        if isinstance(sampling_rate, (list, tuple, np.ndarray)):
+            if not np.allclose(sampling_rate, sampling_rate[0]):
+                raise NotImplementedError(
+                    "Found mixed sampling rates in filter. "
+                    "Filter currently only works on consistent sampling rates."
+                )
+            else:
+                sampling_rate = sampling_rate[0]
 
         sos = scipy.signal.butter(*self._filt_args, output="sos", fs=sampling_rate)
         if self.forward_backward:
