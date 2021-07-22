@@ -154,14 +154,25 @@ class WaveformDataset:
 
     @property
     def metadata(self):
+        """
+        Metadata of the dataset as pandas DataFrame.
+        """
         return self._metadata
 
     @property
     def name(self):
+        """
+        Name of the dataset (immutable)
+        """
         return self._name
 
     @property
     def cache(self):
+        """
+        Get or set the cache strategy of the dataset. For possible strategies see the constructor.
+        Note that changing cache strategies will not cause a cache eviction.
+
+        """
         return self._cache
 
     @cache.setter
@@ -175,17 +186,28 @@ class WaveformDataset:
 
     @property
     def path(self):
+        """
+        Path of the dataset (immutable)
+        """
         if self._path is None:
             raise ValueError("Path is None. Can't create data set without a path.")
         return Path(self._path)
 
     @property
     def data_format(self):
+        """
+        Data format dictionary, describing the data format of the stored dataset.
+        Note that this does not necessarily equals the output data format of get waveforms.
+        To query these, use the relevant class properties.
+        """
         # Returns a copy of the data format, to ensure internal data format is not modified.
         return dict(self._data_format)
 
     @property
     def dimension_order(self):
+        """
+        Get or set the order of the dimension in the output.
+        """
         return self._dimension_order
 
     @dimension_order.setter
@@ -200,6 +222,9 @@ class WaveformDataset:
 
     @property
     def missing_components(self):
+        """
+        Set strategy to handle missing components. For options, see the constructor.
+        """
         return self._missing_components
 
     @missing_components.setter
@@ -217,6 +242,9 @@ class WaveformDataset:
 
     @property
     def component_order(self):
+        """
+        Get or set order of components in the output.
+        """
         return self._component_order
 
     @component_order.setter
@@ -237,12 +265,21 @@ class WaveformDataset:
 
     @property
     def chunks(self):
+        """
+        Returns a list of chunks. If dataset is not chunked, returns an empy list.
+        """
         if self._chunks is None:
             self._chunks = self.available_chunks(self.path)
         return self._chunks
 
     @staticmethod
     def available_chunks(path):
+        """
+        Determines the chunks of the dataset in the given path.
+
+        :param path: Dataset path
+        :return: List of chunks
+        """
         path = Path(path)
         chunks_path = path / "chunks"
         if chunks_path.is_file():
@@ -398,6 +435,13 @@ class WaveformDataset:
 
     @staticmethod
     def _get_dimension_mapping(source, target):
+        """
+        Calculates the mapping from source to target dimension orders.
+
+        :param source:
+        :param target:
+        :return:
+        """
         source = list(source)
         target = list(target)
 
@@ -424,12 +468,20 @@ class WaveformDataset:
         return mapping
 
     def _chunks_with_paths(self):
+        """
+        See return value
+
+        :return: List of chunks, list of metadata paths, list of waveform paths
+        """
         metadata_paths = [self.path / f"metadata{chunk}.csv" for chunk in self.chunks]
         waveform_paths = [self.path / f"waveforms{chunk}.hdf5" for chunk in self.chunks]
 
         return self.chunks, metadata_paths, waveform_paths
 
     def _verify_dataset(self):
+        """
+        Checks that metadata and waveforms of all chunks are available and raises an exception otherwise.
+        """
         for chunk, metadata_path, waveform_path in zip(*self._chunks_with_paths()):
             chunks_str = f" for chunk '{chunk}'" if chunk != "" else ""
 
@@ -439,6 +491,13 @@ class WaveformDataset:
                 raise FileNotFoundError(f"Missing waveforms file{chunks_str}")
 
     def _read_data_format(self):
+        """
+        Reads the data format group from the hdf5 file(s).
+        Checks consistency in case of chunked datasets.
+
+        :return: Data format dict
+        """
+
         data_format = None
         for waveform_file in self._chunks_with_paths()[2]:
             with h5py.File(waveform_file, "r") as f_wave:
@@ -552,8 +611,8 @@ class WaveformDataset:
         Setting inplace equal to false will return a filtered copy of the data set.
         For details on the copy operation see :py:func:`~WaveformDataset.copy`.
 
-        :param mask: Boolean mask to apple to metadata.
-        :type mask: masked-array
+        :param mask: Boolean mask to apply to metadata.
+        :type mask: boolean array
         :param inplace: If true, filter inplace.
         :type inplace: bool
 
@@ -578,8 +637,8 @@ class WaveformDataset:
     # change between datasets and users may also want to filter as a function of  recievers/sources
     def region_filter(self, domain, lat_col, lon_col, inplace=True):
         """
-        In place filtering of dataset based on predefined region or geometry.
-        See also convenience functions region_filter_[source|receiver]
+        Filtering of dataset based on predefined region or geometry.
+        See also convenience functions region_filter_[source|receiver].
 
         :param domain: The domain filter
         :type domain: obspy.core.fdsn.mass_downloader.domain:
@@ -587,7 +646,9 @@ class WaveformDataset:
         :type lat_col: str
         :param lon_col: Name of longitude coordinate column
         :type lon_col: str
-        :return:
+        :param inplace: Inplace filtering, default to true. See also :py:func:`~WaveformDataset.filter`.
+        :type inplace: bool
+        :return: None if inplace=True, otherwise the filtered dataset.
         """
         check_domain = lambda metadata: domain.is_in_domain(
             metadata[lat_col], metadata[lon_col]
@@ -596,6 +657,9 @@ class WaveformDataset:
         self.filter(mask, inplace=inplace)
 
     def region_filter_source(self, domain, inplace=True):
+        """
+        Convenience method for region filtering by source location.
+        """
         self.region_filter(
             domain,
             lat_col="source_latitude_deg",
@@ -604,6 +668,9 @@ class WaveformDataset:
         )
 
     def region_filter_receiver(self, domain, inplace=True):
+        """
+        Convenience method for region filtering by receiver location.
+        """
         self.region_filter(
             domain,
             lat_col="station_latitude_deg",
@@ -663,7 +730,7 @@ class WaveformDataset:
         """
         Remove all traces from cache that do not have any reference in metadata anymore
 
-        :return:
+        :return: None
         """
         if self.cache == "full":
             # Extract block names
@@ -686,11 +753,17 @@ class WaveformDataset:
         seisbench.logger.debug(f"Deleted {len(delete_keys)} entries in cache eviction")
 
     def __getitem__(self, item):
+        """
+        Only accepts string inputs. Returns respective column from metadata
+        """
         if not isinstance(item, str):
             raise TypeError("Can only use strings to access metadata parameters")
         return self._metadata[item]
 
     def __len__(self):
+        """
+        Number of samples in the dataset.
+        """
         return len(self._metadata)
 
     def get_sample(self, idx, sampling_rate=None):
@@ -926,6 +999,15 @@ class WaveformDataset:
         return tuple(slices)
 
     def _resample(self, waveform, target_sampling_rate, source_sampling_rate, eps=1e-4):
+        """
+        Resamples waveform from source to target sampling rate.
+
+        :param waveform:
+        :param target_sampling_rate:
+        :param source_sampling_rate:
+        :param eps: Tolerance for equality of source an target sampling rate
+        :return:
+        """
         try:
             sample_axis = list(self._data_format["dimension_order"]).index("W")
         except KeyError:
@@ -962,6 +1044,12 @@ class WaveformDataset:
 
     @staticmethod
     def _pad_packed_sequence(seq):
+        """
+        Packs a list of arrays into one array by adding a new first dimension and padding where necessary.
+
+        :param seq:
+        :return:
+        """
         max_size = np.array(
             [max([x.shape[i] for x in seq]) for i in range(seq[0].ndim)]
         )
