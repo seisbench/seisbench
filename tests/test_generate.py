@@ -1479,3 +1479,26 @@ def test_steered_window():
     assert state_dict["X"][0].shape == (3, 1200)
     assert np.all(state_dict["X"][0][:, :1000] == base_state_dict["X"][0])
     assert np.all(state_dict["window_borders"][0] == [50, 200])
+
+
+def test_standard_labeller_no_labels_in_metadata():
+    # Checks that the labeller works correct if no label columns are present in the metadata
+    np.random.seed(42)
+
+    state_dict = {
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {},
+        )
+    }
+
+    label_columns = {
+        "trace_Pn_arrival_sample": "P",
+        "trace_S_arrival_sample": "S",
+    }
+
+    # Check 'label-first' strategy on overlap
+    labeller = StandardLabeller(label_columns=label_columns)
+    labeller(state_dict)
+
+    assert state_dict["y"][0] == 2  # Labeled as noise

@@ -492,6 +492,7 @@ class StandardLabeller(PickLabeller):
                 arrival_array.append(None)
 
         # Identify shape of entry
+        nan_dummy = np.ones(1) * np.nan  # Only used for all nan arrays
         for x in arrival_array:
             if not x is None:
                 nan_dummy = np.ones_like(x, dtype=float) * np.nan
