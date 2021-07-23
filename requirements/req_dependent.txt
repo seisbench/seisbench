@@ -1,0 +1,4 @@
+# Packages requiring custom install for diff. os
+gdal>=3.1.4
+shapely>=1.7.1
+fiona>=1.8.18
