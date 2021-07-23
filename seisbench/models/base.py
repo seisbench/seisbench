@@ -55,9 +55,7 @@ class SeisBenchModel(nn.Module):
 
     @classmethod
     def _remote_path(cls):
-        return os.path.join(
-            seisbench.remote_root, "models", cls._name_internal().lower()
-        )
+        return "/".join((seisbench.remote_root, "models", cls._name_internal().lower()))
 
     @classmethod
     def _pretrained_path(cls, name):
@@ -86,11 +84,11 @@ class SeisBenchModel(nn.Module):
             seisbench.logger.info(f"Weight file {name} not in cache. Downloading...")
             weight_path.parent.mkdir(exist_ok=True, parents=True)
 
-            remote_weight_path = os.path.join(cls._remote_path(), f"{name}.pt")
+            remote_weight_path = f"{cls._remote_path()}/{name}.pt"
             util.download_http(remote_weight_path, weight_path)
 
         def download_metadata_callback(metadata_path):
-            remote_metadata_path = os.path.join(cls._remote_path(), f"{name}.json")
+            remote_metadata_path = f"{cls._remote_path()}/{name}.json"
             try:
                 util.download_http(
                     remote_metadata_path, metadata_path, progress_bar=False
