@@ -9,7 +9,7 @@ from obspy import UTCDateTime
 
 class LenDB(BenchmarkDataset):
     """
-    Len-DB dataset
+    Len-DB dataset from Magrini et al.
     """
 
     def __init__(self, **kwargs):

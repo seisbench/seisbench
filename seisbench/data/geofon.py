@@ -10,7 +10,6 @@ from pathlib import Path
 import obspy
 from obspy.io.mseed import InternalMSEEDError
 from obspy.geodetics import gps2dist_azimuth
-from obspy.core.util.obspy_types import ObsPyException
 import copy
 from collections import defaultdict
 import numpy as np
@@ -19,7 +18,9 @@ import pandas as pd
 
 class GEOFON(BenchmarkDataset):
     """
-    GEOFON dataset
+    GEOFON dataset consisting of both regional and teleseismic picks. Mostly contains P arrivals,
+    but a few S arrivals are annotated as well. Contains data from 2010-2013. The dataset will be
+    downloaded from the SeisBench repository on first usage.
     """
 
     def __init__(self, **kwargs):

@@ -15,7 +15,7 @@ DEG2KM = 2 * np.pi * 6371 / 360
 
 class NEIC(BenchmarkDataset):
     """
-    NEIC dataset
+    NEIC dataset from Yeck and Patton
     """
 
     def __init__(self, **kwargs):
