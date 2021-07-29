@@ -29,6 +29,7 @@ class GenericGenerator(Dataset):
         This allows in particular none-sequential augmentation sequences.
 
         :param dataset: The underlying SeisBench data set.
+        :type dataset: seisbench.data.WaveformDataset or seisbench.data.MultiWaveformDataset
         """
         self._augmentations = []
         self.dataset = dataset
@@ -47,7 +48,7 @@ class GenericGenerator(Dataset):
         Adds a list of augmentations to the generator. Can not be used as decorator.
 
         :param augmentations: List of augmentations
-        :return: None
+        :type augmentations: list[callable]
         """
         if not isinstance(augmentations, list):
             raise TypeError(
@@ -100,8 +101,10 @@ class SteeredGenerator(GenericGenerator):
         `pytorch Sampler <https://pytorch.org/docs/stable/data.html#data-loading-order-and-sampler>`_.
 
     :param dataset: The underlying SeisBench data set
+    :type dataset: seisbench.data.WaveformDataset or seisbench.data.MultiWaveformDataset
     :param metadata: The additional information as pandas dataframe.
                      Each row corresponds to one sample from the generator.
+    :type metadata: pandas.DataFrame
     """
 
     def __init__(self, dataset, metadata):

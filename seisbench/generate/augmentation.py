@@ -7,16 +7,26 @@ class Normalize:
     """
     A normalization augmentation that allows demeaning, detrending and amplitude normalization (in this order).
 
-    :param demean_axis: The axis (single axis or tuple) which should be jointly demeaned. None indicates no demeaning.
+    :param demean_axis: The axis (single axis or tuple) which should be jointly demeaned.
+                        None indicates no demeaning.
+    :type demean_axis: int, None
     :param detrend_axis: The axis along with detrending should be applied.
-    :param amp_norm: The axis (single axis or tuple) which should be jointly amplitude normalized. None indicates no normalization.
+                         None indicates no normalization.
+    :type detrend_axis: int, None
+    :param amp_norm: The axis (single axis or tuple) which should be jointly amplitude normalized.
+                     None indicates no normalization.
+    :type amp_norm: int, None
     :param amp_norm_type: Type of amplitude normalization. Supported types:
         - "peak": division by the absolute peak of the trace
         - "std": division by the standard deviation of the trace
+    :type amp_norm_type: str
     :param eps: Epsilon value added in amplitude normalization to avoid division by zero
+    :type eps: float
     :param key: The keys for reading from and writing to the state dict.
-        If key is a single string, the corresponding entry in state dict is modified.
-        Otherwise, a 2-tuple is expected, with the first string indicating the key to read from and the second one the key to write to.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
     """
 
     def __init__(
@@ -95,15 +105,23 @@ class Filter:
     Please refer to the scipy documentation for more detailed description of the parameters
 
     :param N: Filter order
+    :type N: int
     :param Wn: The critical frequency or frequencies
+    :type Wn: list/array of float
     :param btype: The filter type: ‘lowpass’, ‘highpass’, ‘bandpass’, ‘bandstop’
+    :type btype: str
     :param analog: When True, return an analog filter, otherwise a digital filter is returned.
+    :type analog: bool
     :param forward_backward: If true, filters once forward and once backward.
-        This doubles the order of the filter and makes the filter zero-phase.
+                             This doubles the order of the filter and makes the filter zero-phase.
+    :type forward_backward: bool
     :param axis: Axis along which the filter is applied.
+    :type axis: int
     :param key: The keys for reading from and writing to the state dict.
-        If key is a single string, the corresponding entry in state dict is modified.
-        Otherwise, a 2-tuple is expected, with the first string indicating the key to read from and the second one the key to write to.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
 
     """
 
@@ -156,7 +174,9 @@ class FilterKeys:
     Either included or excluded keys can be defined.
 
     :param include: Only these keys will be present in the output.
+    :type include: list[str] or None
     :param exclude: All keys except these keys will be present in the output.
+    :type exclude: list[str] or None
 
     """
 
@@ -190,9 +210,12 @@ class ChangeDtype:
     Copies the data while changing the data type to the provided one
 
     :param dtype: Target data type
+    :type dtype: numpy.dtype
     :param key: The keys for reading from and writing to the state dict.
-        If key is a single string, the corresponding entry in state dict is modified.
-        Otherwise, a 2-tuple is expected, with the first string indicating the key to read from and the second one the key to write to.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
     """
 
     def __init__(self, dtype, key="X"):
@@ -220,9 +243,11 @@ class OneOf:
     Runs one of the augmentations provided, choosing randomly each time called.
 
     :param augmentations: A list of augmentations
+    :type augmentations: callable
     :param probabilities: Probability for each augmentation to be used.
                           Probabilities will automatically be normed to sum to 1.
                           If None, equal probability is assigned to each augmentation.
+    :type probabilities: list/array/tuple of scalar
     """
 
     def __init__(self, augmentations, probabilities=None):
@@ -272,10 +297,12 @@ class ChannelDropout:
     As for regular Dropout, this ensures that the output "energy" is unchanged.
 
     :param axis: Channel dimension, defaults to -2.
+    :type axis: int
     :param key: The keys for reading from and writing to the state dict.
                 If key is a single string, the corresponding entry in state dict is modified.
-                Otherwise, a 2-tuple is expected, with the first string indicating the key
-                to read from and the second one the key to write to.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
     """
 
     def __init__(self, axis=-2, key="X"):
@@ -322,10 +349,12 @@ class AddGap:
     Adds a gap into the data by zeroing out entries.
 
     :param axis: Sample dimension, defaults to -1.
+    :type axis: int
     :param key: The keys for reading from and writing to the state dict.
                 If key is a single string, the corresponding entry in state dict is modified.
-                Otherwise, a 2-tuple is expected, with the first string indicating the key
-                to read from and the second one the key to write to.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
     """
 
     def __init__(self, axis=-1, key="X"):
@@ -379,9 +408,11 @@ class RandomArrayRotation:
                  Each key specification is either a string, for identical input and output keys,
                  or as a tuple of two strings, input and output keys.
                  Defaults to "X".
+    :type keys: Union[list[Union[str, tuple[str, str]]], str, tuple[str,str]]
     :param axis: Sample axis. Either a single integer or a list of integers for multiple keys.
                  If a single integer but multiple keys are provided, the same axis will be used for each key.
                  Defaults to -1.
+    :type axis: Union[int, list[int]]
     """
 
     def __init__(self, keys="X", axis=-1):
@@ -435,10 +466,12 @@ class GaussianNoise:
     :param scale: Tuple of minimum and maximum relative amplitude of the noise.
                   Relative amplitude is defined as the quotient of the standard deviation of the noise and
                   the absolute maximum of the input array.
+    :type scale: tuple[float, float]
     :param key: The keys for reading from and writing to the state dict.
                 If key is a single string, the corresponding entry in state dict is modified.
-                Otherwise, a 2-tuple is expected, with the first string indicating the key
-                to read from and the second one the key to write to.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
     """
 
     def __init__(self, scale=(0, 0.15), key="X"):
