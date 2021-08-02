@@ -8,6 +8,7 @@ from pathlib import Path
 import os
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from collections import defaultdict
 from queue import PriorityQueue
 import json
@@ -1277,13 +1278,18 @@ class ActivationLSTMCell(nn.Module):
     LSTM Cell using variable gating activation, by default hard sigmoid
 
     If gate_activation=torch.sigmoid this is the standard LSTM cell
+
+    Uses recurrent dropout strategy from https://arxiv.org/abs/1603.05118 to match Keras implementation.
     """
 
-    def __init__(self, input_size, hidden_size, gate_activation=hard_sigmoid):
+    def __init__(
+        self, input_size, hidden_size, gate_activation=hard_sigmoid, recurrent_dropout=0
+    ):
         super(ActivationLSTMCell, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.gate_activation = gate_activation
+        self.recurrent_dropout = recurrent_dropout
 
         self.weight_ih = nn.Parameter(torch.randn(4 * hidden_size, input_size))
         self.weight_hh = nn.Parameter(torch.randn(4 * hidden_size, hidden_size))
@@ -1313,6 +1319,9 @@ class ActivationLSTMCell(nn.Module):
         cellgate = torch.tanh(cellgate)
         outgate = self.gate_activation(outgate)
 
+        if self.recurrent_dropout > 0:
+            cellgate = F.dropout(cellgate, p=self.recurrent_dropout)
+
         cy = (forgetgate * cx) + (ingate * cellgate)
         hy = outgate * torch.tanh(cy)
 
@@ -1324,12 +1333,12 @@ class CustomLSTM(nn.Module):
     LSTM to be used with custom cells
     """
 
-    def __init__(self, cell, *cell_args, bidirectional=True):
+    def __init__(self, cell, *cell_args, bidirectional=True, **cell_kwargs):
         super(CustomLSTM, self).__init__()
-        self.cell_f = cell(*cell_args)
+        self.cell_f = cell(*cell_args, **cell_kwargs)
         self.bidirectional = bidirectional
         if self.bidirectional:
-            self.cell_b = cell(*cell_args)
+            self.cell_b = cell(*cell_args, **cell_kwargs)
 
     def forward(self, input, state=None):
         # Forward

@@ -1,4 +1,5 @@
 import seisbench.models
+from seisbench.models.base import ActivationLSTMCell, CustomLSTM
 
 import numpy as np
 import obspy
@@ -674,3 +675,15 @@ def test_waveform_pipeline_from_pretrained(tmp_path):
                 gpd_from_pretrained.assert_called_once_with(
                     "dummy", force=False, wait_for_file=False
                 )
+
+
+def test_recurrent_dropout():
+    lstm = CustomLSTM(
+        ActivationLSTMCell, 1, 100, bidirectional=True, recurrent_dropout=0.25
+    )
+    x = torch.ones(100, 5, 1)
+
+    with torch.no_grad():
+        y = lstm(x)[0]
+
+    assert y.shape == (100, 5, 200)
