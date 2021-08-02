@@ -1,5 +1,6 @@
-# SeisBench
-SeisBench - The Seismology Benchmark collection
+![image](docs/_static/seisbench_logo_subtitle.svg)
+---
+SeisBench (*The Seismology Benchmark Collection*) is a toolbox to unifying the application of machine learning pipelines to seismic data. 
 
 ## Installation
 

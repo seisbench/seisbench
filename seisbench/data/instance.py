@@ -5,6 +5,8 @@ from .base import BenchmarkDataset, MultiWaveformDataset
 import shutil
 import bz2
 from abc import ABC
+import os
+import pandas as pd
 
 
 class InstanceTypeDataset(BenchmarkDataset, ABC):
@@ -59,11 +61,44 @@ class InstanceTypeDataset(BenchmarkDataset, ABC):
                             break
                         fout.write(block)
 
+        self._add_split(writer.metadata_path)
+
         if cleanup:
             seisbench.logger.warning(
                 "Cleaning up source files. This might take a few minutes."
             )
             shutil.rmtree(path_original)
+
+    @staticmethod
+    def _add_split(metadata_path):
+        split_url = os.path.join(seisbench.remote_root, "auxiliary/instance_split.csv")
+        split_path = seisbench.cache_root / "auxiliary" / "instance_split.csv"
+
+        split_path.parent.mkdir(parents=True, exist_ok=True)
+
+        def download_split(path):
+            seisbench.util.download_http(split_url, path, progress_bar=False)
+
+        seisbench.util.callback_if_uncached(split_path, download_split, force=True)
+
+        split_dict = {}
+        with open(split_path, "r") as f:
+            for line in f:
+                if not line or line.startswith("source_id,"):
+                    continue
+
+                if len(line.split(",")) != 2:
+                    print(line)
+                source_id, split = line.strip().split(",")
+
+                split_dict[source_id] = split
+
+        def source_id_to_split(source_id):
+            return split_dict[str(source_id)]
+
+        metadata = pd.read_csv(metadata_path)
+        metadata["split"] = metadata["source_id"].apply(source_id_to_split)
+        metadata.to_csv(metadata_path, index=False)
 
 
 class InstanceNoise(InstanceTypeDataset):

@@ -9,7 +9,7 @@ from obspy import UTCDateTime
 
 class LenDB(BenchmarkDataset):
     """
-    Len-DB dataset
+    Len-DB dataset from Magrini et al.
     """
 
     def __init__(self, **kwargs):
@@ -87,6 +87,7 @@ class LenDB(BenchmarkDataset):
                     "path_ep_distance_km": eq_attributes["dist"] / 1e3,
                     "path_azimuth_deg": eq_attributes["az"],
                     "path_back_azimuth_deg": eq_attributes["baz"],
+                    "split": self._get_split_from_time(starttime),
                 }
 
                 writer.add_trace(metadata, eq_data[()])
@@ -107,6 +108,7 @@ class LenDB(BenchmarkDataset):
                     "station_latitude_deg": an_attributes["stla"],
                     "station_longitude_deg": an_attributes["stlo"],
                     "station_elevation_m": an_attributes["stel"],
+                    "split": self._get_split_from_time(starttime),
                 }
 
                 writer.add_trace(metadata, an_data[()])
@@ -114,3 +116,17 @@ class LenDB(BenchmarkDataset):
         if cleanup:
             # Remove original dataset
             os.remove(path_original)
+
+    @staticmethod
+    def _get_split_from_time(starttime):
+        train_dev_border = "2017-01-16"
+        dev_test_border = "2017-08-16"
+
+        if starttime < train_dev_border:
+            split = "train"
+        elif starttime < dev_test_border:
+            split = "dev"
+        else:
+            split = "test"
+
+        return split

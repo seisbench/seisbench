@@ -5,7 +5,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from obspy.signal.trigger import trigger_onset
 
 
 # For implementation, potentially follow: https://medium.com/huggingface/from-tensorflow-to-pytorch-265f40ef2a28
@@ -16,7 +15,7 @@ class EQTransformer(WaveformModel):
     Implementation adapted from the Github repository https://github.com/smousavi05/EQTransformer
     Assumes padding="same" and activation="relu" as in the pretrained EQTransformer models
 
-    By instantiating the model with from_pretrained("original") a binary compatible version of the original
+    By instantiating the model with `from_pretrained("original")` a binary compatible version of the original
     EQTransformer with the original weights from Mousavi et al. (2020) can be loaded.
 
     :param in_channels: Number of input channels, by default 3.

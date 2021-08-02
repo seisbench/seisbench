@@ -55,7 +55,7 @@ class WaveformDataset:
                   Note that it is recommended to always first filter a dataset and then preload to reduce
                   unnecessary reads and memory consumption.
     :type cache: str, optional
-    :param chunks: Specify particular chunk prefixes to load, defaults to None.
+    :param chunks: Specify particular chunks to load. If None, loads all chunks. Defaults to None.
     :type chunks: list, optional
     :param missing_components: Strategy to deal with missing components. Options are:
                                - "pad": Fill with zeros.
@@ -75,7 +75,7 @@ class WaveformDataset:
         component_order=None,
         sampling_rate=None,
         cache=None,
-        chunks=None,  # Which chunks should be loaded. If None, load all chunks.
+        chunks=None,
         missing_components="pad",
         **kwargs,
     ):
@@ -154,14 +154,24 @@ class WaveformDataset:
 
     @property
     def metadata(self):
+        """
+        Metadata of the dataset as pandas DataFrame.
+        """
         return self._metadata
 
     @property
     def name(self):
+        """
+        Name of the dataset (immutable)
+        """
         return self._name
 
     @property
     def cache(self):
+        """
+        Get or set the cache strategy of the dataset. For possible strategies see the constructor.
+        Note that changing cache strategies will not cause a cache eviction.
+        """
         return self._cache
 
     @cache.setter
@@ -175,17 +185,28 @@ class WaveformDataset:
 
     @property
     def path(self):
+        """
+        Path of the dataset (immutable)
+        """
         if self._path is None:
             raise ValueError("Path is None. Can't create data set without a path.")
         return Path(self._path)
 
     @property
     def data_format(self):
+        """
+        Data format dictionary, describing the data format of the stored dataset.
+        Note that this does not necessarily equals the output data format of get waveforms.
+        To query these, use the relevant class properties.
+        """
         # Returns a copy of the data format, to ensure internal data format is not modified.
         return dict(self._data_format)
 
     @property
     def dimension_order(self):
+        """
+        Get or set the order of the dimension in the output.
+        """
         return self._dimension_order
 
     @dimension_order.setter
@@ -200,6 +221,9 @@ class WaveformDataset:
 
     @property
     def missing_components(self):
+        """
+        Get or set strategy to handle missing components. For options, see the constructor.
+        """
         return self._missing_components
 
     @missing_components.setter
@@ -217,6 +241,9 @@ class WaveformDataset:
 
     @property
     def component_order(self):
+        """
+        Get or set order of components in the output.
+        """
         return self._component_order
 
     @component_order.setter
@@ -237,12 +264,21 @@ class WaveformDataset:
 
     @property
     def chunks(self):
+        """
+        Returns a list of chunks. If dataset is not chunked, returns an empty list.
+        """
         if self._chunks is None:
             self._chunks = self.available_chunks(self.path)
         return self._chunks
 
     @staticmethod
     def available_chunks(path):
+        """
+        Determines the chunks of the dataset in the given path.
+
+        :param path: Dataset path
+        :return: List of chunks
+        """
         path = Path(path)
         chunks_path = path / "chunks"
         if chunks_path.is_file():
@@ -398,6 +434,13 @@ class WaveformDataset:
 
     @staticmethod
     def _get_dimension_mapping(source, target):
+        """
+        Calculates the mapping from source to target dimension orders.
+
+        :param source:
+        :param target:
+        :return:
+        """
         source = list(source)
         target = list(target)
 
@@ -424,12 +467,20 @@ class WaveformDataset:
         return mapping
 
     def _chunks_with_paths(self):
+        """
+        See return value
+
+        :return: List of chunks, list of metadata paths, list of waveform paths
+        """
         metadata_paths = [self.path / f"metadata{chunk}.csv" for chunk in self.chunks]
         waveform_paths = [self.path / f"waveforms{chunk}.hdf5" for chunk in self.chunks]
 
         return self.chunks, metadata_paths, waveform_paths
 
     def _verify_dataset(self):
+        """
+        Checks that metadata and waveforms of all chunks are available and raises an exception otherwise.
+        """
         for chunk, metadata_path, waveform_path in zip(*self._chunks_with_paths()):
             chunks_str = f" for chunk '{chunk}'" if chunk != "" else ""
 
@@ -439,6 +490,13 @@ class WaveformDataset:
                 raise FileNotFoundError(f"Missing waveforms file{chunks_str}")
 
     def _read_data_format(self):
+        """
+        Reads the data format group from the hdf5 file(s).
+        Checks consistency in case of chunked datasets.
+
+        :return: Data format dict
+        """
+
         data_format = None
         for waveform_file in self._chunks_with_paths()[2]:
             with h5py.File(waveform_file, "r") as f_wave:
@@ -502,7 +560,7 @@ class WaveformDataset:
 
     def get_idx_from_trace_name(self, trace_name):
         """
-        Returns the index of the
+        Returns the index of the trace with given trace_name
 
         :param trace_name: Trace name as in metadata["trace_name"]
         :return: Index of the sample
@@ -527,7 +585,9 @@ class WaveformDataset:
 
     def preload_waveforms(self, pbar=False):
         """
-        Loads waveform data from hdf5 file into cache
+        Loads waveform data from hdf5 file into cache. Fails if caching strategy is None.
+
+        :param pbar: If true, shows progress bar. Defaults to False.
         """
         if self.cache is None:
             seisbench.logger.warning("Skipping preload, as cache is disabled.")
@@ -552,8 +612,8 @@ class WaveformDataset:
         Setting inplace equal to false will return a filtered copy of the data set.
         For details on the copy operation see :py:func:`~WaveformDataset.copy`.
 
-        :param mask: Boolean mask to apple to metadata.
-        :type mask: masked-array
+        :param mask: Boolean mask to apply to metadata.
+        :type mask: boolean array
         :param inplace: If true, filter inplace.
         :type inplace: bool
 
@@ -578,8 +638,8 @@ class WaveformDataset:
     # change between datasets and users may also want to filter as a function of  recievers/sources
     def region_filter(self, domain, lat_col, lon_col, inplace=True):
         """
-        In place filtering of dataset based on predefined region or geometry.
-        See also convenience functions region_filter_[source|receiver]
+        Filtering of dataset based on predefined region or geometry.
+        See also convenience functions region_filter_[source|receiver].
 
         :param domain: The domain filter
         :type domain: obspy.core.fdsn.mass_downloader.domain:
@@ -587,7 +647,9 @@ class WaveformDataset:
         :type lat_col: str
         :param lon_col: Name of longitude coordinate column
         :type lon_col: str
-        :return:
+        :param inplace: Inplace filtering, default to true. See also :py:func:`~WaveformDataset.filter`.
+        :type inplace: bool
+        :return: None if inplace=True, otherwise the filtered dataset.
         """
         check_domain = lambda metadata: domain.is_in_domain(
             metadata[lat_col], metadata[lon_col]
@@ -596,6 +658,9 @@ class WaveformDataset:
         self.filter(mask, inplace=inplace)
 
     def region_filter_source(self, domain, inplace=True):
+        """
+        Convenience method for region filtering by source location.
+        """
         self.region_filter(
             domain,
             lat_col="source_latitude_deg",
@@ -604,6 +669,9 @@ class WaveformDataset:
         )
 
     def region_filter_receiver(self, domain, inplace=True):
+        """
+        Convenience method for region filtering by receiver location.
+        """
         self.region_filter(
             domain,
             lat_col="station_latitude_deg",
@@ -663,7 +731,7 @@ class WaveformDataset:
         """
         Remove all traces from cache that do not have any reference in metadata anymore
 
-        :return:
+        :return: None
         """
         if self.cache == "full":
             # Extract block names
@@ -686,11 +754,17 @@ class WaveformDataset:
         seisbench.logger.debug(f"Deleted {len(delete_keys)} entries in cache eviction")
 
     def __getitem__(self, item):
+        """
+        Only accepts string inputs. Returns respective column from metadata
+        """
         if not isinstance(item, str):
             raise TypeError("Can only use strings to access metadata parameters")
         return self._metadata[item]
 
     def __len__(self):
+        """
+        Number of samples in the dataset.
+        """
         return len(self._metadata)
 
     def get_sample(self, idx, sampling_rate=None):
@@ -926,6 +1000,17 @@ class WaveformDataset:
         return tuple(slices)
 
     def _resample(self, waveform, target_sampling_rate, source_sampling_rate, eps=1e-4):
+        """
+        Resamples waveform from source to target sampling rate.
+        Automatically chooses between scipy.signal.decimate and scipy.signal.resample
+        based on source and target sampling rate.
+
+        :param waveform:
+        :param target_sampling_rate:
+        :param source_sampling_rate:
+        :param eps: Tolerance for equality of source an target sampling rate
+        :return:
+        """
         try:
             sample_axis = list(self._data_format["dimension_order"]).index("W")
         except KeyError:
@@ -962,6 +1047,12 @@ class WaveformDataset:
 
     @staticmethod
     def _pad_packed_sequence(seq):
+        """
+        Packs a list of arrays into one array by adding a new first dimension and padding where necessary.
+
+        :param seq:
+        :return:
+        """
         max_size = np.array(
             [max([x.shape[i] for x in seq]) for i in range(seq[0].ndim)]
         )
@@ -1123,6 +1214,10 @@ class MultiWaveformDataset:
             )
 
     def _homogenize_dataformat(self, datasets):
+        """
+        Checks if the output data format options agree.
+        In case of mismatches, warnings are issued and the format is reset.
+        """
         has_split = ["split" in dataset.metadata.columns for dataset in datasets]
         if (
             np.sum(has_split) % len(datasets) != 0
@@ -1178,14 +1273,23 @@ class MultiWaveformDataset:
 
     @property
     def datasets(self):
+        """
+        Datasets contained in MultiWaveformDataset.
+        """
         return list(self._datasets)
 
     @property
     def metadata(self):
+        """
+        Metadata of the dataset as pandas DataFrame.
+        """
         return self._metadata
 
     @property
     def sampling_rate(self):
+        """
+        Get or set sampling rate for output
+        """
         return self.datasets[0].sampling_rate
 
     @sampling_rate.setter
@@ -1195,6 +1299,9 @@ class MultiWaveformDataset:
 
     @property
     def dimension_order(self):
+        """
+        Get or set dimension order for output
+        """
         return self.datasets[0].dimension_order
 
     @dimension_order.setter
@@ -1204,6 +1311,9 @@ class MultiWaveformDataset:
 
     @property
     def missing_components(self):
+        """
+        Get or set strategy for missing components
+        """
         return self.datasets[0].missing_components
 
     @missing_components.setter
@@ -1213,6 +1323,9 @@ class MultiWaveformDataset:
 
     @property
     def component_order(self):
+        """
+        Get or set component order
+        """
         return self.datasets[0].component_order
 
     @component_order.setter
@@ -1222,6 +1335,9 @@ class MultiWaveformDataset:
 
     @property
     def cache(self):
+        """
+        Get or set cache strategy
+        """
         if self._test_attribute_equal(self.datasets, "cache"):
             return self.datasets[0].cache
         else:
@@ -1245,6 +1361,9 @@ class MultiWaveformDataset:
         return all(x == attribute_list[0] for x in attribute_list)
 
     def __getitem__(self, item):
+        """
+        Only accepts string inputs. Returns respective column from metadata
+        """
         if not isinstance(item, str):
             raise TypeError("Can only use strings to access metadata parameters")
         return self.metadata[item]
@@ -1390,7 +1509,12 @@ class MultiWaveformDataset:
         return dataset_idx, local_idx
 
     def _split_mask(self, mask):
-        # Split one mask for the full dataset into sevearl masks for each subset
+        """
+        Split one mask for the full dataset into several masks for each subset
+
+        :param mask: Mask for the full dataset
+        :return: List of masks, one for each dataset
+        """
         if not len(mask) == len(self):
             raise ValueError("Mask does not match dataset.")
 
@@ -1403,6 +1527,9 @@ class MultiWaveformDataset:
         return masks
 
     def preload_waveforms(self, *args, **kwargs):
+        """
+        Calls :py:func:`WaveformDataset.preload_waveforms` for all member datasets with the provided arguments.
+        """
         for dataset in self.datasets:
             dataset.preload_waveforms(*args, **kwargs)
 
@@ -1452,7 +1579,23 @@ class LoadingContext:
 class BenchmarkDataset(WaveformDataset, ABC):
     """
     This class is the base class for benchmark waveform datasets.
-    It adds functionality to download the dataset to cache and to annotate it with a citation and a license.
+    It adds functionality to automatically download the dataset to the SeisBench cache.
+    Downloads can either be from the SeisBench repository, if the dataset is available there and in the right format,
+    or from another source, which will usually require some form of conversion.
+    Furthermore, it adds annotations for citation and license.
+
+    :param chunks: List of chunks to download
+    :param citation: Citation for the dataset. Should be set in the inheriting class.
+    :param license: License associated with the dataset. Should be set in the inherenting class.
+    :param force: Passed to :py:func:`~seisbench.util.callback_if_uncached`
+    :param wait_for_file: Passed to :py:func:`~seisbench.util.callback_if_uncached`
+    :param repository_lookup: Whether the data set should be search in the remote repository or directly use
+                              the download function. Should be set in the inheriting class. Only needs to be
+                              set to true if the dataset is available in a repository, e.g., the SeisBench
+                              repository, for direct download.
+    :param download_kwargs: Dict of arguments passed to the download_dataset function,
+                            in case the dataset is loaded from scratch.
+    :param kwargs: Keyword arguments passed to WaveformDataset
     """
 
     def __init__(
@@ -1466,19 +1609,6 @@ class BenchmarkDataset(WaveformDataset, ABC):
         download_kwargs=None,
         **kwargs,
     ):
-        """
-
-        :param chunks: List of chunks to download
-        :param citation: Citation for the dataset. Should be set in the inheriting class.
-        :param license: License associated with the dataset. Should be set in the inherenting class.
-        :param force: Passed to :py:func:`~seisbench.util.callback_if_uncached`
-        :param wait_for_file: Passed to :py:func:`~seisbench.util.callback_if_uncached`
-        :param repository_lookup: Whether the data set should be search in the remote repository or directly use the building download function.
-        Should be set in the inheriting class.
-        Only needs to be set to true if the dataset is available in a repository, e.g., the SeisBench repository, for direct download.
-        :param download_kwargs: Dict of arguments passed to the download_dataset function, in case the dataset is loaded from scratch.
-        :param kwargs: Keyword arguments passed to WaveformDataset
-        """
         self._name = self._name_internal()
         self._citation = citation
         self._license = license
@@ -1542,36 +1672,61 @@ class BenchmarkDataset(WaveformDataset, ABC):
 
     @property
     def citation(self):
+        """
+        The suggested citation for this dataset
+        """
         return self._citation
 
     @property
     def license(self):
+        """
+        The licence attached to this dataset
+        """
         return self._license
 
     @classmethod
     def _path_internal(cls):
+        """
+        Path to the dataset location in the SeisBench cache. This class method is required for technical reasons.
+        """
         return Path(seisbench.cache_root, "datasets", cls._name_internal().lower())
 
     @property
     def path(self):
+        """
+        Path to the dataset location in the SeisBench cache
+        """
         return self._path_internal()
 
     @classmethod
     def _name_internal(cls):
+        """
+        Name of the dataset. This class method is required for technical reasons.
+        """
         return cls.__name__
 
     @property
     def name(self):
+        """
+        Name of the dataset. For BenchmarkDatasets, always matches the class name.
+        """
         return self._name_internal()
 
     @classmethod
     def _remote_path(cls):
+        """
+        Path within the remote repository. Does only generate the pass without checking actual availability.
+        Can be overwritten for datasets stored in the correct format but at a different location.
+        """
         return os.path.join(
             seisbench.remote_root, "datasets", cls._name_internal().lower()
         )
 
     @classmethod
     def available_chunks(cls, force=False, wait_for_file=False):
+        """
+        Returns a list of available chunks. Queries both the local cache and the remote root.
+        """
         if (cls._path_internal() / "metadata.csv").is_file() and (
             cls._path_internal() / "waveforms.hdf5"
         ).is_file():
@@ -1608,6 +1763,9 @@ class BenchmarkDataset(WaveformDataset, ABC):
         return chunks
 
     def _download_preprocessed(self, metadata_path, waveforms_path, chunk):
+        """
+        Downloads the dataset in the correct format, usually from the remote root.
+        """
         self.path.mkdir(parents=True, exist_ok=True)
 
         remote_path = self._remote_path()
@@ -1624,13 +1782,14 @@ class BenchmarkDataset(WaveformDataset, ABC):
     @abstractmethod
     def _download_dataset(self, writer, chunk, **kwargs):
         """
-        Download and convert the dataset to the standard seisbench format.
-        The metadata must contain at least the columns 'trace_name' and 'split'.
+        Download and convert the dataset to the standard SeisBench format.
+        The metadata must contain at least the column 'trace_name'.
+        Please see the SeisBench documentation for more details on the data format.
 
         :param writer: A WaveformDataWriter instance
         :param chunk: The chunk to be downloaded. Can be ignored if unchunked data set is created.
         :param kwargs:
-        :return:
+        :return: None
         """
         pass
 
@@ -1709,11 +1868,17 @@ class WaveformDataWriter:
     """
     The WaveformDataWriter for writing datasets in SeisBench format.
 
-    To improve reading performance when using the datasets, the writer groups traces into blocks and writes them into joint arrays in the hdf5 file.
-    The exact behaviour is controlled by the :py:attr:`bucketer` and the :py:attr:`bucket_size`.
-    For details see their documentations.
-    This packing is necessary, due to limitations in the hdf5 performance.
-    Reading many small datasets from a hdf5 file causes the overhead of the hdf5 structure to define the read times.
+    To improve reading performance when using the datasets, the writer groups traces into blocks and writes them into
+    joint arrays in the hdf5 file. The exact behaviour is controlled by the :py:attr:`bucketer` and
+    the :py:attr:`bucket_size`. For details see their documentation. This packing is necessary, due to limitations
+    in the hdf5 performance. Reading many small datasets from a hdf5 file causes the overhead of the hdf5 structure
+    to define the read times.
+
+    :param metadata_path: Path to write the metadata file to
+    :type metadata_path: str or Path
+    :param waveforms_path: Path to write the waveforms file to
+    :type waveforms_path: str or Path
+    :return: None
     """
 
     def __init__(self, metadata_path, waveforms_path):
@@ -1791,6 +1956,17 @@ class WaveformDataWriter:
             )
 
     def add_trace(self, metadata, waveform):
+        """
+        Adds a trace to the writer. This does not imply that the trace is immediately written to disk, as the writer
+        might wait to fill a bucket. The writer ensures that the order of traces in the metadata is identical to the
+        order of calls to add_trace.
+
+        :param metadata: Metadata of the trace
+        :type metadata: dict[str, any]
+        :param waveform: Waveform of the trace
+        :type waveform: np.ndarray
+        :return: None
+        """
         self._metadata.append(
             metadata
         )  # Note that this is only a reference to the metadata. This is later used to modify the trace_name attribute.
@@ -1811,6 +1987,9 @@ class WaveformDataWriter:
         self._pbar.update()
 
     def _write_bucket(self, bucket):
+        """
+        Writes a bucket to the waveforms file
+        """
         if len(bucket) == 0:
             # Empty buckets don't need to be written out
             return
@@ -1884,11 +2063,21 @@ class WaveformDataWriter:
         return output, locations
 
     def set_total(self, n):
+        """
+        Set the total number of traces to write. Only used for correct progress calculation
+
+        :param n: Number of traces
+        :type n: int
+        :return: None
+        """
         if self._pbar is None:
             self._pbar = tqdm(desc="Traces converted")
         self._pbar.total = n
 
     def _finalize(self):
+        """
+        Finalizes the dataset, by flushing the remaning traces to hdf5 and writing metadata and data format.
+        """
         self.flush_hdf5()
 
         if len(self._metadata) == 0:

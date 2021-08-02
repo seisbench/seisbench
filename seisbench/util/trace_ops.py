@@ -4,13 +4,13 @@ import numpy as np
 from obspy import ObsPyException
 
 
-def _trace_has_spikes(data, factor=25, quantile=0.975):
+def trace_has_spikes(data, factor=25, quantile=0.975):
     # Checks for bit flip errors in the data using a simple quantile rule
     q = np.quantile(np.abs(data), quantile, axis=1, keepdims=True)
     return np.any(data > q * factor)
 
 
-def _stream_to_array(stream, component_order):
+def stream_to_array(stream, component_order):
     starttime = min(trace.stats.starttime for trace in stream)
     endtime = max(trace.stats.endtime for trace in stream)
     sampling_rate = stream[0].stats.sampling_rate
@@ -43,7 +43,7 @@ def _stream_to_array(stream, component_order):
     return starttime, data, completeness
 
 
-def _rotate_stream_to_ZNE(stream, inventory):
+def rotate_stream_to_ZNE(stream, inventory):
     """
     Tries to rotate the stream to ZNE inplace. There are several possible failures, which are silently ignored.
     """

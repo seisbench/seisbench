@@ -14,10 +14,14 @@ class SupervisedLabeller(ABC):
     Performs simple checks for standard supervised classification labels.
 
     :param label_type: The type of label either: 'multi_label', 'multi_class', 'binary'.
+    :type label_type: str
     :param dim: Dimension over which labelling will be applied.
+    :type dim: int
     :param key: The keys for reading from and writing to the state dict.
-                Expects a 2-tuple with the first string indicating the key to read from and the second one the key to
-                write to. Defaults to ("X", "y")
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
     """
 
     def __init__(self, label_type, dim, key=("X", "y")):
@@ -39,7 +43,16 @@ class SupervisedLabeller(ABC):
 
     @abstractmethod
     def label(self, X, metadata):
-        # to be overwritten in subclasses
+        """
+        to be overwritten in subclasses
+
+        :param X: trace from state dict
+        :type X: numpy.ndarray
+        :param metadata: metadata from state dict
+        :type metadata: dict
+        :return: Label
+        :rtype: numpy.ndarray
+        """
         return y
 
     @staticmethod
@@ -492,6 +505,7 @@ class StandardLabeller(PickLabeller):
                 arrival_array.append(None)
 
         # Identify shape of entry
+        nan_dummy = np.ones(1) * np.nan  # Only used for all nan arrays
         for x in arrival_array:
             if not x is None:
                 nan_dummy = np.ones_like(x, dtype=float) * np.nan

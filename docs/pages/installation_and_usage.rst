@@ -17,8 +17,3 @@ Installing via anaconda
 Also available through anaconda, to install locally run. ::
 
     conda install seisbench
-
-
-Installing using Docker
------------------------
-We may provide a docker image.

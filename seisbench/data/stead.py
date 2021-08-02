@@ -3,7 +3,6 @@ import seisbench.util
 from .base import BenchmarkDataset, WaveformDataWriter
 
 from pathlib import Path
-import shutil
 import h5py
 import pandas as pd
 import numpy as np
@@ -11,7 +10,7 @@ import numpy as np
 
 class STEAD(BenchmarkDataset):
     """
-    STEAD dataset
+    STEAD dataset from Mousavi et al.
 
     Using the train/test split from the EQTransformer Github repository
     train/dev split defined in SeisBench
