@@ -681,9 +681,34 @@ def test_recurrent_dropout():
     lstm = CustomLSTM(
         ActivationLSTMCell, 1, 100, bidirectional=True, recurrent_dropout=0.25
     )
-    x = torch.ones(100, 5, 1)
+    x = torch.rand(100, 5, 1)
 
     with torch.no_grad():
         y = lstm(x)[0]
 
     assert y.shape == (100, 5, 200)
+
+
+def test_dpp_detector():
+    model = seisbench.models.DPPDetector(input_channels=3, nclasses=3)
+
+    x = torch.rand(16, 3, 500)
+    y = model(x)
+
+    assert y.shape == (16, 3)
+
+
+def test_dpp_ps():
+    model = seisbench.models.DPPPicker("P")
+
+    x = torch.rand(16, 1, 500)
+    y = model(x)
+
+    assert y.shape == (16, 500)
+
+    model = seisbench.models.DPPPicker("S")
+
+    x = torch.rand(16, 2, 500)
+    y = model(x)
+
+    assert y.shape == (16, 500)
