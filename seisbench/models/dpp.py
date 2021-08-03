@@ -145,6 +145,10 @@ class DPPPicker(WaveformModel):
         self.mode = mode
 
         if self.mode == "P":
+            """
+            Custom LSTM removed for performance reasons.
+            Could probably be fixed with JIT CustomLSTM.
+
             self.lstm1 = CustomLSTM(
                 ActivationLSTMCell,
                 1,
@@ -161,6 +165,9 @@ class DPPPicker(WaveformModel):
                 recurrent_dropout=0.25,
                 gate_activation=torch.sigmoid,
             )
+            """
+            self.lstm1 = nn.LSTM(1, 100, bidirectional=True)
+            self.lstm2 = nn.LSTM(200, 160, bidirectional=True)
             self.dropout1 = nn.Dropout(0.2)
             self.dropout2 = nn.Dropout(0.35)
             self.fc1 = nn.Linear(320, 1)
