@@ -146,20 +146,40 @@ class DPPPicker(WaveformModel):
 
         if self.mode == "P":
             self.lstm1 = CustomLSTM(
-                ActivationLSTMCell, 1, 100, bidirectional=True, recurrent_dropout=0.25
+                ActivationLSTMCell,
+                1,
+                100,
+                bidirectional=True,
+                recurrent_dropout=0.25,
+                gate_activation=torch.sigmoid,
             )
             self.lstm2 = CustomLSTM(
-                ActivationLSTMCell, 200, 160, bidirectional=True, recurrent_dropout=0.25
+                ActivationLSTMCell,
+                200,
+                160,
+                bidirectional=True,
+                recurrent_dropout=0.25,
+                gate_activation=torch.sigmoid,
             )
             self.dropout1 = nn.Dropout(0.2)
             self.dropout2 = nn.Dropout(0.35)
             self.fc1 = nn.Linear(320, 1)
         elif self.mode == "S":
             self.lstm1 = CustomLSTM(
-                ActivationLSTMCell, 2, 20, bidirectional=True, recurrent_dropout=0.25
+                ActivationLSTMCell,
+                2,
+                20,
+                bidirectional=True,
+                recurrent_dropout=0.25,
+                gate_activation=torch.sigmoid,
             )
             self.lstm2 = CustomLSTM(
-                ActivationLSTMCell, 40, 30, bidirectional=True, recurrent_dropout=0.25
+                ActivationLSTMCell,
+                40,
+                30,
+                bidirectional=True,
+                recurrent_dropout=0.25,
+                gate_activation=torch.sigmoid,
             )
             self.dropout1 = nn.Dropout(0.25)
             self.dropout2 = nn.Dropout(0.45)
@@ -175,7 +195,7 @@ class DPPPicker(WaveformModel):
         x = self.dropout1(x)
         x = self.lstm2(x)[0]
         x = self.dropout2(x)
-        x = x.permute(1, 0, 2)
+        x = x.permute(1, 0, 2)  # (seq, batch, channels) --> (batch, seq, channels)
 
         # keras TimeDistributed layer is applied by:
         # -> reshaping from (batch, sequence, *) to (batch * sequence, *)

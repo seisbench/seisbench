@@ -1295,6 +1295,14 @@ class ActivationLSTMCell(nn.Module):
         self.weight_hh = nn.Parameter(torch.randn(4 * hidden_size, hidden_size))
         self.bias_ih = nn.Parameter(torch.randn(4 * hidden_size))
         self.bias_hh = nn.Parameter(torch.randn(4 * hidden_size))
+        self.init_weights()
+
+    def init_weights(self):
+        with torch.no_grad():
+            for param in [self.weight_hh, self.weight_ih]:
+                for idx in range(4):
+                    mul = param.shape[0] // 4
+                    torch.nn.init.xavier_uniform_(param[idx * mul : (idx + 1) * mul])
 
     def forward(self, input, state):
         if state is None:
