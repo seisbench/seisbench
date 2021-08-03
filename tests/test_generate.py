@@ -654,7 +654,7 @@ def test_step_labeller():
             10 * np.random.rand(3, 1000),
             {
                 "trace_p_arrival_sample": 500,
-                "trace_s_arrival_sample": 700,
+                "trace_s_arrival_sample": -100,
                 "trace_g_arrival_sample": np.nan,
             },
         )
@@ -668,8 +668,7 @@ def test_step_labeller():
     assert state_dict["y"][0].shape == (3, 1000)
     assert (state_dict["y"][0][1, :500] == 0).all()
     assert (state_dict["y"][0][1, 500:] == 1).all()
-    assert (state_dict["y"][0][2, :700] == 0).all()
-    assert (state_dict["y"][0][2, 700:] == 1).all()
+    assert (state_dict["y"][0][2] == 1).all()
     assert (state_dict["y"][0][0] == 0).all()
 
     # Test label construction for multiple windows

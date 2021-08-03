@@ -320,12 +320,14 @@ class StepLabeller(PickLabeller):
                 # Handle single window case
                 onset = metadata[label_column]
                 if not np.isnan(onset):
+                    onset = max(0, onset)
                     y[i, int(onset) :] = 1
             else:
                 # Handle multi-window case
                 for j in range(X.shape[sample_dim]):
                     onset = metadata[label_column][j]
                     if not np.isnan(onset):
+                        onset = max(0, onset)
                         y[j, i, int(onset) :] = 1
 
         return y
