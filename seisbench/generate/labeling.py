@@ -126,14 +126,16 @@ class PickLabeller(SupervisedLabeller, ABC):
     :param kwargs: Kwargs are passed to the SupervisedLabeller superclass
     """
 
-    def __init__(self, label_columns=None, **kwargs):
+    def __init__(self, label_columns=None, noise_column=True, **kwargs):
         self.label_columns = label_columns
         if label_columns is not None:
             (
                 self.label_columns,
                 self.labels,
                 self.label_ids,
-            ) = self._colums_to_dict_and_labels(label_columns)
+            ) = self._colums_to_dict_and_labels(
+                label_columns, noise_column=noise_column
+            )
         else:
             self.labels = None
             self.label_ids = None
@@ -151,7 +153,7 @@ class PickLabeller(SupervisedLabeller, ABC):
         )
 
     @staticmethod
-    def _colums_to_dict_and_labels(label_columns):
+    def _colums_to_dict_and_labels(label_columns, noise_column=True):
         """
         Generate label columns dict and list of labels from label_columns list or dict.
         Always appends a noise column at the end.
@@ -163,7 +165,8 @@ class PickLabeller(SupervisedLabeller, ABC):
             label_columns = {label: label.split("_")[1] for label in label_columns}
 
         labels = sorted(list(np.unique(list(label_columns.values()))))
-        labels.append("Noise")
+        if noise_column:
+            labels.append("Noise")
         label_ids = {label: i for i, label in enumerate(labels)}
 
         return label_columns, labels, label_ids
@@ -261,6 +264,69 @@ class ProbabilisticLabeller(PickLabeller):
             y = self._swap_dimension_order(
                 y, current_dim="NCW", expected_dim=config["dimension_order"]
             )
+
+        return y
+
+    def __str__(self):
+        return f"ProbabilisticLabeller (label_type={self.label_type}, dim={self.dim})"
+
+
+class StepLabeller(PickLabeller):
+    """
+    Create supervised labels from picks. The picks are represented by probability curves with value 0
+    before the pick and 1 afterwards. The output contains one channel per pick type and no noise channel.
+
+    All picks with NaN sample are treated as not present.
+    """
+
+    def __init__(self, **kwargs):
+        self.label_method = "probabilistic"
+        kwargs["dim"] = kwargs.get("dim", -2)
+        super().__init__(label_type="multi_label", noise_column=False, **kwargs)
+
+    def label(self, X, metadata):
+        if not self.label_columns:
+            label_columns = self._auto_identify_picklabels(metadata)
+            (
+                self.label_columns,
+                self.labels,
+                self.label_ids,
+            ) = self._colums_to_dict_and_labels(label_columns, noise_column=False)
+
+        sample_dim, channel_dim, width_dim = self._get_dimension_order_from_config(
+            config, self.ndim
+        )
+
+        if self.ndim == 2:
+            y = np.zeros(shape=(len(self.labels), X.shape[width_dim]))
+        elif self.ndim == 3:
+            y = np.zeros(
+                shape=(
+                    X.shape[sample_dim],
+                    len(self.labels),
+                    X.shape[width_dim],
+                )
+            )
+
+        # Construct pick labels
+        for label_column, label in self.label_columns.items():
+            i = self.label_ids[label]
+
+            if not label_column in metadata:
+                # Unknown pick
+                continue
+
+            if isinstance(metadata[label_column], (int, np.integer, float)):
+                # Handle single window case
+                onset = metadata[label_column]
+                if not np.isnan(onset):
+                    y[i, int(onset) :] = 1
+            else:
+                # Handle multi-window case
+                for j in range(X.shape[sample_dim]):
+                    onset = metadata[label_column][j]
+                    if not np.isnan(onset):
+                        y[j, i, int(onset) :] = 1
 
         return y
 

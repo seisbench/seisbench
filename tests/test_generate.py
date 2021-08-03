@@ -14,6 +14,7 @@ from seisbench.generate import (
     ProbabilisticPointLabeller,
     StandardLabeller,
     DetectionLabeller,
+    StepLabeller,
 )
 from seisbench.data import DummyDataset
 
@@ -643,6 +644,77 @@ def test_probabilistic_pick_labeller():
     # Fails if non-compatible input data dimensions are provided
     with pytest.raises(ValueError):
         labeller = ProbabilisticLabeller(dim=1)
+        labeller(state_dict)
+
+
+def test_step_labeller():
+    np.random.seed(42)
+    state_dict = {
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {
+                "trace_p_arrival_sample": 500,
+                "trace_s_arrival_sample": 700,
+                "trace_g_arrival_sample": np.nan,
+            },
+        )
+    }
+
+    # Assumes standard config['dimension_order'] = 'NCW'
+    # Test label construction for single window, handling NaN values
+    labeller = StepLabeller()
+    labeller(state_dict)
+
+    assert state_dict["y"][0].shape == (3, 1000)
+    assert (state_dict["y"][0][1, :500] == 0).all()
+    assert (state_dict["y"][0][1, 500:] == 1).all()
+    assert (state_dict["y"][0][2, :700] == 0).all()
+    assert (state_dict["y"][0][2, 700:] == 1).all()
+    assert (state_dict["y"][0][0] == 0).all()
+
+    # Test label construction for multiple windows
+    state_dict = {
+        "X": (
+            10 * np.random.rand(5, 3, 1000),
+            {
+                "trace_p_arrival_sample": np.array([500] * 5),
+                "trace_s_arrival_sample": np.array([700] * 5),
+                "trace_g_arrival_sample": np.array([500, 500, 200, np.nan, 500]),
+            },
+        )
+    }
+    labeller = StepLabeller(dim=1)
+    labeller(state_dict)
+
+    assert state_dict["y"][0].shape == (5, 3, 1000)
+    assert (state_dict["y"][0][:, 1, :500] == 0).all()
+    assert (state_dict["y"][0][:, 1, 500:] == 1).all()
+    assert (state_dict["y"][0][:, 2, :700] == 0).all()
+    assert (state_dict["y"][0][:, 2, 700:] == 1).all()
+
+    assert (state_dict["y"][0][0, 0, :500] == 0).all()
+    assert (state_dict["y"][0][0, 0, 500:] == 1).all()
+    assert (state_dict["y"][0][3, 0, :] == 0).all()
+
+    # Fails if single sample provided for multiple windows
+    state_dict = {
+        "X": (
+            10 * np.random.rand(5, 3, 1000),
+            {
+                "trace_p_arrival_sample": 500,
+                "trace_s_arrival_sample": 700,
+            },
+        )
+    }
+    with pytest.raises(ValueError):
+        labeller = StepLabeller()
+        labeller(state_dict)
+
+    state_dict["X"] = np.random.rand(10, 5, 3, 1000)
+
+    # Fails if non-compatible input data dimensions are provided
+    with pytest.raises(ValueError):
+        labeller = StepLabeller()
         labeller(state_dict)
 
 

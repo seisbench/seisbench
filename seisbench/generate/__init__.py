@@ -18,6 +18,7 @@ from .labeling import (
     DetectionLabeller,
     StandardLabeller,
     ProbabilisticPointLabeller,
+    StepLabeller,
 )
 from .windows import (
     FixedWindow,
