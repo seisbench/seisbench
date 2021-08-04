@@ -5,12 +5,34 @@ from obspy import ObsPyException
 
 
 def trace_has_spikes(data, factor=25, quantile=0.975):
-    # Checks for bit flip errors in the data using a simple quantile rule
+    """
+    Checks for bit flip errors in the data using a simple quantile rule
+
+    :param data: Data array
+    :type data: np.ndarray
+    :param factor: Maximum allowed factor between peak and quantile
+    :type factor: float
+    :param quantile: Quantile to check. Must be between 0 and 1.
+    :type quantile: float
+    """
     q = np.quantile(np.abs(data), quantile, axis=1, keepdims=True)
     return np.any(data > q * factor)
 
 
 def stream_to_array(stream, component_order):
+    """
+    Converts stream of single station waveforms into a numpy array according to a given compoenent order.
+    If trace start and end times disagree between component traces, remaining parts are filled with zeros.
+    Also returns completeness, i.e., the fraction of samples in the output that actually contain data.
+    Assumes all traces to have the same sampling rate.
+
+    :param stream: Stream to convert
+    :type stream: obspy.Stream
+    :param component_order: Component order
+    :type component_order: str
+    :return: starttime, data, completeness
+    :rtype: UTCDateTime, npndarray, float
+    """
     starttime = min(trace.stats.starttime for trace in stream)
     endtime = max(trace.stats.endtime for trace in stream)
     sampling_rate = stream[0].stats.sampling_rate
@@ -46,6 +68,11 @@ def stream_to_array(stream, component_order):
 def rotate_stream_to_ZNE(stream, inventory):
     """
     Tries to rotate the stream to ZNE inplace. There are several possible failures, which are silently ignored.
+
+    :param stream: Stream to rotate
+    :type stream: obspy.Stream
+    :param inventory: Inventory object
+    :type inventory: obspy.Inventory
     """
     try:
         stream.rotate("->ZNE", inventory=inventory)

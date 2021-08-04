@@ -17,14 +17,6 @@ Annotation classes
     :undoc-members:
     :show-inheritance:
 
-Labelling functions
------------------------------------
-
-.. automodule:: seisbench.util.ml
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
 Region definitions
 -----------------------------------
 

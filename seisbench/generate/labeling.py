@@ -5,7 +5,6 @@ from abc import ABC, abstractmethod
 import numpy as np
 import seisbench
 from seisbench import config
-from seisbench.util.ml import gaussian_pick
 
 
 class SupervisedLabeller(ABC):
@@ -173,7 +172,7 @@ class PickLabeller(SupervisedLabeller, ABC):
 
 
 class ProbabilisticLabeller(PickLabeller):
-    """
+    r"""
     Create supervised labels from picks. The picks in example are represented
     probabilistically with a Gaussian
         \[
@@ -688,3 +687,24 @@ class StandardLabeller(PickLabeller):
 
     def __str__(self):
         return f"StandardLabeller (label_type={self.label_type}, dim={self.dim})"
+
+
+def gaussian_pick(onset, length, sigma):
+    r"""
+    Create probabilistic representation of pick in timeseries.
+    PDF function given by:
+
+    .. math::
+        \mathcal{N}(\mu,\,\sigma^{2})
+
+    :param onset: The nearest sample to pick onset
+    :type onset: float
+    :param length: The length of the trace timeseries in samples
+    :type length: int
+    :param sigma: The variance of the Gaussian distribution in samples
+    :type sigma: float
+    :return prob_pick: 1D timeseries with probabilistic representation of pick
+    :rtype: np.ndarray
+    """
+    x = np.linspace(1, length, length)
+    return np.exp(-np.power(x - onset, 2.0) / (2 * np.power(sigma, 2.0)))
