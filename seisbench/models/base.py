@@ -1,5 +1,3 @@
-from torch import nn as nn
-
 import seisbench
 import seisbench.util as util
 
@@ -315,7 +313,7 @@ class WaveformModel(SeisBenchModel, ABC):
         For example, for a picking model, annotate will give a characteristic function/probability function for picks
         over time.
         The annotate function contains multiple subfunction, which can be overwritten individually by inheriting
-        models to accomodate their requirements. These functions are:
+        models to accommodate their requirements. These functions are:
 
         - :py:func:`annotate_stream_pre`
         - :py:func:`annotate_stream_validate`

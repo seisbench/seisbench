@@ -23,6 +23,7 @@ class RectangleDomain(RectangularDomain):
     """
 
     def __init__(self, minlatitude, maxlatitude, minlongitude, maxlongitude):
+        super().__init__(minlatitude, maxlatitude, minlongitude, maxlongitude)
         self.minlatitude = minlatitude
         self.maxlatitude = maxlatitude
         self.minlongitude = minlongitude

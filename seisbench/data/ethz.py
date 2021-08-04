@@ -233,7 +233,7 @@ class ETHZ(BenchmarkDataset):
 
         catalog = obspy.Catalog(events=[])
         with tqdm(
-            desc="Downlading quakeml event meta from FDSNWS", total=len(ev_ids)
+            desc="Downloading quakeml event meta from FDSNWS", total=len(ev_ids)
         ) as pbar:
             for ev_id in ev_ids:
                 catalog += self.client.get_events(eventid=ev_id, includearrivals=True)

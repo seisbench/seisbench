@@ -56,8 +56,8 @@ class SupervisedLabeller(ABC):
 
     @staticmethod
     def _swap_dimension_order(arr, current_dim, expected_dim):
-        config_dim = tuple(current_dim.find(d) for d in (expected_dim))
-        return np.transpose(arr, (config_dim))
+        config_dim = tuple(current_dim.find(d) for d in expected_dim)
+        return np.transpose(arr, config_dim)
 
     @staticmethod
     def _get_dimension_order_from_config(config, ndim):
@@ -232,7 +232,7 @@ class ProbabilisticLabeller(PickLabeller):
                 )
                 label_val[
                     np.isnan(label_val)
-                ] = 0  # Set non-present pick probabilites to 0
+                ] = 0  # Set non-present pick probabilities to 0
                 y[i, :] = np.maximum(y[i, :], label_val)
             else:
                 # Handle multi-window case
@@ -243,7 +243,7 @@ class ProbabilisticLabeller(PickLabeller):
                     )
                     label_val[
                         np.isnan(label_val)
-                    ] = 0  # Set non-present pick probabilites to 0
+                    ] = 0  # Set non-present pick probabilities to 0
                     y[j, i, :] = np.maximum(y[j, i, :], label_val)
 
         y /= np.maximum(
@@ -377,7 +377,7 @@ class ProbabilisticPointLabeller(ProbabilisticLabeller):
 class DetectionLabeller(SupervisedLabeller):
     """
     Create detection labels from picks.
-    The labeler can either use fixed detection length or determine the lenght from the P to S time as in
+    The labeler can either use fixed detection length or determine the length from the P to S time as in
     Mousavi et al. (2020, Nature communications). In the latter case, detections range from P to S + factor * (S - P)
     and are only annotated if both P and S phases are present.
     All detections are represented through a boxcar time series with the same length as the input waveforms.
@@ -528,7 +528,7 @@ class StandardLabeller(PickLabeller):
       - 'random' Use random choice as example label.
 
     In general, it is recommended to set low and high, as it is very difficult for models to spot if a pick is just
-    inside or outside the window. This can lead to noisy predicitions that strongly depend on the marginal label
+    inside or outside the window. This can lead to noisy predictions that strongly depend on the marginal label
     distribution in the training set.
 
     :param low: Only take into account picks after or at this sample. If None, uses low=0.
@@ -609,7 +609,8 @@ class StandardLabeller(PickLabeller):
         nan_mask = np.isnan(arrival_array)
         return arrival_array, nan_mask
 
-    def _label_first(self, row_id, arrival_array, nan_mask):
+    @staticmethod
+    def _label_first(row_id, arrival_array, nan_mask):
         """
         Label based on first arrival in time in window.
         """
@@ -617,7 +618,8 @@ class StandardLabeller(PickLabeller):
         first_arrival = np.nanargmin(arrival_array[row_id])
         return first_arrival
 
-    def _label_random(self, row_id, nan_mask):
+    @staticmethod
+    def _label_random(row_id, nan_mask):
         """
         Label by randomly choosing pick inside window.
         If no arrivals present, label as noise (class 0)
@@ -625,7 +627,8 @@ class StandardLabeller(PickLabeller):
         non_null_columns = np.argwhere(~nan_mask[row_id])
         return np.random.choice(non_null_columns.reshape(-1))
 
-    def _label_fixed_relevance(self, row_id, arrival_array, midpoint):
+    @staticmethod
+    def _label_fixed_relevance(row_id, arrival_array, midpoint):
         """
         Label using closest pick to centre of window.
         If no arrivals present, label as noise (class 0)
@@ -691,7 +694,7 @@ class StandardLabeller(PickLabeller):
 
 def gaussian_pick(onset, length, sigma):
     r"""
-    Create probabilistic representation of pick in timeseries.
+    Create probabilistic representation of pick in time series.
     PDF function given by:
 
     .. math::
@@ -699,11 +702,11 @@ def gaussian_pick(onset, length, sigma):
 
     :param onset: The nearest sample to pick onset
     :type onset: float
-    :param length: The length of the trace timeseries in samples
+    :param length: The length of the trace time series in samples
     :type length: int
     :param sigma: The variance of the Gaussian distribution in samples
     :type sigma: float
-    :return prob_pick: 1D timeseries with probabilistic representation of pick
+    :return prob_pick: 1D time series with probabilistic representation of pick
     :rtype: np.ndarray
     """
     x = np.linspace(1, length, length)

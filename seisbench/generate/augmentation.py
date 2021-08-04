@@ -293,7 +293,7 @@ class NullAugmentation:
 class ChannelDropout:
     """
     Similar to Dropout, zeros out between 0 and the c - 1 channels randomly.
-    Outputs are multipled by the inverse of the fraction of remaining channels.
+    Outputs are multiplied by the inverse of the fraction of remaining channels.
     As for regular Dropout, this ensures that the output "energy" is unchanged.
 
     :param axis: Channel dimension, defaults to -2.

@@ -21,7 +21,7 @@ def trace_has_spikes(data, factor=25, quantile=0.975):
 
 def stream_to_array(stream, component_order):
     """
-    Converts stream of single station waveforms into a numpy array according to a given compoenent order.
+    Converts stream of single station waveforms into a numpy array according to a given component order.
     If trace start and end times disagree between component traces, remaining parts are filled with zeros.
     Also returns completeness, i.e., the fraction of samples in the output that actually contain data.
     Assumes all traces to have the same sampling rate.
@@ -31,7 +31,7 @@ def stream_to_array(stream, component_order):
     :param component_order: Component order
     :type component_order: str
     :return: starttime, data, completeness
-    :rtype: UTCDateTime, npndarray, float
+    :rtype: UTCDateTime, np.ndarray, float
     """
     starttime = min(trace.stats.starttime for trace in stream)
     endtime = max(trace.stats.endtime for trace in stream)
@@ -92,7 +92,7 @@ def rotate_stream_to_ZNE(stream, inventory):
 def waveform_id_to_network_station_location(waveform_id):
     """
     Takes a waveform_id as string in the format Network.Station.Location.Channel and
-    returns a string with channel dropped. If the wavform_id does not conform to the format,
+    returns a string with channel dropped. If the waveform_id does not conform to the format,
     the input string is returned.
 
     :param waveform_id: Waveform ID in format Network.Station.Location.Channel

@@ -339,4 +339,4 @@ class LocationHelper:
             if netsta in self.short_dict:
                 return self.short_dict[netsta]
             else:
-                return (np.nan, np.nan, np.nan, np.nan)
+                return np.nan, np.nan, np.nan, np.nan

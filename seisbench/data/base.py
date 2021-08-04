@@ -635,7 +635,7 @@ class WaveformDataset:
             return other
 
     # NOTE: lat/lon columns are specified to enhance generalisability as naming convention may
-    # change between datasets and users may also want to filter as a function of  recievers/sources
+    # change between datasets and users may also want to filter as a function of  receivers/sources
     def region_filter(self, domain, lat_col, lon_col, inplace=True):
         """
         Filtering of dataset based on predefined region or geometry.
@@ -1586,7 +1586,7 @@ class BenchmarkDataset(WaveformDataset, ABC):
 
     :param chunks: List of chunks to download
     :param citation: Citation for the dataset. Should be set in the inheriting class.
-    :param license: License associated with the dataset. Should be set in the inherenting class.
+    :param license: License associated with the dataset. Should be set in the inheriting class.
     :param force: Passed to :py:func:`~seisbench.util.callback_if_uncached`
     :param wait_for_file: Passed to :py:func:`~seisbench.util.callback_if_uncached`
     :param repository_lookup: Whether the data set should be search in the remote repository or directly use
@@ -2076,7 +2076,7 @@ class WaveformDataWriter:
 
     def _finalize(self):
         """
-        Finalizes the dataset, by flushing the remaning traces to hdf5 and writing metadata and data format.
+        Finalizes the dataset, by flushing the remaining traces to hdf5 and writing metadata and data format.
         """
         self.flush_hdf5()
 
