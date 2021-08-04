@@ -172,6 +172,9 @@ class DPPPicker(WaveformModel):
             self.dropout2 = nn.Dropout(0.35)
             self.fc1 = nn.Linear(320, 1)
         elif self.mode == "S":
+            """
+            See remark for P mode above
+
             self.lstm1 = CustomLSTM(
                 ActivationLSTMCell,
                 2,
@@ -188,6 +191,9 @@ class DPPPicker(WaveformModel):
                 recurrent_dropout=0.25,
                 gate_activation=torch.sigmoid,
             )
+            """
+            self.lstm1 = nn.LSTM(2, 20, bidirectional=True)
+            self.lstm2 = nn.LSTM(40, 30, bidirectional=True)
             self.dropout1 = nn.Dropout(0.25)
             self.dropout2 = nn.Dropout(0.45)
             self.fc1 = nn.Linear(60, 1)
