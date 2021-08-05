@@ -18,7 +18,10 @@ class LenDB(BenchmarkDataset):
             "(2020). LEN-DB - Local earthquakes detection: a benchmark dataset of 3-component seismograms "
             "built on a global scale [Data set]. Zenodo. https://doi.org/10.5281/zenodo.3648232"
         )
-        super().__init__(citation=citation, repository_lookup=True, **kwargs)
+        license = "CC BY 4.0"
+        super().__init__(
+            citation=citation, license=license, repository_lookup=True, **kwargs
+        )
 
     def _download_dataset(self, writer, cleanup=False):
         """
