@@ -1078,10 +1078,13 @@ class WaveformPipeline(ABC):
     :param components: Dictionary of components contained in the model. This should contain all models used in the
                        pipeline.
     :type components: dict [str, SeisBenchModel]
+    :param citation: Citation reference, defaults to None.
+    :type citation: str, optional
     """
 
-    def __init__(self, components):
+    def __init__(self, components, citation=None):
         self.components = components
+        self._citation = citation
         self._docstring = None
 
     @classmethod
@@ -1099,6 +1102,10 @@ class WaveformPipeline(ABC):
     @property
     def docstring(self):
         return self._docstring
+
+    @property
+    def citation(self):
+        return self._citation
 
     @property
     def name(self):
