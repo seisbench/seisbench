@@ -45,3 +45,6 @@ The documentation is currently not hosted, but can be built from source.
 To build the documentation first install the requirements from `docs/requirements.txt`.
 Then run `make html` to build the docs in html format.
 The output will appear in `docs/_build/html`.
+
+## Contributing
+See the [contribution guidelines](CONTRIBUTING.md).
