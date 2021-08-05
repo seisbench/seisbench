@@ -10,16 +10,36 @@ import shapely.geometry
 
 class RectangleDomain(RectangularDomain):
     """
-    A rectangular domain defined by latitude and longitude bounds.
+    A rectangular domain defined by latitude and longitude bounds. Edges are included in the domain.
+
+    :param minlatitude: Minimum latitude
+    :type minlatitude: float
+    :param maxlatitude: Maximum latitude
+    :type maxlatitude: float
+    :param minlongitude: Minimum longitude
+    :type minlongitude: float
+    :param maxlongitude: Maximum longitude
+    :type maxlongitude: float
     """
 
     def __init__(self, minlatitude, maxlatitude, minlongitude, maxlongitude):
+        super().__init__(minlatitude, maxlatitude, minlongitude, maxlongitude)
         self.minlatitude = minlatitude
         self.maxlatitude = maxlatitude
         self.minlongitude = minlongitude
         self.maxlongitude = maxlongitude
 
     def is_in_domain(self, latitude, longitude):
+        """
+        Checks whether a point is within the domain
+
+        :param latitude: Latitude of query point
+        :type latitude: float
+        :param longitude: Longitude of query point
+        :type longitude: float
+        :return: True if point is within the domain, false otherwise
+        :rtype: bool
+        """
         return (
             self.minlatitude <= latitude <= self.maxlatitude
             and self.minlongitude <= longitude <= self.maxlongitude
@@ -29,12 +49,32 @@ class RectangleDomain(RectangularDomain):
 class CircleDomain(CircularDomain):
     """
     Circular domain for selecting coordinates within a given radii of sourcepoint.
+    The edges are not included in the domain
+
+    :param latitude: Latitude of the circle center
+    :type latitude: float
+    :param longitude: Longitude of the circle center
+    :type longitude: float
+    :param minradius: Minimum radius in degrees
+    :type minradius: float
+    :param maxradius: maximum radius in degrees
+    :type maxradius: float
     """
 
     def __init__(self, latitude, longitude, minradius, maxradius):
         super().__init__(latitude, longitude, minradius, maxradius)
 
     def is_in_domain(self, latitude, longitude):
+        """
+        Checks whether a point is within the domain
+
+        :param latitude: Latitude of query point
+        :type latitude: float
+        :param longitude: Longitude of query point
+        :type longitude: float
+        :return: True if point is within the domain, false otherwise
+        :rtype: bool
+        """
         d = locations2degrees(self.latitude, self.longitude, latitude, longitude)
         return self.minradius < d < self.maxradius
 
@@ -61,4 +101,14 @@ class Germany(Domain):
         }
 
     def is_in_domain(self, latitude, longitude):
+        """
+        Checks whether a point is within the domain
+
+        :param latitude: Latitude of query point
+        :type latitude: float
+        :param longitude: Longitude of query point
+        :type longitude: float
+        :return: True if point is within the domain, false otherwise
+        :rtype: bool
+        """
         return self.shape.contains(shapely.geometry.Point(longitude, latitude))

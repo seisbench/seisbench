@@ -6,6 +6,7 @@ import numpy as np
 from collections import defaultdict
 from queue import PriorityQueue
 import tqdm
+import obspy
 
 
 class DeepPhasePick(WaveformPipeline):
@@ -42,7 +43,6 @@ class DeepPhasePick(WaveformPipeline):
 
 
 class DPPDetector(WaveformModel):
-
     def __init__(
         self,
         in_channels=3,
@@ -50,34 +50,30 @@ class DPPDetector(WaveformModel):
         phases=None,
         sampling_rate=100,
         pred_sample=200,
-        original_compatible=False,
         **kwargs,
     ):
         super().__init__(
             output_type="point",
-            in_samples=480, # TODO: in principle should be different based on optimized hyperparameter, alghouth all available models so far use this hyperparameter value
+            in_samples=480,  # TODO: in principle should be different based on optimized hyperparameter, alghouth all available models so far use this hyperparameter value
             pred_sample=pred_sample,
             labels=phases,
             sampling_rate=sampling_rate,
             default_args={
                 "stride": 10,
-                "op_conds": ['1', '2', '3', '4'],
+                "op_conds": ["1", "2", "3", "4"],
                 "tp_th_add": 1.5,
-                "dt_sp_near": 2.,
-                "dt_ps_max": 35.,
-                "dt_sdup_max": 2.,
-                },
+                "dt_sp_near": 2.0,
+                "dt_ps_max": 35.0,
+                "dt_sdup_max": 2.0,
+            },
             **kwargs,
         )
 
         # TODO: check if momentum is the same than in keras
         #
-        self.in_channels = input_channels
+        self.in_channels = in_channels
         self.classes = nclasses
         self.stride = 1
-
-        # # self.original_compatible = True
-        # self.original_compatible = False
 
         # groups == in_channels in Conv1d is for “depthwise convolution”, equivalent to keras SeparableConv1D layer.
 
@@ -171,7 +167,6 @@ class DPPDetector(WaveformModel):
 
         return sorted(picks_out)
 
-
     def _select_picks(self, annotations, picks, argdict):
         """
         Applies optional conditions to improve phase detection. Some preliminary picks are removed or kept depending on these conditions.
@@ -182,18 +177,18 @@ class DPPDetector(WaveformModel):
         :return: List of selected picks
         """
         # user-defined parameters
-        op_conds = argdict['op_conds'] # optional conditions
-        tp_th_add = argdict['tp_th_add'] # seconds
-        dt_sp_near = argdict['dt_sp_near'] # seconds
-        dt_ps_max = argdict['dt_ps_max'] # seconds
-        dt_sdup_max = argdict['dt_sdup_max'] # seconds
+        op_conds = argdict["op_conds"]  # optional conditions
+        tp_th_add = argdict["tp_th_add"]  # seconds
+        dt_sp_near = argdict["dt_sp_near"]  # seconds
+        dt_ps_max = argdict["dt_ps_max"]  # seconds
+        dt_sdup_max = argdict["dt_sdup_max"]  # seconds
         #
         # TODO: integrate optimized hyperparameters, perhaps when initializing the class and pass them to argdict ??
-        params = {'win_size': 480, 'frac_dsamp_p1': 0.7, 'frac_dsamp_s1': 0.5}
-        tp_shift = (params['frac_dsamp_p1']-.5) * params['win_size'] * samp_dt
-        ts_shift = (params['frac_dsamp_s1']-.5) * params['win_size'] * samp_dt
-        picks_p = [pick for pick in picks if pick.phase == 'P']
-        picks_s = [pick for pick in picks if pick.phase == 'S']
+        params = {"win_size": 480, "frac_dsamp_p1": 0.7, "frac_dsamp_s1": 0.5}
+        tp_shift = (params["frac_dsamp_p1"] - 0.5) * params["win_size"] * samp_dt
+        ts_shift = (params["frac_dsamp_s1"] - 0.5) * params["win_size"] * samp_dt
+        picks_p = [pick for pick in picks if pick.phase == "P"]
+        picks_s = [pick for pick in picks if pick.phase == "S"]
         #
         prob_P = annotations[0]
         prob_S = annotations[1]
@@ -217,23 +212,33 @@ class DPPDetector(WaveformModel):
         #
         # (1) Iterate over predicted P picks, in order to resolve between P and S phases predicted close in time, with overlapping probability time series
         #
-        if '1' in op_conds:
+        if "1" in op_conds:
             #
             for i, tp in enumerate(tpicks_p[:]):
                 #
                 # search S picks detected nearby P phases
                 #
-                cond_pre = prob_P[:tt_p_arg[i]] > .5
+                cond_pre = prob_P[: tt_p_arg[i]] > 0.5
                 cond_pre = cond_pre[::-1]
                 if len(cond_pre) > 0:
-                    tp_th_pre = tp - (np.argmin(cond_pre) * argdict['stride'] * samp_dt) - tp_th_add
+                    tp_th_pre = (
+                        tp
+                        - (np.argmin(cond_pre) * argdict["stride"] * samp_dt)
+                        - tp_th_add
+                    )
                 else:
                     tp_th_pre = tp - tp_th_add
                 #
-                cond_pos = prob_P[tt_p_arg[i]:] > .5
-                tp_th_pos = tp + (np.argmin(cond_pos) * argdict['stride'] * samp_dt) + tp_th_add
+                cond_pos = prob_P[tt_p_arg[i] :] > 0.5
+                tp_th_pos = (
+                    tp + (np.argmin(cond_pos) * argdict["stride"] * samp_dt) + tp_th_add
+                )
                 #
-                ts_in_th = [(t, tss) for t, tss in enumerate(tpicks_s) if tss >= tp_th_pre and tss <= tp_th_pos]
+                ts_in_th = [
+                    (t, tss)
+                    for t, tss in enumerate(tpicks_s)
+                    if tss >= tp_th_pre and tss <= tp_th_pos
+                ]
                 #
                 # picks detected before and after current P pick
                 #
@@ -260,7 +265,7 @@ class DPPDetector(WaveformModel):
         #
         # (2) iterate over selected S picks in order to resolve between P and S phases predicted close in time, with non-overlapping probability time series
         #
-        if '2' in op_conds:
+        if "2" in op_conds:
             #
             dct_sp_near = {}
             for i, s_arg in enumerate(s_arg_selected):
@@ -268,25 +273,29 @@ class DPPDetector(WaveformModel):
                 dct_sp_near[s_arg] = []
                 ts = tpicks_s[s_arg]
                 #
-                s_cond_pos = prob_S[tt_s_arg[s_arg]:] > .5
-                ts_th_pos = ts + (np.argmin(s_cond_pos) * argdict['stride'] * samp_dt)
+                s_cond_pos = prob_S[tt_s_arg[s_arg] :] > 0.5
+                ts_th_pos = ts + (np.argmin(s_cond_pos) * argdict["stride"] * samp_dt)
                 #
-                s_cond_pre = prob_S[:tt_s_arg[s_arg]] > .5
+                s_cond_pre = prob_S[: tt_s_arg[s_arg]] > 0.5
                 s_cond_pre = s_cond_pre[::-1]
-                ts_th_pre = ts - (np.argmin(s_cond_pre) * argdict['stride'] * samp_dt)
+                ts_th_pre = ts - (np.argmin(s_cond_pre) * argdict["stride"] * samp_dt)
                 #
                 for j, p_arg in enumerate(p_arg_selected):
                     #
                     tp = tpicks_p[p_arg]
                     #
-                    p_cond_pos = prob_P[tt_p_arg[p_arg]:] > .5
-                    tp_th_pos = tp + (np.argmin(p_cond_pos) * argdict['stride'] * samp_dt)
+                    p_cond_pos = prob_P[tt_p_arg[p_arg] :] > 0.5
+                    tp_th_pos = tp + (
+                        np.argmin(p_cond_pos) * argdict["stride"] * samp_dt
+                    )
                     #
-                    p_cond_pre = prob_P[:tt_p_arg[p_arg]] > .5
+                    p_cond_pre = prob_P[: tt_p_arg[p_arg]] > 0.5
                     p_cond_pre = p_cond_pre[::-1]
                     # tp_th_pre = tp - (np.argmin(p_cond_pre) * argdict['stride'] * samp_dt)
                     if len(p_cond_pre) > 0:
-                        tp_th_pre = tp - (np.argmin(p_cond_pre) * argdict['stride'] * samp_dt)
+                        tp_th_pre = tp - (
+                            np.argmin(p_cond_pre) * argdict["stride"] * samp_dt
+                        )
                     else:
                         tp_th_pre = tp
                     #
@@ -301,7 +310,9 @@ class DPPDetector(WaveformModel):
                 if len(dct_sp_near[s_arg]) > 0:
                     #
                     pb_s_near = prob_S[tt_s_arg[s_arg]]
-                    pb_p_near_arg = np.argmin([p_near[1] for p_near in dct_sp_near[s_arg]])
+                    pb_p_near_arg = np.argmin(
+                        [p_near[1] for p_near in dct_sp_near[s_arg]]
+                    )
                     p_near_arg = dct_sp_near[s_arg][pb_p_near_arg][0]
                     pb_p_near = prob_P[tt_p_arg[p_near_arg]]
                     #
@@ -315,7 +326,7 @@ class DPPDetector(WaveformModel):
         #
         # (3) iterate over selected S picks. S picks for which there is no earlier P or P-S predicted picks will be discarded
         #
-        if '3' in op_conds:
+        if "3" in op_conds:
             #
             for i, s_arg in enumerate(s_arg_selected):
                 #
@@ -323,7 +334,11 @@ class DPPDetector(WaveformModel):
                 #
                 # P picks detected before current S pick
                 #
-                tp_in_prior = [(t, tpp) for t, tpp in enumerate(tpicks_p) if tpp > ts - dt_ps_max and tpp < ts and p_picks_bool[t]]
+                tp_in_prior = [
+                    (t, tpp)
+                    for t, tpp in enumerate(tpicks_p)
+                    if tpp > ts - dt_ps_max and tpp < ts and p_picks_bool[t]
+                ]
                 #
                 if len(tp_in_prior) == 0:
                     #
@@ -333,7 +348,13 @@ class DPPDetector(WaveformModel):
                 if len(tp_in_prior) > 0:
                     #
                     tp_prior = tp_in_prior[-1][1]
-                    ts_in_prior = [(t, tss) for t, tss in enumerate(tpicks_s) if tss > tp_prior and tss < ts and t in np.where(s_picks_bool)[0]]
+                    ts_in_prior = [
+                        (t, tss)
+                        for t, tss in enumerate(tpicks_s)
+                        if tss > tp_prior
+                        and tss < ts
+                        and t in np.where(s_picks_bool)[0]
+                    ]
                     #
                     if len(ts_in_prior) > 1:
                         s_picks_bool[s_arg] = False
@@ -349,7 +370,7 @@ class DPPDetector(WaveformModel):
         #
         # (4) iterate over selected S picks in order to resolve between possible duplicated S phases
         #
-        if '4' in op_conds:
+        if "4" in op_conds:
             #
             s_arg_used_dup = []
             dct_s_dup = {}
@@ -357,15 +378,17 @@ class DPPDetector(WaveformModel):
                 #
                 dct_s_dup[s_arg] = [s_arg]
                 ts = tpicks_s[s_arg]
-                cond_pos = prob_S[tt_s_arg[s_arg]:] > .5
-                ts_th_pos = ts + (np.argmin(cond_pos) * argdict['stride'] * samp_dt)
+                cond_pos = prob_S[tt_s_arg[s_arg] :] > 0.5
+                ts_th_pos = ts + (np.argmin(cond_pos) * argdict["stride"] * samp_dt)
                 #
-                for j, s_arg2 in enumerate(s_arg_selected[i+1: len(s_arg_selected)]):
+                for j, s_arg2 in enumerate(s_arg_selected[i + 1 : len(s_arg_selected)]):
                     #
                     ts2 = tpicks_s[s_arg2]
-                    cond_pre = prob_S[:tt_s_arg[s_arg2]] > .5
+                    cond_pre = prob_S[: tt_s_arg[s_arg2]] > 0.5
                     cond_pre = cond_pre[::-1]
-                    ts2_th_pre = ts2 - (np.argmin(cond_pre) * argdict['stride'] * samp_dt)
+                    ts2_th_pre = ts2 - (
+                        np.argmin(cond_pre) * argdict["stride"] * samp_dt
+                    )
                     #
                     if abs(ts_th_pos - ts2_th_pre) < dt_sdup_max:
                         dct_s_dup[s_arg].append(s_arg2)
@@ -375,9 +398,15 @@ class DPPDetector(WaveformModel):
             # for possible duplicated S phases, presumed false ones are discarded
             for s_arg in dct_s_dup:
                 if len(dct_s_dup[s_arg]) > 1:
-                    pb_s_dup = np.array([prob_S[tt_s_arg[s_arg_dup]] for s_arg_dup in dct_s_dup[s_arg]])
+                    pb_s_dup = np.array(
+                        [prob_S[tt_s_arg[s_arg_dup]] for s_arg_dup in dct_s_dup[s_arg]]
+                    )
                     pb_s_dup_argmax = np.argmax(pb_s_dup)
-                    s_arg_false = [s_arg3 for s_arg3 in dct_s_dup[s_arg] if s_arg3 != dct_s_dup[s_arg][pb_s_dup_argmax]]
+                    s_arg_false = [
+                        s_arg3
+                        for s_arg3 in dct_s_dup[s_arg]
+                        if s_arg3 != dct_s_dup[s_arg][pb_s_dup_argmax]
+                    ]
                     for s_false in s_arg_false:
                         s_picks_bool[s_false] = False
                         s_arg_used_dup.append(s_false)
@@ -387,7 +416,9 @@ class DPPDetector(WaveformModel):
         #
         # selected picks
         #
-        print(f"selected picks (P, S): {len(np.where(p_picks_bool)[0])}, {len(np.where(s_picks_bool)[0])}")
+        print(
+            f"selected picks (P, S): {len(np.where(p_picks_bool)[0])}, {len(np.where(s_picks_bool)[0])}"
+        )
         #
         picks_p_out = [pick for i, pick in enumerate(picks_p) if p_picks_bool[i]]
         picks_s_out = [pick for i, pick in enumerate(picks_s) if s_picks_bool[i]]
@@ -396,13 +427,12 @@ class DPPDetector(WaveformModel):
         return picks_out
 
 
-
-
 class DPPPicker(WaveformModel):
 
     # TODO: update
     def __init__(
         self,
+        mode,
         in_channels=3,
         phases=None,
         sampling_rate=100,
@@ -415,26 +445,58 @@ class DPPPicker(WaveformModel):
             **kwargs,
         )
 
-
-        self.mode = labels # TODO: check
+        self.mode = mode
 
         if self.mode == "P":
+            """
+            Custom LSTM removed for performance reasons.
+            Could probably be fixed with JIT CustomLSTM.
+
             self.lstm1 = CustomLSTM(
-                ActivationLSTMCell, 1, 100, bidirectional=True, recurrent_dropout=0.2
+                ActivationLSTMCell,
+                1,
+                100,
+                bidirectional=True,
+                recurrent_dropout=0.25,
+                gate_activation=torch.sigmoid,
             )
             self.lstm2 = CustomLSTM(
-                ActivationLSTMCell, 200, 160, bidirectional=True, recurrent_dropout=0.25
+                ActivationLSTMCell,
+                200,
+                160,
+                bidirectional=True,
+                recurrent_dropout=0.25,
+                gate_activation=torch.sigmoid,
             )
+            """
+            self.lstm1 = nn.LSTM(1, 100, bidirectional=True)
+            self.lstm2 = nn.LSTM(200, 160, bidirectional=True)
             self.dropout1 = nn.Dropout(0.2)
             self.dropout2 = nn.Dropout(0.35)
             self.fc1 = nn.Linear(320, 1)
         elif self.mode == "S":
+            """
+            See remark for P mode above
+
             self.lstm1 = CustomLSTM(
-                ActivationLSTMCell, 2, 20, bidirectional=True, recurrent_dropout=0.35
+                ActivationLSTMCell,
+                2,
+                20,
+                bidirectional=True,
+                recurrent_dropout=0.25,
+                gate_activation=torch.sigmoid,
             )
             self.lstm2 = CustomLSTM(
-                ActivationLSTMCell, 40, 30, bidirectional=True, recurrent_dropout=0.25
+                ActivationLSTMCell,
+                40,
+                30,
+                bidirectional=True,
+                recurrent_dropout=0.25,
+                gate_activation=torch.sigmoid,
             )
+            """
+            self.lstm1 = nn.LSTM(2, 20, bidirectional=True)
+            self.lstm2 = nn.LSTM(40, 30, bidirectional=True)
             self.dropout1 = nn.Dropout(0.25)
             self.dropout2 = nn.Dropout(0.45)
             self.fc1 = nn.Linear(60, 1)
@@ -449,7 +511,7 @@ class DPPPicker(WaveformModel):
         x = self.dropout1(x)
         x = self.lstm2(x)[0]
         x = self.dropout2(x)
-        x = x.permute(1, 0, 2)
+        x = x.permute(1, 0, 2)  # (seq, batch, channels) --> (batch, seq, channels)
 
         # keras TimeDistributed layer is applied by:
         # -> reshaping from (batch, sequence, *) to (batch * sequence, *)
@@ -467,7 +529,13 @@ class DPPPicker(WaveformModel):
 
     # version of annotate function specialized for picking models
     def annotate(
-        self, stream, annotations, picks_in, strict=True, flexible_horizontal_components=True, **kwargs
+        self,
+        stream,
+        annotations,
+        picks_in,
+        strict=True,
+        flexible_horizontal_components=True,
+        **kwargs,
     ):
         """
         Annotates an obspy stream using the model based on the configuration of the WaveformModel superclass.
@@ -524,10 +592,12 @@ class DPPPicker(WaveformModel):
         # Stream to arrays to windows
         for group in groups:
             trace = group[0]
-            trace_id = f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
+            trace_id = (
+                f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
+            )
 
             # Sampling rate of the data. Equal to self.sampling_rate is this is not None
-            argdict["sampling_rate"] = trace.stats.sampling_rate # TODO: check
+            argdict["sampling_rate"] = trace.stats.sampling_rate  # TODO: check
 
             picks_group = [pick for pick in picks_in if pick.trace_id == trace_id]
             for pick_in in picks_group:
@@ -552,7 +622,9 @@ class DPPPicker(WaveformModel):
 
                 # Write to output stream.
                 # Returns streams containing results from MCD iteration.
-                output[-1] += self._predictions_to_stream(pred_rates, pred_times, preds, pick_in, trace)
+                output[-1] += self._predictions_to_stream(
+                    pred_rates, pred_times, preds, pick_in, trace
+                )
 
         return output
 
@@ -569,7 +641,7 @@ class DPPPicker(WaveformModel):
         output = obspy.Stream()
         for (pred_time, pred_rate, pred) in zip(pred_times, pred_rates, preds):
             for i in range(pred.shape[1]):
-                label = f"{pick_in.phase}"i
+                label = f"{pick_in.phase}"
 
                 trimmed_pred, f, _ = self._trim_nan(pred[:, i])
                 trimmed_start = pred_time + f / pred_rate
@@ -600,17 +672,17 @@ class DPPPicker(WaveformModel):
         pred_times = []
         pred_rates = []
         full_preds = []
-        mc_iter = argdict['mcd_iter']
+        mc_iter = argdict["mcd_iter"]
 
         # Iterate over all blocks of waveforms
         for t0, block in zip(times, data):
             mc_pred = []
-            block /= np.abs(block).max() # normalize before predicting picks
-            if pick_in.phase == 'P':
-                block = block[:1] # pick on vertical component
+            block /= np.abs(block).max()  # normalize before predicting picks
+            if pick_in.phase == "P":
+                block = block[:1]  # pick on vertical component
                 block = block.reshape(1, block.shape[1], 1)
-            elif pick_in.phase == 'S':
-                block = block[-2:] # pick on two horizontal components
+            elif pick_in.phase == "S":
+                block = block[-2:]  # pick on two horizontal components
                 block = block.T.reshape(1, block.shape[1], 2)
             #
             fragment = torch.tensor(block, device=self.device, dtype=torch.float32)
@@ -620,17 +692,21 @@ class DPPPicker(WaveformModel):
                 #
                 # TODO: adapt to pytorch
                 #
-                y_mc = model['best_model'].predict(x_mc, batch_size=model['batch_size_pred'], verbose=0)
+                y_mc = model["best_model"].predict(
+                    x_mc, batch_size=model["batch_size_pred"], verbose=0
+                )
                 # with torch.no_grad():
                 #     preds = self._predict_and_postprocess_windows(argdict, fragments)
                 #     ...
                 # mc_pred.append(y_mc) # y_mc.shape = (1, block.shape[1], 1)
-                mc_pred.append(np.random.rand(1, block.shape[1], 1)) # for testing
+                mc_pred.append(np.random.rand(1, block.shape[1], 1))  # for testing
             #
             pred_times.append(t0)
             pred_rates.append(argdict["sampling_rate"])
             # mc_pred = np.array(mc_pred)[:,0,:,:] # mc_pred.shape = (mc_iter, block.shape[1], 1)
-            mc_pred = np.array(mc_pred)[:,0,:,0].T # mc_pred.shape = (block.shape[1], mc_iter)
+            mc_pred = np.array(mc_pred)[
+                :, 0, :, 0
+            ].T  # mc_pred.shape = (block.shape[1], mc_iter)
             full_preds.append(mc_pred)
 
         return pred_times, pred_rates, full_preds
@@ -666,13 +742,13 @@ class DPPPicker(WaveformModel):
 
         # streams to picking windows
         # TODO: integrate optimized hyperparameters, perhaps when initializing the class and pass them to argdict ??
-        params = {'win_size': 480, 'frac_dsamp_p1': 0.7, 'frac_dsamp_s1': 0.5}
-        samp_dt = 1. / sampling_rate
-        if pick_in.phase == 'P':
-            twd_1 = params['frac_dsamp_p1'] * params['win_size'] * samp_dt
-        elif pick_in.phase == 'S':
-            twd_1 = params['frac_dsamp_s1'] * params['win_size'] * samp_dt
-        twd_2 = params['win_size'] * samp_dt - twd_1
+        params = {"win_size": 480, "frac_dsamp_p1": 0.7, "frac_dsamp_s1": 0.5}
+        samp_dt = 1.0 / sampling_rate
+        if pick_in.phase == "P":
+            twd_1 = params["frac_dsamp_p1"] * params["win_size"] * samp_dt
+        elif pick_in.phase == "S":
+            twd_1 = params["frac_dsamp_s1"] * params["win_size"] * samp_dt
+        twd_2 = params["win_size"] * samp_dt - twd_1
         for tr in stream:
             tstart_win = pick_in.peak_time - twd_1
             tend_win = pick_in.peak_time + twd_2
@@ -821,12 +897,12 @@ class DPPPicker(WaveformModel):
         """
         picks = []
         for annotation in annotations:
-            phase = annotation[0].stats.channel.split('_')[-1][0]
+            phase = annotation[0].stats.channel.split("_")[-1][0]
             #
             # TODO: create function picks_from_annotations() ...DONE
             # uses annotations (streams formed by array of MCD results) to obtain picks and their statistics (uncertaintiy, etc)
             picks += self.picks_from_annotations(
-                annotation),
+                annotation,
                 argdict,
                 phase,
             )
@@ -847,9 +923,7 @@ class DPPPicker(WaveformModel):
         :return: List of picks
         """
         # picks = []
-        trace_id = (
-            f"{annotation[0].stats.network}.{annotation[0].stats.station}.{annotation[0].stats.location}"
-        )
+        trace_id = f"{annotation[0].stats.network}.{annotation[0].stats.station}.{annotation[0].stats.location}"
         t0 = annotation[0].stats.starttime
         t1 = annotation[0].stats.endtime
 
@@ -860,44 +934,56 @@ class DPPPicker(WaveformModel):
         mc_pred = np.array(mc_pred)
         #
         mc_pred_mean = mc_pred.mean(axis=0)
-        mc_pred_mean_class = (mc_pred_mean > .5).astype('int32')
+        mc_pred_mean_class = (mc_pred_mean > 0.5).astype("int32")
         mc_pred_mean_arg_pick = mc_pred_mean_class.argmax(axis=0)[0]
-        mc_pred_mean_tpick = mc_pred_mean_arg_pick / argdict['sampling_rate']
+        mc_pred_mean_tpick = mc_pred_mean_arg_pick / argdict["sampling_rate"]
         mc_pred_std = mc_pred.std(axis=0)
         mc_pred_std_pick = mc_pred_std[mc_pred_mean_arg_pick][0]
 
         # calculate tpick uncertainty from std of mean probability
-        prob_th1 = mc_pred_mean[mc_pred_mean_arg_pick,0] - mc_pred_std_pick
-        prob_th2 = mc_pred_mean[mc_pred_mean_arg_pick,0] + mc_pred_std_pick
+        prob_th1 = mc_pred_mean[mc_pred_mean_arg_pick, 0] - mc_pred_std_pick
+        prob_th2 = mc_pred_mean[mc_pred_mean_arg_pick, 0] + mc_pred_std_pick
         cond = (mc_pred_mean > prob_th1) & (mc_pred_mean < prob_th2)
-        samps_th = np.arange(mc_pred_mean.shape[0])[cond[:,0]]
+        samps_th = np.arange(mc_pred_mean.shape[0])[cond[:, 0]]
 
         # this restricts the uncertainty calculation to the time interval between the predicted time onset (mc_pred_mean_tpick) and the first intersections
         # (in the rare case that these are not unique) of the mean probability (mc_pred_mean) with prob_th1 (before the onset) and with prob_th2 (after the onset)
         try:
-            samps_th1 = np.array([s for s, samp in enumerate(samps_th[:]) if (samp < mc_pred_mean_arg_pick) and (samps_th[s+1] - samp > 1)]).max()
+            samps_th1 = np.array(
+                [
+                    s
+                    for s, samp in enumerate(samps_th[:])
+                    if (samp < mc_pred_mean_arg_pick) and (samps_th[s + 1] - samp > 1)
+                ]
+            ).max()
         except ValueError:
             samps_th1 = -1
         try:
-            samps_th2 = np.array([s for s, samp in enumerate(samps_th[:-1]) if (samp > mc_pred_mean_arg_pick) and (samps_th[s+1] - samp > 1)]).min()
+            samps_th2 = np.array(
+                [
+                    s
+                    for s, samp in enumerate(samps_th[:-1])
+                    if (samp > mc_pred_mean_arg_pick) and (samps_th[s + 1] - samp > 1)
+                ]
+            ).min()
         except ValueError:
             samps_th2 = len(samps_th)
 
-        samps_th = samps_th[samps_th1+1: samps_th2+1]
-        mc_pred_mean_tpick_th1 = samps_th[0] / argdict['sampling_rate']
-        mc_pred_mean_tpick_th2 = samps_th[-1] / argdict['samp_freq']
+        samps_th = samps_th[samps_th1 + 1 : samps_th2 + 1]
+        mc_pred_mean_tpick_th1 = samps_th[0] / argdict["sampling_rate"]
+        mc_pred_mean_tpick_th2 = samps_th[-1] / argdict["samp_freq"]
         # mc_pred_mean_tres = tpick_det - mc_pred_mean_tpick
 
         # pick class
         terr_pre = abs(mc_pred_mean_tpick - mc_pred_mean_tpick_th1)
         terr_pos = abs(mc_pred_mean_tpick - mc_pred_mean_tpick_th2)
-        terr_mean = (terr_pre + terr_pos) * .5
+        terr_mean = (terr_pre + terr_pos) * 0.5
         pick_class = 3
-        if terr_mean <= .2:
+        if terr_mean <= 0.2:
             pick_class -= 1
-        if terr_mean <= .1:
+        if terr_mean <= 0.1:
             pick_class -= 1
-        if terr_mean <= .05:
+        if terr_mean <= 0.05:
             pick_class -= 1
 
         pick = util.Pick(

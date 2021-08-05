@@ -4,11 +4,17 @@ class Pick:
     Defines an ordering based on start time, end time and trace id.
 
     :param trace_id: Id of the trace the pick was generated from
+    :type trace_id: str
     :param start_time: Onset time of the pick
+    :type start_time: UTCDateTime
     :param end_time: End time of the pick
+    :type end_time: UTCDateTime
     :param peak_time: Peak time of the characteristic function for the pick
+    :type peak_time: UTCDateTime
     :param peak_value: Peak value of the characteristic function for the pick
+    :type peak_value: float
     :param phase: Phase hint
+    :type phase: str
     """
 
     def __init__(
@@ -32,6 +38,9 @@ class Pick:
                 raise ValueError("peak_time must be between start_time and end_time.")
 
     def __lt__(self, other):
+        """
+        Compares start time, end time and trace id in this order.
+        """
         if self.start_time < other.start_time:
             return True
         if self.end_time < other.end_time:
@@ -47,9 +56,13 @@ class Detection:
     Defines an ordering based on start time, end time and trace id.
 
     :param trace_id: Id of the trace the detection was generated from
+    :type trace_id: str
     :param start_time: Onset time of the detection
+    :type start_time: UTCDateTime
     :param end_time: End time of the detection
+    :type end_time: UTCDateTime
     :param peak_value: Peak value of the characteristic function for the detection
+    :type peak_value: float
     """
 
     def __init__(self, trace_id, start_time, end_time, peak_value=None):
@@ -59,6 +72,9 @@ class Detection:
         self.peak_value = peak_value
 
     def __lt__(self, other):
+        """
+        Compares start time, end time and trace id in this order.
+        """
         if self.start_time < other.start_time:
             return True
         if self.end_time < other.end_time:

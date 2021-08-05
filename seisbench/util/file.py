@@ -10,6 +10,18 @@ from lxml import etree
 
 
 def download_http(url, target, progress_bar=True, desc="Downloading"):
+    """
+    Downloads file from http/https source. Raises a ValueError for non-200 status codes.
+
+    :param url: Target url
+    :type url: str
+    :param target: Path to save to
+    :type target: Path or str
+    :param progress_bar: If true, shows a progress bar for the download
+    :type progress_bar: bool
+    :param desc: Description for the progress bar
+    :type desc: str
+    """
     seisbench.logger.info(f"Downloading file from {url} to {target}")
 
     req = requests.get(url, stream=True, headers={"User-Agent": "SeisBench"})
@@ -51,6 +63,26 @@ def download_ftp(
     progress_bar=True,
     desc="Downloading",
 ):
+    """
+    Downloads file from ftp source.
+
+    :param host: Host URL
+    :type host: str
+    :param file: File path on the FTP server
+    :type file: str
+    :param target: Path to save to
+    :type target: Path or str
+    :param user: Username for login
+    :type user: str
+    :param passwd: Password for login
+    :type passwd: str
+    :param blocksize: Size of download blocks in bytes
+    :type blocksize: int
+    :param progress_bar: If true, shows a progress bar for the download
+    :type progress_bar: bool
+    :param desc: Description for the progress bar
+    :type desc: str
+    """
     with ftplib.FTP(host, user, passwd) as ftp:
         ftp.voidcmd("TYPE I")
         total = ftp.size(file)
@@ -75,6 +107,9 @@ def download_ftp(
 def ls_webdav(url):
     """
     Lists the files in a WebDAV directory
+
+    :param url: URL of the directory to list
+    :type url: str
     :return: List of files
     """
     xml_request = b'<?xml version="1.0"?><a:propfind xmlns:a="DAV:"><a:prop><a:resourcetype/></a:prop></a:propfind>'
@@ -109,18 +144,23 @@ def callback_if_uncached(
     If one of the files does not exists, but file.partial does, the behaviour depends on force and wait_for_file.
 
     .. warning::
-        While making concurrent callbacks unlikely, they can still happen, if the function is called twice in short time,
-        i.e., the second starts before the first created a .partial file.
+        While making concurrent callbacks unlikely, they can still happen, if the function is called twice in short
+        time, i.e., the second starts before the first created a .partial file.
 
-    :param files: A list of files to check.
+    :param files: A list of files or single file to check.
+    :type files: list[union[Path, str]], Path, str
     :param callback: A callback, taking one parameter, a list of target file names. Will be called if a file is missing.
-        The callback will be given the same parameter as provided in files, just with files renamed to file.partial.
-        The function will move the files afterwards, but will ignore empty files.
-    :param force: If true, and not all files exist, ignore and remove all partial files and execute callback.
-        Only use this parameter if no other instance of callback_if_uncached is currently requesting the same file.
-    :param wait_for_file: If true, not all files exist, but partial files exist, sleep until files exists or no partial files exist.
+                     The callback will be given the same parameter as provided in files, just with files renamed
+                     to file.partial. The function will move the files afterwards, but will ignore empty files.
+    :type callback: callable
+    :param force: If true, and not all files exist, ignore and remove all partial files and execute callback. Only use
+                  this parameter if no other instance of callback_if_uncached is currently requesting the same file.
+    :type force: bool
+    :param wait_for_file: If true, not all files exist, but partial files exist, sleep until files exists or no partial
+                          files exist.
+    :type wait_for_file: bool
     :param test_interval: Sleep interval for wait_for_file.
-    :return: None
+    :type test_interval: float
     """
     if not isinstance(files, (list, tuple)):
         files = [files]

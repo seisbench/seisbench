@@ -14,6 +14,7 @@ from seisbench.generate import (
     ProbabilisticPointLabeller,
     StandardLabeller,
     DetectionLabeller,
+    StepLabeller,
 )
 from seisbench.data import DummyDataset
 
@@ -149,6 +150,22 @@ def test_filter():
     sos = scipy.signal.butter(1, (0.5, 2), "bandpass", output="sos", fs=20)
     X_comp = scipy.signal.sosfiltfilt(sos, base_state_dict["X"][0])
     assert (state_dict["X"][0] == X_comp).all()
+
+
+def test_filter_sampling_rate_list():
+    np.random.seed(42)
+
+    filt = Filter(2, 1, "lowpass")
+    state_dict = {
+        "X": (10 * np.random.rand(3, 1000), {"trace_sampling_rate_hz": [20, 20]})
+    }
+    filt(state_dict)
+
+    state_dict = {
+        "X": (10 * np.random.rand(3, 1000), {"trace_sampling_rate_hz": [20, 25]})
+    }
+    with pytest.raises(NotImplementedError):
+        filt(state_dict)
 
 
 def test_fixed_window():
@@ -627,6 +644,76 @@ def test_probabilistic_pick_labeller():
     # Fails if non-compatible input data dimensions are provided
     with pytest.raises(ValueError):
         labeller = ProbabilisticLabeller(dim=1)
+        labeller(state_dict)
+
+
+def test_step_labeller():
+    np.random.seed(42)
+    state_dict = {
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {
+                "trace_p_arrival_sample": 500,
+                "trace_s_arrival_sample": -100,
+                "trace_g_arrival_sample": np.nan,
+            },
+        )
+    }
+
+    # Assumes standard config['dimension_order'] = 'NCW'
+    # Test label construction for single window, handling NaN values
+    labeller = StepLabeller()
+    labeller(state_dict)
+
+    assert state_dict["y"][0].shape == (3, 1000)
+    assert (state_dict["y"][0][1, :500] == 0).all()
+    assert (state_dict["y"][0][1, 500:] == 1).all()
+    assert (state_dict["y"][0][2] == 1).all()
+    assert (state_dict["y"][0][0] == 0).all()
+
+    # Test label construction for multiple windows
+    state_dict = {
+        "X": (
+            10 * np.random.rand(5, 3, 1000),
+            {
+                "trace_p_arrival_sample": np.array([500] * 5),
+                "trace_s_arrival_sample": np.array([700] * 5),
+                "trace_g_arrival_sample": np.array([500, 500, 200, np.nan, 500]),
+            },
+        )
+    }
+    labeller = StepLabeller(dim=1)
+    labeller(state_dict)
+
+    assert state_dict["y"][0].shape == (5, 3, 1000)
+    assert (state_dict["y"][0][:, 1, :500] == 0).all()
+    assert (state_dict["y"][0][:, 1, 500:] == 1).all()
+    assert (state_dict["y"][0][:, 2, :700] == 0).all()
+    assert (state_dict["y"][0][:, 2, 700:] == 1).all()
+
+    assert (state_dict["y"][0][0, 0, :500] == 0).all()
+    assert (state_dict["y"][0][0, 0, 500:] == 1).all()
+    assert (state_dict["y"][0][3, 0, :] == 0).all()
+
+    # Fails if single sample provided for multiple windows
+    state_dict = {
+        "X": (
+            10 * np.random.rand(5, 3, 1000),
+            {
+                "trace_p_arrival_sample": 500,
+                "trace_s_arrival_sample": 700,
+            },
+        )
+    }
+    with pytest.raises(ValueError):
+        labeller = StepLabeller()
+        labeller(state_dict)
+
+    state_dict["X"] = np.random.rand(10, 5, 3, 1000)
+
+    # Fails if non-compatible input data dimensions are provided
+    with pytest.raises(ValueError):
+        labeller = StepLabeller()
         labeller(state_dict)
 
 
@@ -1463,3 +1550,26 @@ def test_steered_window():
     assert state_dict["X"][0].shape == (3, 1200)
     assert np.all(state_dict["X"][0][:, :1000] == base_state_dict["X"][0])
     assert np.all(state_dict["window_borders"][0] == [50, 200])
+
+
+def test_standard_labeller_no_labels_in_metadata():
+    # Checks that the labeller works correct if no label columns are present in the metadata
+    np.random.seed(42)
+
+    state_dict = {
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {},
+        )
+    }
+
+    label_columns = {
+        "trace_Pn_arrival_sample": "P",
+        "trace_S_arrival_sample": "S",
+    }
+
+    # Check 'label-first' strategy on overlap
+    labeller = StandardLabeller(label_columns=label_columns)
+    labeller(state_dict)
+
+    assert state_dict["y"][0] == 2  # Labeled as noise

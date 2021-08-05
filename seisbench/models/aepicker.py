@@ -10,13 +10,17 @@ class BasicPhaseAE(WaveformModel):
     from Woollam et al., (2019).
 
     :param in_channels: Number of input channels, by default 3.
+    :type in_channels: int
     :param in_samples: Number of input samples per channel, by default 600.
                        The model expects input shape (in_channels, in_samples)
+    :type in_samples: int
     :param classes: Number of output classes, by default 3.
+    :type classes: int
     :param phases: Phase hints for the classes, by default "NPS". Can be None.
-    :param sampling_rate: Sampling rate of taces, by detault 100.
+    :type phases: list, str
+    :param sampling_rate: Sampling rate of traces, by default 100.
+    :type sampling_rate: float
     :param kwargs: Keyword arguments passed to the constructor of :py:class:`WaveformModel`.
-
     """
 
     def __init__(

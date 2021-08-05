@@ -1,9 +1,9 @@
 import seisbench
 from seisbench.data.base import BenchmarkDataset
 from seisbench.util.trace_ops import (
-    _rotate_stream_to_ZNE,
-    _stream_to_array,
-    _trace_has_spikes,
+    rotate_stream_to_zne,
+    stream_to_array,
+    trace_has_spikes,
     waveform_id_to_network_station_location,
 )
 
@@ -22,8 +22,32 @@ from obspy.clients.fdsn import Client
 
 
 class ETHZ(BenchmarkDataset):
+    """
+    Regional benchmark dataset of publicly available waveform data & corresponding
+    metadata in Swiss Seismological Service (SED) archive. Contains data from
+    (2013-2020). A pre-compiled version of the benchmark dataset in compatible
+    SeisBench format is available for download from remote root. In case of download issues,
+    benchmark dataset is downloaded directly from source via FDSN client and converted SeisBench
+    format.
+
+    """
+
     def __init__(self, **kwargs):
-        citation = "ETHZ dataset"
+        citation = (
+            "Each individual network has its own DOI. From publicly available data:\n"
+            "CH: https://doi.org/10.12686/sed/networks/ch\n"
+            "C4: https://doi.org/10.12686/sed/networks/c4\n"
+            "8D: https://doi.org/10.12686/sed/networks/8d\n"
+            "S:  https://doi.org/10.12686/sed/networks/s\n"
+            "XT: https://doi.org/10.12686/alparray/xt_2014"
+        )
+
+        seisbench.logger.warning(
+            "Check available storage and memory before downloading and general use "
+            "of ETHZ dataset. "
+            "Dataset size: waveforms.hdf5 ~22Gb, metadata.csv ~13Mb"
+        )
+
         self._client = None
         super().__init__(citation=citation, repository_lookup=True, **kwargs)
 
@@ -38,6 +62,17 @@ class ETHZ(BenchmarkDataset):
         return self._client
 
     def _download_dataset(self, writer, time_before=60, time_after=60, **kwargs):
+        """
+        Download dataset from raw data source via FDSN client.
+
+        :param writer:  WaveformDataWriter instance for writing waveforms and metadata.
+        :type writer: seisbench.data.base.WaveformDataWriter
+        :param time_before: Extract waveform recordings from event onset - time_before, defaults to 60
+        :type time_before: int, optional
+        :param time_after: Extract waveform recordings up to event onset + time_after, defaults to 60
+        :type time_after: int, optional
+
+        """
         seisbench.logger.info(
             "No pre-processed version of ETHZ dataset found. "
             "Download and conversion of raw data will now be "
@@ -106,11 +141,12 @@ class ETHZ(BenchmarkDataset):
                     self.no_data_catches += 1
                     continue
 
-                _rotate_stream_to_ZNE(waveforms, inv)
+                rotate_stream_to_zne(waveforms, inv)
 
                 if len(waveforms) == 0:
                     seisbench.logger.debug(
-                        f'Found no waveforms for {waveform_id_to_network_station_location(picks[0].waveform_id.id)} in event {event_params["source_id"]}'
+                        f"Found no waveforms for {waveform_id_to_network_station_location(picks[0].waveform_id.id)}"
+                        f' in event {event_params["source_id"]}'
                     )
                     continue
 
@@ -119,7 +155,8 @@ class ETHZ(BenchmarkDataset):
                     trace.stats.sampling_rate != sampling_rate for trace in waveforms
                 ):
                     seisbench.logger.warning(
-                        f"Found inconsistent sampling rates for {waveform_id_to_network_station_location(picks[0].waveform_id.id)} in event {event}."
+                        f"Found inconsistent sampling rates for "
+                        f"{waveform_id_to_network_station_location(picks[0].waveform_id.id)} in event {event}."
                         f"Resampling traces to common sampling rate."
                     )
                     waveforms.resample(sampling_rate)
@@ -130,7 +167,7 @@ class ETHZ(BenchmarkDataset):
 
                 stream = waveforms.slice(t_start, t_end)
 
-                actual_t_start, data, completeness = _stream_to_array(
+                actual_t_start, data, completeness = stream_to_array(
                     stream,
                     component_order=writer.data_format["component_order"],
                 )
@@ -143,7 +180,7 @@ class ETHZ(BenchmarkDataset):
 
                 trace_params["trace_sampling_rate_hz"] = sampling_rate
                 trace_params["trace_completeness"] = completeness
-                trace_params["trace_has_spikes"] = _trace_has_spikes(data)
+                trace_params["trace_has_spikes"] = trace_has_spikes(data)
                 trace_params["trace_start_time"] = str(actual_t_start)
 
                 for pick in picks:
@@ -171,6 +208,20 @@ class ETHZ(BenchmarkDataset):
         endtime=obspy.UTCDateTime(2021, 1, 1),
         minmagnitude=1.5,
     ):
+        """
+        Download QuakeML data from FDSN for all events satisfying defined parameters.
+        QuakeML structure is also stored in cache.
+
+        :param starttime: Define start time of window to select events, defaults to obspy.UTCDateTime(2013, 1, 1)
+        :type starttime: obspy.core.UTCDateTime, optional
+        :param endtime: Define start time of window to select events, defaults to obspy.UTCDateTime(2021, 1, 1)
+        :type endtime: obspy.core.UTCDateTime, optional
+        :param minmagnitude: Select all events with event mag > minmagnitude, defaults to 1.5
+        :type minmagnitude: float, optional
+        :return: Catalog containing all selected events
+        :rtype: obspy.core.Catalog
+
+        """
         query = (
             f"http://arclink.ethz.ch/fdsnws/event/1/query?"
             f"starttime={starttime.isoformat()}&endtime={endtime.isoformat()}"
@@ -184,7 +235,7 @@ class ETHZ(BenchmarkDataset):
 
         catalog = obspy.Catalog(events=[])
         with tqdm(
-            desc="Downlading quakeml event meta from FDSNWS", total=len(ev_ids)
+            desc="Downloading quakeml event meta from FDSNWS", total=len(ev_ids)
         ) as pbar:
             for ev_id in ev_ids:
                 catalog += self.client.get_events(eventid=ev_id, includearrivals=True)
@@ -288,6 +339,11 @@ class ETHZ(BenchmarkDataset):
 
 
 class InventoryMapper:
+    """
+    Helper class to map station inventories to metadata.
+
+    """
+
     def __init__(self, inv):
         self.nested_sta_meta = self._create_nested_metadata(inv)
 
@@ -300,17 +356,12 @@ class InventoryMapper:
             nested_station_meta[network_code] = {}
 
             for station in network.stations:
-                station_code = station._code
-                latitude = station._latitude
-                longitude = station._longitude
-                elevation = station._elevation
-
-                nested_station_meta[network_code][station_code] = {
+                nested_station_meta[network_code][station._code] = {
                     "network": network_code,
-                    "station": station_code,
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "elevation": elevation,
+                    "station": station._code,
+                    "latitude": station._latitude,
+                    "longitude": station._longitude,
+                    "elevation": station._elevation,
                 }
 
         return nested_station_meta

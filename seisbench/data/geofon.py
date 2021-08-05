@@ -1,16 +1,15 @@
 import seisbench
 from .base import BenchmarkDataset
 from seisbench.util.trace_ops import (
-    _rotate_stream_to_ZNE,
-    _stream_to_array,
-    _trace_has_spikes,
+    rotate_stream_to_zne,
+    stream_to_array,
+    trace_has_spikes,
 )
 
 from pathlib import Path
 import obspy
 from obspy.io.mseed import InternalMSEEDError
 from obspy.geodetics import gps2dist_azimuth
-from obspy.core.util.obspy_types import ObsPyException
 import copy
 from collections import defaultdict
 import numpy as np
@@ -19,7 +18,9 @@ import pandas as pd
 
 class GEOFON(BenchmarkDataset):
     """
-    GEOFON dataset
+    GEOFON dataset consisting of both regional and teleseismic picks. Mostly contains P arrivals,
+    but a few S arrivals are annotated as well. Contains data from 2010-2013. The dataset will be
+    downloaded from the SeisBench repository on first usage.
     """
 
     def __init__(self, **kwargs):
@@ -260,11 +261,12 @@ class GEOFON(BenchmarkDataset):
         sampling_rate = stream[0].stats.sampling_rate
         if any(trace.stats.sampling_rate != sampling_rate for trace in stream):
             seisbench.logger.warning(
-                f'Found inconsistent sampling rates for {picks[0].waveform_id.id[:-1]} in event {event_params["source_id"]}'
+                f"Found inconsistent sampling rates for {picks[0].waveform_id.id[:-1]} "
+                f'in event {event_params["source_id"]}'
             )
             return
 
-        _rotate_stream_to_ZNE(stream, inventory)
+        rotate_stream_to_zne(stream, inventory)
 
         t_start = min(pick.time for pick in picks) - time_before
         t_end = max(pick.time for pick in picks) + time_after
@@ -277,7 +279,7 @@ class GEOFON(BenchmarkDataset):
             )
             return
 
-        actual_t_start, data, completeness = _stream_to_array(stream, component_order)
+        actual_t_start, data, completeness = stream_to_array(stream, component_order)
 
         if int((t_end - t_start) * sampling_rate) + 1 > data.shape[1]:
             # Traces appear to be complete, but do not cover the intended time range
@@ -285,7 +287,7 @@ class GEOFON(BenchmarkDataset):
 
         trace_params["trace_sampling_rate_hz"] = sampling_rate
         trace_params["trace_completeness"] = completeness
-        trace_params["trace_has_spikes"] = _trace_has_spikes(data)
+        trace_params["trace_has_spikes"] = trace_has_spikes(data)
         trace_params["trace_start_time"] = str(actual_t_start)
         for pick in picks:
             sample = (pick.time - actual_t_start) * sampling_rate
@@ -338,4 +340,4 @@ class LocationHelper:
             if netsta in self.short_dict:
                 return self.short_dict[netsta]
             else:
-                return (np.nan, np.nan, np.nan, np.nan)
+                return np.nan, np.nan, np.nan, np.nan

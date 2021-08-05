@@ -6,6 +6,7 @@ from pathlib import Path
 import os
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from collections import defaultdict
 from queue import PriorityQueue
 import json
@@ -194,7 +195,8 @@ class WaveformModel(SeisBenchModel, ABC):
     it always outputs obspy streams with the annotations.
     These can for example be functions of pick probability over time.
     In contrast, the :py:func:`classify` function can tailor it's output to the model type.
-    For example, a picking model might output picks, while a magnitude estimation model might only output a scalar magnitude.
+    For example, a picking model might output picks, while a magnitude estimation model might only output
+    a scalar magnitude.
     Internally, :py:func:`classify` will usually rely on :py:func:`annotate` and simply add steps to it's output.
 
     For details see the documentation of these functions.
@@ -212,8 +214,8 @@ class WaveformModel(SeisBenchModel, ABC):
                           or of a pick at a certain location. This will provide an :py:func:`annotate` function.
                           If an :py:func:`classify_aggregate` function is provided by the inheriting model,
                           this will also provide a :py:func:`classify` function.
-                        - "array" for prediction curves, i.e., probabilities over time for the arrival of certain wave types.
-                          This will provide an :py:func:`annotate` function.
+                        - "array" for prediction curves, i.e., probabilities over time for the arrival of certain wave
+                          types. This will provide an :py:func:`annotate` function.
                           If an :py:func:`classify_aggregate` function is provided by the inheriting model,
                           this will also provide a :py:func:`classify` function.
                         - "regression" for a regression value, i.e., the sample of the arrival within a window.
@@ -224,10 +226,10 @@ class WaveformModel(SeisBenchModel, ABC):
     :type default_args: dict[str, any]
     :param in_samples: Number of input samples in time
     :type in_samples: int
-    :param pred_sample: For a "point" prediction: sample number of the sample in a window for which the prediction is valid.
-                        For an "array" prediction: a tuple of first and last sample defining the prediction range.
-                        Note that the number of output samples and input samples within the given range are not required
-                        to agree.
+    :param pred_sample: For a "point" prediction: sample number of the sample in a window for which the prediction is
+                        valid. For an "array" prediction: a tuple of first and last sample defining the prediction
+                        range. Note that the number of output samples and input samples within the given range are
+                        not required to agree.
     :type pred_sample: int, tuple
     :param labels: Labels for the different predictions in the output, e.g., Noise, P, S
     :type labels: list or string
@@ -312,7 +314,7 @@ class WaveformModel(SeisBenchModel, ABC):
         For example, for a picking model, annotate will give a characteristic function/probability function for picks
         over time.
         The annotate function contains multiple subfunction, which can be overwritten individually by inheriting
-        models to accomodate their requirements. These functions are:
+        models to accommodate their requirements. These functions are:
 
         - :py:func:`annotate_stream_pre`
         - :py:func:`annotate_stream_validate`
@@ -544,12 +546,13 @@ class WaveformModel(SeisBenchModel, ABC):
     def _annotate_array(self, times, data, argdict):
         """
         Annotation function for an array prediction model using a sliding window approach.
-        Will use the key `overlap` from the `argdict` to determine the overlap (in samples) between two neighboring windows.
-        Overlapping predictions will be averaged. NaN predictions will be ignored in the averaging.
+        Will use the key `overlap` from the `argdict` to determine the overlap (in samples) between two neighboring
+        windows. Overlapping predictions will be averaged. NaN predictions will be ignored in the averaging.
         If after regularly spacing windows there are leftover samples at the end, one additional window with potentially
         larger overlap is added to the end.
         This function expects model outputs after postprocessing for each window to be 1D arrays (only sample dimension)
-        or 2D arrays (sample and channel dimension in this order) and that each prediction has the same number of output samples.
+        or 2D arrays (sample and channel dimension in this order) and that each prediction has the same number of output
+        samples.
         """
         overlap = argdict.get("overlap", 0)
 
@@ -646,7 +649,8 @@ class WaveformModel(SeisBenchModel, ABC):
     @staticmethod
     def _trim_nan(x):
         """
-        Removes all starting and trailing nan values from a 1D array and returns the new array and the number of NaNs removed per side.
+        Removes all starting and trailing nan values from a 1D array and returns the new array and the number of NaNs
+        removed per side.
         """
         mask_forward = np.cumprod(np.isnan(x)).astype(
             bool
@@ -661,7 +665,8 @@ class WaveformModel(SeisBenchModel, ABC):
 
     def _recursive_torch_to_numpy(self, x):
         """
-        Recursively converts torch.Tensor objects to numpy arrays while preserving any overarching tuple or list structure.
+        Recursively converts torch.Tensor objects to numpy arrays while preserving any overarching tuple
+        or list structure.
         :param x:
         :return:
         """
@@ -671,6 +676,8 @@ class WaveformModel(SeisBenchModel, ABC):
             return [self._recursive_torch_to_numpy(y) for y in x]
         elif isinstance(x, tuple):
             return tuple([self._recursive_torch_to_numpy(y) for y in x])
+        elif isinstance(x, np.ndarray):
+            return x
         else:
             raise ValueError(f"Can't unpack object of type {type(x)}.")
 
@@ -727,10 +734,10 @@ class WaveformModel(SeisBenchModel, ABC):
 
     def classify_aggregate(self, annotations, argdict):
         """
-        An aggregation function that converts the annotation streams returned by :py:func:`annotate` into a classification.
-        A classification may be an arbitrary object.
-        However, when implementing a model which already exists in similar form, we recommend using the same output format.
-        For example, all pick outputs should have the same format.
+        An aggregation function that converts the annotation streams returned by :py:func:`annotate` into
+        a classification. A classification may be an arbitrary object. However, when implementing a model which already
+        exists in similar form, we recommend using the same output format. For example, all pick outputs should have
+        the same format.
 
         :param annotations: Annotations returned from :py:func:`annotate`
         :param argdict: Dictionary of arguments
@@ -825,7 +832,8 @@ class WaveformModel(SeisBenchModel, ABC):
 
         :param stream: Input stream
         :type stream: obspy.core.Stream
-        :param strict: If true, only if recordings for all components are available, otherwise impute missing data with zeros.
+        :param strict: If true, only if recordings for all components are available, otherwise impute missing
+                       data with zeros.
         :type strict: bool, default True
         :param flexible_horizontal_components: If true, accepts traces with Z12 components as ZNE and vice versa.
                                                This is usually acceptable for rotationally invariant models,
@@ -834,7 +842,10 @@ class WaveformModel(SeisBenchModel, ABC):
         :return: output_times: Start times for each array
         :return: output_data: Arrays with waveforms
         """
-        seqnum = 0  # Obspy raises an error when trying to compare traces. The seqnum hack guarantees that no two tuples reach comparison of the traces.
+
+        # Obspy raises an error when trying to compare traces.
+        # The seqnum hack guarantees that no two tuples reach comparison of the traces.
+        seqnum = 0
         if len(stream) == 0:
             return [], []
 
@@ -1262,3 +1273,111 @@ class Conv1dSame(nn.Module):
             return self.conv(x)[:, :, :-1]
         else:
             return self.conv(x)
+
+
+def hard_sigmoid(x):
+    return torch.clip(0.2 * x + 0.5, 0, 1)
+
+
+class ActivationLSTMCell(nn.Module):
+    """
+    LSTM Cell using variable gating activation, by default hard sigmoid
+
+    If gate_activation=torch.sigmoid this is the standard LSTM cell
+
+    Uses recurrent dropout strategy from https://arxiv.org/abs/1603.05118 to match Keras implementation.
+    """
+
+    def __init__(
+        self, input_size, hidden_size, gate_activation=hard_sigmoid, recurrent_dropout=0
+    ):
+        super(ActivationLSTMCell, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.gate_activation = gate_activation
+        self.recurrent_dropout = recurrent_dropout
+
+        self.weight_ih = nn.Parameter(torch.randn(4 * hidden_size, input_size))
+        self.weight_hh = nn.Parameter(torch.randn(4 * hidden_size, hidden_size))
+        self.bias_ih = nn.Parameter(torch.randn(4 * hidden_size))
+        self.bias_hh = nn.Parameter(torch.randn(4 * hidden_size))
+        self.init_weights()
+
+    def init_weights(self):
+        with torch.no_grad():
+            for param in [self.weight_hh, self.weight_ih]:
+                for idx in range(4):
+                    mul = param.shape[0] // 4
+                    torch.nn.init.xavier_uniform_(param[idx * mul : (idx + 1) * mul])
+
+    def forward(self, input, state):
+        if state is None:
+            hx = torch.zeros(
+                input.shape[0], self.hidden_size, device=input.device, dtype=input.dtype
+            )
+            cx = torch.zeros(
+                input.shape[0], self.hidden_size, device=input.device, dtype=input.dtype
+            )
+        else:
+            hx, cx = state
+        gates = (
+            torch.mm(input, self.weight_ih.t())
+            + self.bias_ih
+            + torch.mm(hx, self.weight_hh.t())
+            + self.bias_hh
+        )
+        ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
+
+        ingate = self.gate_activation(ingate)
+        forgetgate = self.gate_activation(forgetgate)
+        cellgate = torch.tanh(cellgate)
+        outgate = self.gate_activation(outgate)
+
+        if self.recurrent_dropout > 0:
+            cellgate = F.dropout(cellgate, p=self.recurrent_dropout)
+
+        cy = (forgetgate * cx) + (ingate * cellgate)
+        hy = outgate * torch.tanh(cy)
+
+        return hy, (hy, cy)
+
+
+class CustomLSTM(nn.Module):
+    """
+    LSTM to be used with custom cells
+    """
+
+    def __init__(self, cell, *cell_args, bidirectional=True, **cell_kwargs):
+        super(CustomLSTM, self).__init__()
+        self.cell_f = cell(*cell_args, **cell_kwargs)
+        self.bidirectional = bidirectional
+        if self.bidirectional:
+            self.cell_b = cell(*cell_args, **cell_kwargs)
+
+    def forward(self, input, state=None):
+        # Forward
+        state_f = state
+        outputs_f = []
+        for i in range(len(input)):
+            out, state_f = self.cell_f(input[i], state_f)
+            outputs_f += [out]
+
+        outputs_f = torch.stack(outputs_f)
+
+        if not self.bidirectional:
+            return outputs_f, None
+
+        # Backward
+        state_b = state
+        outputs_b = []
+        l = input.shape[0] - 1
+        for i in range(len(input)):
+            out, state_b = self.cell_b(input[l - i], state_b)
+            outputs_b += [out]
+
+        outputs_b = torch.flip(torch.stack(outputs_b), dims=[0])
+
+        output = torch.cat([outputs_f, outputs_b], dim=-1)
+
+        # Keep second argument for consistency with PyTorch LSTM
+        return output, None

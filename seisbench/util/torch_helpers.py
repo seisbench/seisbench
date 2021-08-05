@@ -12,6 +12,9 @@ def worker_seeding(wid):
     To set the seed in each worker, use `worker_init_fn=worker_seeding` when creating the pytorch DataLoader.
 
     Code from https://github.com/pytorch/pytorch/issues/5059
+
+    :param wid: Worker id
+    :type wid: int
     """
     uint64_seed = torch.initial_seed()
     np.random.seed([uint64_seed >> 32, uint64_seed & 0xFFFF_FFFF])

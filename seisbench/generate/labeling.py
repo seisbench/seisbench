@@ -5,7 +5,6 @@ from abc import ABC, abstractmethod
 import numpy as np
 import seisbench
 from seisbench import config
-from seisbench.util.ml import gaussian_pick
 
 
 class SupervisedLabeller(ABC):
@@ -14,10 +13,14 @@ class SupervisedLabeller(ABC):
     Performs simple checks for standard supervised classification labels.
 
     :param label_type: The type of label either: 'multi_label', 'multi_class', 'binary'.
+    :type label_type: str
     :param dim: Dimension over which labelling will be applied.
+    :type dim: int
     :param key: The keys for reading from and writing to the state dict.
-                Expects a 2-tuple with the first string indicating the key to read from and the second one the key to
-                write to. Defaults to ("X", "y")
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
     """
 
     def __init__(self, label_type, dim, key=("X", "y")):
@@ -39,13 +42,22 @@ class SupervisedLabeller(ABC):
 
     @abstractmethod
     def label(self, X, metadata):
-        # to be overwritten in subclasses
+        """
+        to be overwritten in subclasses
+
+        :param X: trace from state dict
+        :type X: numpy.ndarray
+        :param metadata: metadata from state dict
+        :type metadata: dict
+        :return: Label
+        :rtype: numpy.ndarray
+        """
         return y
 
     @staticmethod
     def _swap_dimension_order(arr, current_dim, expected_dim):
-        config_dim = tuple(current_dim.find(d) for d in (expected_dim))
-        return np.transpose(arr, (config_dim))
+        config_dim = tuple(current_dim.find(d) for d in expected_dim)
+        return np.transpose(arr, config_dim)
 
     @staticmethod
     def _get_dimension_order_from_config(config, ndim):
@@ -79,13 +91,14 @@ class SupervisedLabeller(ABC):
                 raise ValueError(f"Binary labels should lie within 0-1 range.")
 
         for label in self.label_columns:
-            if not label in metadata:
+            if label not in metadata:
                 # Ignore labels that are not present
                 continue
 
             if (isinstance(metadata[label], (int, np.integer))) and self.ndim == 3:
                 raise ValueError(
-                    f"Only provided single arrival in metadata {label} column to multiple windows. Check augmentation workflow."
+                    f"Only provided single arrival in metadata {label} column to multiple windows. "
+                    f"Check augmentation workflow."
                 )
 
     def __call__(self, state_dict):
@@ -101,8 +114,8 @@ class PickLabeller(SupervisedLabeller, ABC):
     """
     Abstract class for PickLabellers implementing common functionality
 
-    :param label_columns: Specify the columns to use for pick labelling, defaults to None and columns are inferred from metadata.
-                          Columns can either be specified as list or dict.
+    :param label_columns: Specify the columns to use for pick labelling, defaults to None and columns are inferred from
+                          metadata. Columns can either be specified as list or dict.
                           For a list, each entry is treated as its own pick type.
                           The dict should contain a mapping from column name to pick label, e.g.,
                           {"trace_Pg_arrival_sample": "P"}.
@@ -113,14 +126,16 @@ class PickLabeller(SupervisedLabeller, ABC):
     :param kwargs: Kwargs are passed to the SupervisedLabeller superclass
     """
 
-    def __init__(self, label_columns=None, **kwargs):
+    def __init__(self, label_columns=None, noise_column=True, **kwargs):
         self.label_columns = label_columns
         if label_columns is not None:
             (
                 self.label_columns,
                 self.labels,
                 self.label_ids,
-            ) = self._colums_to_dict_and_labels(label_columns)
+            ) = self._colums_to_dict_and_labels(
+                label_columns, noise_column=noise_column
+            )
         else:
             self.labels = None
             self.label_ids = None
@@ -138,7 +153,7 @@ class PickLabeller(SupervisedLabeller, ABC):
         )
 
     @staticmethod
-    def _colums_to_dict_and_labels(label_columns):
+    def _colums_to_dict_and_labels(label_columns, noise_column=True):
         """
         Generate label columns dict and list of labels from label_columns list or dict.
         Always appends a noise column at the end.
@@ -150,14 +165,15 @@ class PickLabeller(SupervisedLabeller, ABC):
             label_columns = {label: label.split("_")[1] for label in label_columns}
 
         labels = sorted(list(np.unique(list(label_columns.values()))))
-        labels.append("Noise")
+        if noise_column:
+            labels.append("Noise")
         label_ids = {label: i for i, label in enumerate(labels)}
 
         return label_columns, labels, label_ids
 
 
 class ProbabilisticLabeller(PickLabeller):
-    """
+    r"""
     Create supervised labels from picks. The picks in example are represented
     probabilistically with a Gaussian
         \[
@@ -205,7 +221,7 @@ class ProbabilisticLabeller(PickLabeller):
         for label_column, label in self.label_columns.items():
             i = self.label_ids[label]
 
-            if not label_column in metadata:
+            if label_column not in metadata:
                 # Unknown pick
                 continue
 
@@ -217,7 +233,7 @@ class ProbabilisticLabeller(PickLabeller):
                 )
                 label_val[
                     np.isnan(label_val)
-                ] = 0  # Set non-present pick probabilites to 0
+                ] = 0  # Set non-present pick probabilities to 0
                 y[i, :] = np.maximum(y[i, :], label_val)
             else:
                 # Handle multi-window case
@@ -228,7 +244,7 @@ class ProbabilisticLabeller(PickLabeller):
                     )
                     label_val[
                         np.isnan(label_val)
-                    ] = 0  # Set non-present pick probabilites to 0
+                    ] = 0  # Set non-present pick probabilities to 0
                     y[j, i, :] = np.maximum(y[j, i, :], label_val)
 
         y /= np.maximum(
@@ -255,6 +271,71 @@ class ProbabilisticLabeller(PickLabeller):
         return f"ProbabilisticLabeller (label_type={self.label_type}, dim={self.dim})"
 
 
+class StepLabeller(PickLabeller):
+    """
+    Create supervised labels from picks. The picks are represented by probability curves with value 0
+    before the pick and 1 afterwards. The output contains one channel per pick type and no noise channel.
+
+    All picks with NaN sample are treated as not present.
+    """
+
+    def __init__(self, **kwargs):
+        self.label_method = "probabilistic"
+        kwargs["dim"] = kwargs.get("dim", -2)
+        super().__init__(label_type="multi_label", noise_column=False, **kwargs)
+
+    def label(self, X, metadata):
+        if not self.label_columns:
+            label_columns = self._auto_identify_picklabels(metadata)
+            (
+                self.label_columns,
+                self.labels,
+                self.label_ids,
+            ) = self._colums_to_dict_and_labels(label_columns, noise_column=False)
+
+        sample_dim, channel_dim, width_dim = self._get_dimension_order_from_config(
+            config, self.ndim
+        )
+
+        if self.ndim == 2:
+            y = np.zeros(shape=(len(self.labels), X.shape[width_dim]))
+        elif self.ndim == 3:
+            y = np.zeros(
+                shape=(
+                    X.shape[sample_dim],
+                    len(self.labels),
+                    X.shape[width_dim],
+                )
+            )
+
+        # Construct pick labels
+        for label_column, label in self.label_columns.items():
+            i = self.label_ids[label]
+
+            if label_column not in metadata:
+                # Unknown pick
+                continue
+
+            if isinstance(metadata[label_column], (int, np.integer, float)):
+                # Handle single window case
+                onset = metadata[label_column]
+                if not np.isnan(onset):
+                    onset = max(0, onset)
+                    y[i, int(onset) :] = 1
+            else:
+                # Handle multi-window case
+                for j in range(X.shape[sample_dim]):
+                    onset = metadata[label_column][j]
+                    if not np.isnan(onset):
+                        onset = max(0, onset)
+                        y[j, i, int(onset) :] = 1
+
+        return y
+
+    def __str__(self):
+        return f"ProbabilisticLabeller (label_type={self.label_type}, dim={self.dim})"
+
+
 class ProbabilisticPointLabeller(ProbabilisticLabeller):
     """
     This labeller annotates windows true their pick probabilities at a certain point in the window.
@@ -265,7 +346,8 @@ class ProbabilisticPointLabeller(ProbabilisticLabeller):
     This class relies on the ProbabilisticLabeller, but instead of probability curves only returns the probabilities
     at one point.
 
-    :param position: Position to label as fraction of the total trace length. Defaults to 0.5, i.e., the center of the window.
+    :param position: Position to label as fraction of the total trace length. Defaults to 0.5, i.e.,
+                     the center of the window.
     :type position: float
     :param kwargs: Passed to ProbabilisticLabeller
     """
@@ -297,7 +379,7 @@ class ProbabilisticPointLabeller(ProbabilisticLabeller):
 class DetectionLabeller(SupervisedLabeller):
     """
     Create detection labels from picks.
-    The labeler can either use fixed detection length or determine the lenght from the P to S time as in
+    The labeler can either use fixed detection length or determine the length from the P to S time as in
     Mousavi et al. (2020, Nature communications). In the latter case, detections range from P to S + factor * (S - P)
     and are only annotated if both P and S phases are present.
     All detections are represented through a boxcar time series with the same length as the input waveforms.
@@ -448,7 +530,7 @@ class StandardLabeller(PickLabeller):
       - 'random' Use random choice as example label.
 
     In general, it is recommended to set low and high, as it is very difficult for models to spot if a pick is just
-    inside or outside the window. This can lead to noisy predicitions that strongly depend on the marginal label
+    inside or outside the window. This can lead to noisy predictions that strongly depend on the marginal label
     distribution in the training set.
 
     :param low: Only take into account picks after or at this sample. If None, uses low=0.
@@ -492,8 +574,9 @@ class StandardLabeller(PickLabeller):
                 arrival_array.append(None)
 
         # Identify shape of entry
+        nan_dummy = np.ones(1) * np.nan  # Only used for all nan arrays
         for x in arrival_array:
-            if not x is None:
+            if x is not None:
                 nan_dummy = np.ones_like(x, dtype=float) * np.nan
                 break
 
@@ -528,7 +611,8 @@ class StandardLabeller(PickLabeller):
         nan_mask = np.isnan(arrival_array)
         return arrival_array, nan_mask
 
-    def _label_first(self, row_id, arrival_array, nan_mask):
+    @staticmethod
+    def _label_first(row_id, arrival_array, nan_mask):
         """
         Label based on first arrival in time in window.
         """
@@ -536,7 +620,8 @@ class StandardLabeller(PickLabeller):
         first_arrival = np.nanargmin(arrival_array[row_id])
         return first_arrival
 
-    def _label_random(self, row_id, nan_mask):
+    @staticmethod
+    def _label_random(row_id, nan_mask):
         """
         Label by randomly choosing pick inside window.
         If no arrivals present, label as noise (class 0)
@@ -544,7 +629,8 @@ class StandardLabeller(PickLabeller):
         non_null_columns = np.argwhere(~nan_mask[row_id])
         return np.random.choice(non_null_columns.reshape(-1))
 
-    def _label_fixed_relevance(self, row_id, arrival_array, midpoint):
+    @staticmethod
+    def _label_fixed_relevance(row_id, arrival_array, midpoint):
         """
         Label using closest pick to centre of window.
         If no arrivals present, label as noise (class 0)
@@ -606,3 +692,24 @@ class StandardLabeller(PickLabeller):
 
     def __str__(self):
         return f"StandardLabeller (label_type={self.label_type}, dim={self.dim})"
+
+
+def gaussian_pick(onset, length, sigma):
+    r"""
+    Create probabilistic representation of pick in time series.
+    PDF function given by:
+
+    .. math::
+        \mathcal{N}(\mu,\,\sigma^{2})
+
+    :param onset: The nearest sample to pick onset
+    :type onset: float
+    :param length: The length of the trace time series in samples
+    :type length: int
+    :param sigma: The variance of the Gaussian distribution in samples
+    :type sigma: float
+    :return prob_pick: 1D time series with probabilistic representation of pick
+    :rtype: np.ndarray
+    """
+    x = np.linspace(1, length, length)
+    return np.exp(-np.power(x - onset, 2.0) / (2 * np.power(sigma, 2.0)))

@@ -5,9 +5,9 @@ class GenericGenerator(Dataset):
     def __init__(self, dataset):
         """
         A generic data generator which can be used to build preprocessing and data augmentation pipelines.
-        The data generator subclasses the pytorch Dataset class and can therefore be used directly with DataLoaders in pytorch.
-        The processing pipeline of the generator is defined through a series of processing steps or augmentations.
-        For each data sample, the generator calls the augmentations in order.
+        The data generator subclasses the pytorch Dataset class and can therefore be used directly with DataLoaders
+        in pytorch. The processing pipeline of the generator is defined through a series of processing steps or
+        augmentations. For each data sample, the generator calls the augmentations in order.
         Information between the augmentation steps is passed through a state dict.
         The state dict is a python dictionary mapping keys to a tuple (data, metadata).
         In getitem, the generator automatically populates the initial dictionary with the waveforms
@@ -17,8 +17,8 @@ class GenericGenerator(Dataset):
         Any metadata that should be output needs to explicitly be written to data.
 
         Augmentation can be either callable classes of functions.
-        Functions are usually best suited for simple operations, while callable classes offer more configuration options.
-        SeisBench already offers a set of standard augmentations for augmentation and preprocessing,
+        Functions are usually best suited for simple operations, while callable classes offer more configuration
+        options. SeisBench already offers a set of standard augmentations for augmentation and preprocessing,
         e.g., for window selection, data normalization or different label encodings,
         which should cover many common use cases.
         For details on implementing custom augmentations we suggest looking at the examples provided.
@@ -29,6 +29,7 @@ class GenericGenerator(Dataset):
         This allows in particular none-sequential augmentation sequences.
 
         :param dataset: The underlying SeisBench data set.
+        :type dataset: seisbench.data.WaveformDataset or seisbench.data.MultiWaveformDataset
         """
         self._augmentations = []
         self.dataset = dataset
@@ -47,7 +48,7 @@ class GenericGenerator(Dataset):
         Adds a list of augmentations to the generator. Can not be used as decorator.
 
         :param augmentations: List of augmentations
-        :return: None
+        :type augmentations: list[callable]
         """
         if not isinstance(augmentations, list):
             raise TypeError(
@@ -85,7 +86,7 @@ class SteeredGenerator(GenericGenerator):
     """
     This data generator follows the same principles as the GenericGenerator.
     However, in contrast to the GenericGenerator it holds a dataframe with additional information for each sample.
-    This additional information is stored in state_dict["_control_"] as a dict.
+    This additional information is stored in `state_dict["_control_"]` as a dict.
     The generator also loads the trace name from the dataframe as key "trace_name".
     This generator is particularly useful for evaluation, e.g., when extracting predefined windows from a trace.
 
@@ -95,13 +96,15 @@ class SteeredGenerator(GenericGenerator):
     into the state_dict metadata of the relevant key.
 
     .. warning::
-        This generator should in most cases not be used for resampling the dataset.
+        This generator should in most cases not be used for changing label distributions by resampling the dataset.
         For this application, we recommend using a
-        `pytorch Sampler <https://pytorch.org/docs/stable/data.html#data-loading-order-and-sampler`_.
+        `pytorch Sampler <https://pytorch.org/docs/stable/data.html#data-loading-order-and-sampler>`_.
 
     :param dataset: The underlying SeisBench data set
+    :type dataset: seisbench.data.WaveformDataset or seisbench.data.MultiWaveformDataset
     :param metadata: The additional information as pandas dataframe.
                      Each row corresponds to one sample from the generator.
+    :type metadata: pandas.DataFrame
     """
 
     def __init__(self, dataset, metadata):

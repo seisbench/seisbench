@@ -7,15 +7,16 @@ import numpy as np
 class FixedWindow:
     """
     A simple windower that returns fixed windows.
-    In addition, the windower rewrites all metadata ending in "_sample" to point to the correct sample after window selection.
-    Window start and length can be set either at initialization or separately in each call.
+    In addition, the windower rewrites all metadata ending in "_sample" to point to the correct sample after window
+    selection. Window start and length can be set either at initialization or separately in each call.
     The later is primarily intended for more complicated windowers inheriting from FixedWindow.
-    :param p0: Start position of the trace.
-    If p0 is negative, this will be treated as identifying a sample before the start of the trace.
-    This is in contrast to standard list indexing with negative indices in Python, which counts items from the end of the list.
-    Negative p0 is not possible with the strategy "fail".
-
+    :param p0: Start position of the trace. If p0 is negative, this will be treated as identifying
+               a sample before the start of the trace. This is in contrast to standard list indexing
+               with negative indices in Python, which counts items from the end of the list. Negative
+               p0 is not possible with the strategy "fail".
+    :type p0: None or int
     :param windowlen: Window length
+    :type windowlen: None or int
     :param strategy: Strategy to mitigate insufficient data. Options are:
 
         - "fail": Raises a ValueError
@@ -27,10 +28,14 @@ class FixedWindow:
         - "variable": Returns shorter length window, resulting in possibly varying window size.
           Might return empty window if requested window is completely outside target range.
 
+    :type strategy: str
     :param axis: Axis along which the window selection should be performed
+    :type axis: int
     :param key: The keys for reading from and writing to the state dict.
-        If key is a single string, the corresponding entry in state dict is modified.
-        Otherwise, a 2-tuple is expected, with the first string indicating the key to read from and the second one the key to write to.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
     """
 
     def __init__(self, p0=None, windowlen=None, strategy="fail", axis=-1, key="X"):
@@ -74,7 +79,8 @@ class FixedWindow:
         if x.shape[self.axis] < p0 + windowlen:
             if self.strategy == "fail":
                 raise ValueError(
-                    f"Requested window length ({windowlen}) is longer than available length after p0 ({x.shape[self.axis] - p0})."
+                    f"Requested window length ({windowlen}) is longer than available length after p0 "
+                    f"({x.shape[self.axis] - p0})."
                 )
             elif self.strategy == "pad":
                 p0 = min(p0, x.shape[self.axis])
@@ -88,7 +94,8 @@ class FixedWindow:
                 p0 = x.shape[self.axis] - windowlen
                 if p0 < 0:
                     raise ValueError(
-                        f"Total trace length ({x.shape[self.axis]}) is shorter than requested window length ({windowlen})."
+                        f"Total trace length ({x.shape[self.axis]}) is shorter than requested window length "
+                        f"({windowlen})."
                     )
             elif self.strategy == "variable":
                 p0 = min(p0, x.shape[self.axis])
@@ -151,8 +158,10 @@ class SlidingWindow(FixedWindow):
     Only complete windows are returned and a possible remainder is truncated.
     In particular, if the available data is shorter than the number of windows, an empty array is returned.
 
-    :param timestep: Difference between two consecutive window starts
+    :param timestep: Difference between two consecutive window starts in samples
+    :type timestep: int
     :param windowlen: Length of the output window
+    :type windowlen: int
     :param kwargs: All kwargs are passed directly to FixedWindow
 
     """
@@ -209,10 +218,14 @@ class WindowAroundSample(FixedWindow):
     The generator will return a window starting at the first sample, if all relevant metadata entries are NaN.
 
     :param samples_before: The number of samples to include before the target sample.
+    :type samples_before: int
     :param selection: Selection strategy in case multiple metadata keys are provided and have non-NaN values.
-        Options are:
+                      Options are:
+
         - "first": use the first available key
         - "random": use uniform random selection among the keys
+
+    :type selection: str
     :param kwargs: Parameters passed to the init method of FixedWindow.
 
     """
@@ -256,7 +269,10 @@ class WindowAroundSample(FixedWindow):
         )
 
     def __str__(self):
-        return f"WindowAroundSample (metadata_keys={self.metadata_keys}, samples_before={self.samples_before}, selection={self.selection})"
+        return (
+            f"WindowAroundSample (metadata_keys={self.metadata_keys}, samples_before={self.samples_before}, "
+            f"selection={self.selection})"
+        )
 
 
 class RandomWindow(FixedWindow):
@@ -269,9 +285,11 @@ class RandomWindow(FixedWindow):
     The padding will be added randomly to both sides.
 
     :param low: The lowest allowed index for the start sample.
-        The sample at this position can be included in the output.
+                The sample at this position can be included in the output.
+    :type low: None or int
     :param high: The highest allowed index for the end.
-        The sample at position high can *not* be included in the output
+                 The sample at position high can *not* be included in the output
+    :type high: None or int
     :param kwargs: Parameters passed to the init method of FixedWindow.
     """
 

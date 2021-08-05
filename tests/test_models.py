@@ -1,4 +1,5 @@
 import seisbench.models
+from seisbench.models.base import ActivationLSTMCell, CustomLSTM
 
 import numpy as np
 import obspy
@@ -369,9 +370,7 @@ def test_flexible_horizontal_components(caplog):
     caplog.clear()
     stream = obspy.Stream([trace_z, trace_n, trace_e, trace_2_test2])
     with caplog.at_level(logging.WARNING):
-        times, data = dummy.stream_to_arrays(
-            stream, strict=True, flexible_horizontal_components=True
-        )
+        dummy.stream_to_arrays(stream, strict=True, flexible_horizontal_components=True)
     assert "This might lead to undefined behavior." not in caplog.text
 
 
@@ -617,6 +616,12 @@ def test_waveform_pipeline_instantiation():
         seisbench.models.WaveformPipeline({})
 
     class MyPipeline(seisbench.models.WaveformPipeline):
+        def annotate(self, stream, **kwargs):
+            pass
+
+        def classify(self, stream, **kwargs):
+            pass
+
         @classmethod
         def component_classes(cls):
             return {}
@@ -626,6 +631,12 @@ def test_waveform_pipeline_instantiation():
 
 def test_waveform_pipeline_list_pretrained(tmp_path):
     class MyPipeline(seisbench.models.WaveformPipeline):
+        def annotate(self, stream, **kwargs):
+            pass
+
+        def classify(self, stream, **kwargs):
+            pass
+
         @classmethod
         def component_classes(cls):
             return {}
@@ -649,6 +660,12 @@ def test_waveform_pipeline_list_pretrained(tmp_path):
 
 def test_waveform_pipeline_from_pretrained(tmp_path):
     class MyPipeline(seisbench.models.WaveformPipeline):
+        def annotate(self, stream, **kwargs):
+            pass
+
+        def classify(self, stream, **kwargs):
+            pass
+
         @classmethod
         def component_classes(cls):
             return {"gpd": seisbench.models.GPD}
@@ -674,3 +691,40 @@ def test_waveform_pipeline_from_pretrained(tmp_path):
                 gpd_from_pretrained.assert_called_once_with(
                     "dummy", force=False, wait_for_file=False
                 )
+
+
+def test_recurrent_dropout():
+    lstm = CustomLSTM(
+        ActivationLSTMCell, 1, 100, bidirectional=True, recurrent_dropout=0.25
+    )
+    x = torch.rand(100, 5, 1)
+
+    with torch.no_grad():
+        y = lstm(x)[0]
+
+    assert y.shape == (100, 5, 200)
+
+
+def test_dpp_detector():
+    model = seisbench.models.DPPDetector(in_channels=3, nclasses=3)
+
+    x = torch.rand(16, 3, 500)
+    y = model(x)
+
+    assert y.shape == (16, 3)
+
+
+def test_dpp_ps():
+    model = seisbench.models.DPPPicker("P")
+
+    x = torch.rand(16, 1, 500)
+    y = model(x)
+
+    assert y.shape == (16, 500)
+
+    model = seisbench.models.DPPPicker("S")
+
+    x = torch.rand(16, 2, 500)
+    y = model(x)
+
+    assert y.shape == (16, 500)
