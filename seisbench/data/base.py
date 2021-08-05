@@ -20,30 +20,35 @@ class WaveformDataset:
     """
     This class is the base class for waveform datasets.
 
-    A key consideration should be how the cache is used.
-    If sufficient memory is available to keep the full data set in memory, activating the cache will yield strong performance gains.
-    For details on the cache strategies, see the documentation of the ``cache`` parameter.
+    A key consideration should be how the cache is used. If sufficient memory is available to keep the full data set
+    in memory, activating the cache will yield strong performance gains. For details on the cache strategies, see the
+    documentation of the ``cache`` parameter.
 
     :param path: Path to dataset.
     :type path: pathlib.Path, str
     :param name: Dataset name, default is None.
     :type name: str, optional
-    :param dimension_order: Dimension order e.g. 'CHW', if not specified will be assumed from config file, defaults to None.
+    :param dimension_order: Dimension order e.g. 'CHW', if not specified will be assumed from config file,
+                            defaults to None.
     :type dimension_order: str, optional
-    :param component_order: Component order e.g. 'ZNE', if not specified will be assumed from config file, defaults to None.
+    :param component_order: Component order e.g. 'ZNE', if not specified will be assumed from config file,
+                            defaults to None.
     :type component_order: str, optional
-    :param sampling_rate: Common sampling rate of waveforms in dataset, sampling rate can also be specified as a metadata column if not common across dataset.
+    :param sampling_rate: Common sampling rate of waveforms in dataset, sampling rate can also be specified
+                          as a metadata column if not common across dataset.
     :type sampling_rate: int, optional
     :param cache: Defines the behaviour of the waveform cache. Provides three options:
 
-                  - "full": When a trace is queried, the full block containing the trace is loaded into the cache and stored in memory.
-                    This causes the highest memory consumption, but also best performance when using large parts of the dataset.
+                  - "full": When a trace is queried, the full block containing the trace is loaded into the cache
+                            and stored in memory. This causes the highest memory consumption, but also best
+                            performance when using large parts of the dataset.
                   - "trace": When a trace is queried, only the trace itself is loaded and stored in memory.
-                    This is particularly useful when only a subset of traces is queried, but these are queried multiple times.
-                    In this case the performance of this strategy might outperform "full".
+                             This is particularly useful when only a subset of traces is queried,
+                             but these are queried multiple times. In this case the performance of
+                             this strategy might outperform "full".
                   - None: When a trace is queried, it is always loaded from disk.
-                    This mode leads to low memory consumption but high IO load.
-                    It is most likely not usable for model training.
+                          This mode leads to low memory consumption but high IO load.
+                          It is most likely not usable for model training.
 
                   Note that for datasets without blocks, i.e., each trace in a single array in the hdf5 file,
                   the strategies "full" and "trace" are identical.
@@ -95,7 +100,8 @@ class WaveformDataset:
         self._dimension_order = None  # Target dimension order
         self._dimension_mapping = None  # List for reordering input to target dimensions
         self._component_order = None  # Target component order
-        self._component_mapping = None  # Dict [source_component_order -> list for reordering source to target components]
+        # Dict [source_component_order -> list for reordering source to target components]
+        self._component_mapping = None
         self.sampling_rate = sampling_rate
 
         self._verify_dataset()
@@ -333,12 +339,16 @@ class WaveformDataset:
 
     def _unify_sampling_rate(self, eps=1e-4):
         """
-        Unify sampling rate to common base. Operation is performed inplace. The sampling rate can be specified in three ways:
+        Unify sampling rate to common base. Operation is performed inplace. The sampling rate can be
+        specified in three ways:
+
         - as trace_sampling_rate_hz in the metadata
         - as trace_dt_s in the metadata
         - as sampling_rate in the data format group, indicating identical sampling rate for all traces
-        This function writes the sampling rate into trace_sampling_rate_hz in the metadata for unified access in the later processing.
-        If the sampling rate is specified in multiple ways and inconsistencies are detected, a warning is logged.
+
+        This function writes the sampling rate into trace_sampling_rate_hz in the metadata for unified
+        access in the later processing. If the sampling rate is specified in multiple ways and inconsistencies
+        are detected, a warning is logged.
 
         :param eps: floating precision, defaults to 1e-4.
         :type eps: float, optional
@@ -409,7 +419,8 @@ class WaveformDataset:
 
     def _get_component_mapping(self, source, target):
         """
-        Calculates the mapping from source to target components while taking into account the missing_components setting.
+        Calculates the mapping from source to target components while taking into account
+        the missing_components setting.
 
         :param source:
         :param target:
@@ -531,9 +542,10 @@ class WaveformDataset:
 
     def _unify_component_order(self):
         """
-        Unify different ways to pass component order, i.e., through data_format or metadata column trace_component_order.
-        This function writes the component order into trace_component_order in the metadata for unified access in the later processing.
-        If the component order is specified in multiple ways and inconsistencies are detected, a warning is logged.
+        Unify different ways to pass component order, i.e., through data_format or metadata column
+        trace_component_order. This function writes the component order into trace_component_order in the metadata
+        for unified access in the later processing. If the component order is specified in multiple ways and
+        inconsistencies are detected, a warning is logged.
 
         :return: None
         """
@@ -651,9 +663,10 @@ class WaveformDataset:
         :type inplace: bool
         :return: None if inplace=True, otherwise the filtered dataset.
         """
-        check_domain = lambda metadata: domain.is_in_domain(
-            metadata[lat_col], metadata[lon_col]
-        )
+
+        def check_domain(metadata):
+            return domain.is_in_domain(metadata[lat_col], metadata[lon_col])
+
         mask = self.metadata.apply(check_domain, axis=1)
         self.filter(mask, inplace=inplace)
 
@@ -816,10 +829,16 @@ class WaveformDataset:
         Collects waveforms and returns them as an array.
 
         :param idx: Idx or list of idx to obtain waveforms for
-        :param mask: Binary mask on the metadata, indicating which traces should be returned. Can not be used jointly with idx.
+        :type idx: int, list[int]
+        :param mask: Binary mask on the metadata, indicating which traces should be returned.
+                     Can not be used jointly with idx.
+        :type mask: np.ndarray[bool]
         :param sampling_rate: Target sampling rate, overwrites sampling rate for dataset
-        :return: Waveform array with dimensions ordered according to dimension_order e.g. default 'NCW' (number of traces, number of components, record samples).
-                 If the number of record samples varies between different entries, all entries are padded to the maximum length.
+        :type sampling_rate: float
+        :return: Waveform array with dimensions ordered according to dimension_order e.g. default 'NCW'
+                 (number of traces, number of components, record samples). If the number of record samples
+                 varies between different entries, all entries are padded to the maximum length.
+        :rtype: np.ndarray
         """
         squeeze = False
         if idx is not None:
@@ -1076,7 +1095,8 @@ class WaveformDataset:
         :type res: str, optional
         :param connections: If true, plots lines connecting sources and stations. Defaults to false.
         :type connections: bool, optional
-        :param kwargs: Plotting kwargs that will be passed to matplotlib plot. Args need to be prefixed with `sta_`, `ev_` and `conn_` to address stations, events or connections.
+        :param kwargs: Plotting kwargs that will be passed to matplotlib plot. Args need to be prefixed with
+                       `sta_`, `ev_` and `conn_` to address stations, events or connections.
         :return: A figure handle for the created figure.
         """
         fig = plt.figure(figsize=(15, 10))
@@ -1184,7 +1204,8 @@ class MultiWaveformDataset:
     but a warning is issued if different caching schemes are found.
 
     :param datasets: List of :py:class:`WaveformDataset`.
-                     The constructor will create a copy of each dataset using the :py:func:`WaveformDataset.copy` method.
+                     The constructor will create a copy of each dataset using the
+                     :py:func:`WaveformDataset.copy` method.
     """
 
     def __init__(self, datasets):
@@ -1388,10 +1409,15 @@ class MultiWaveformDataset:
         Collects waveforms and returns them as an array.
 
         :param idx: Idx or list of idx to obtain waveforms for
-        :param mask: Binary mask on the metadata, indicating which traces should be returned. Can not be used jointly with idx.
+        :type idx: int, list[int]
+        :param mask: Binary mask on the metadata, indicating which traces should be returned.
+                     Can not be used jointly with idx.
+        :type mask: np.ndarray[bool]
         :param kwargs: Passed to :py:func:`WaveformDataset.get_waveforms`
-        :return: Waveform array with dimensions ordered according to dimension_order e.g. default 'NCW' (number of traces, number of components, record samples).
-                 If the number record samples varies between different entries, all entries are padded to the maximum length.
+        :return: Waveform array with dimensions ordered according to dimension_order e.g. default 'NCW'
+                 (number of traces, number of components, record samples). If the number record samples
+                 varies between different entries, all entries are padded to the maximum length.
+        :rtype: np.ndarray
         """
         squeeze = False
         waveforms = []
@@ -1757,7 +1783,8 @@ class BenchmarkDataset(WaveformDataset, ABC):
                     chunks = [x for x in f.read().split("\n") if x.strip()]
             else:
                 # Assume file is not chunked.
-                # To write the conversion for a chunked file, simply write the chunks file before calling the super constructor.
+                # To write the conversion for a chunked file, simply write the chunks file before calling
+                # the super constructor.
                 chunks = [""]
 
         return chunks
@@ -1819,17 +1846,23 @@ class GeometricBucketer(Bucketer):
     Bucket edges are create with a geometric spacing above a minimum bucket.
     The first bucket is [0, minbucket), the second one [minbucket, minbucket * factor) and so on.
     There is no maximum bucket.
-    This bucketer ensures that the overhead from padding is at most factor - 1, as long as only few traces with length < minbucket exist.
+    This bucketer ensures that the overhead from padding is at most factor - 1, as long as only few traces with
+    length < minbucket exist.
     Note that this can even be significantly reduced by passing the input traces ordered by their length.
 
     :param minbucket: Upper limit of the lowest bucket and start of the geometric spacing.
+    :type minbucket: int
     :param factor: Factor for the geometric spacing.
+    :type factor: float
     :param splits: If true, returns separate buckets for each split. Defaults to true.
                    If no split is defined in the metadata, this parameter is ignored.
+    :type splits: bool
     :param track_channels: If true, uses the shape of the input waveform along all axis except the one defined in axis,
                            to determine the bucket. Only traces agreeing in all dimensions except the given axis will be
                            assigned to the same bucket.
+    :type track_channels: bool
     :param axis: Axis to take into account for determining the length of the trace.
+    :type axis: int
     """
 
     def __init__(
@@ -1914,7 +1947,7 @@ class WaveformDataWriter:
 
     @bucketer.setter
     def bucketer(self, value):
-        if not isinstance(value, Bucketer) and not value is None:
+        if not isinstance(value, Bucketer) and value is not None:
             raise TypeError("The bucketer needs to be an instance of Bucketer or None.")
 
         self._bucketer = value

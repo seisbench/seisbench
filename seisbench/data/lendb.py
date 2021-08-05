@@ -16,7 +16,7 @@ class LenDB(BenchmarkDataset):
         citation = (
             "Magrini, Fabrizio, Jozinović, Dario, Cammarano, Fabio, Michelini, Alberto, & Boschi, Lapo. "
             "(2020). LEN-DB - Local earthquakes detection: a benchmark dataset of 3-component seismograms "
-            "built on a global scale [Data set]. Zenodo. http://doi.org/10.5281/zenodo.3648232"
+            "built on a global scale [Data set]. Zenodo. https://doi.org/10.5281/zenodo.3648232"
         )
         super().__init__(citation=citation, repository_lookup=True, **kwargs)
 

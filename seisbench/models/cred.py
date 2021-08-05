@@ -5,7 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from scipy.signal import stft
 import numpy as np
-from obspy.signal.trigger import trigger_onset
 
 
 class CRED(WaveformModel):
@@ -116,7 +115,8 @@ class CRED(WaveformModel):
 
     def classify_aggregate(self, annotations, argdict):
         """
-        Converts the annotations to discrete detections using :py:func:`~seisbench.models.base.WaveformModel.detections_from_annotations`.
+        Converts the annotations to discrete detections using
+        :py:func:`~seisbench.models.base.WaveformModel.detections_from_annotations`.
         Trigger onset thresholds are derived from the argdict at key "detection_threshold".
 
         :param annotations: See description in superclass

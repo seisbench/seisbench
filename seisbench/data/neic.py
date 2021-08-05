@@ -59,9 +59,10 @@ class NEIC(BenchmarkDataset):
 
         # Download data files
         for f in meta["files"]:
-            # Uses callback_if_uncached only to be able to utilize the cache mechanism
-            # Concurrent accesses are anyhow already controlled by the callback_if_uncached call wrapping _download_dataset
-            # It's therefore considered save to set force=True
+            # Uses callback_if_uncached only to be able to utilize the cache mechanism.
+            # Concurrent accesses are anyhow already controlled by the callback_if_uncached
+            # call wrapping _download_dataset.
+            # It's therefore considered save to set force=True.
             def callback_download_original(path):
                 seisbench.util.download_http(
                     f["url"],
@@ -157,7 +158,8 @@ class NEIC(BenchmarkDataset):
             p = 0
             while p < azimuth.shape[0]:
                 # Recreate memmap each epoch to avoid memory "leak"
-                # For details see https://stackoverflow.com/questions/45132940/numpy-memmap-memory-usage-want-to-iterate-once
+                # For details see
+                # https://stackoverflow.com/questions/45132940/numpy-memmap-memory-usage-want-to-iterate-once
                 waveforms = np.load(
                     path_unpacked / f"{wavetype}WF_{split}.npy", mmap_mode="r"
                 )

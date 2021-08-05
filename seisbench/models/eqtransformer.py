@@ -235,7 +235,8 @@ class EQTransformer(WaveformModel):
 
     def classify_aggregate(self, annotations, argdict):
         """
-        Converts the annotations to discrete picks using :py:func:`~seisbench.models.base.WaveformModel.picks_from_annotations`
+        Converts the annotations to discrete picks using
+        :py:func:`~seisbench.models.base.WaveformModel.picks_from_annotations`
         and to discrete detections using :py:func:`~seisbench.models.base.WaveformModel.detections_from_annotations`.
         Trigger onset thresholds for picks are derived from the argdict at keys "[phase]_threshold".
         Trigger onset thresholds for detections are derived from the argdict at key "detection_threshold".

@@ -5,9 +5,9 @@ class GenericGenerator(Dataset):
     def __init__(self, dataset):
         """
         A generic data generator which can be used to build preprocessing and data augmentation pipelines.
-        The data generator subclasses the pytorch Dataset class and can therefore be used directly with DataLoaders in pytorch.
-        The processing pipeline of the generator is defined through a series of processing steps or augmentations.
-        For each data sample, the generator calls the augmentations in order.
+        The data generator subclasses the pytorch Dataset class and can therefore be used directly with DataLoaders
+        in pytorch. The processing pipeline of the generator is defined through a series of processing steps or
+        augmentations. For each data sample, the generator calls the augmentations in order.
         Information between the augmentation steps is passed through a state dict.
         The state dict is a python dictionary mapping keys to a tuple (data, metadata).
         In getitem, the generator automatically populates the initial dictionary with the waveforms
@@ -17,8 +17,8 @@ class GenericGenerator(Dataset):
         Any metadata that should be output needs to explicitly be written to data.
 
         Augmentation can be either callable classes of functions.
-        Functions are usually best suited for simple operations, while callable classes offer more configuration options.
-        SeisBench already offers a set of standard augmentations for augmentation and preprocessing,
+        Functions are usually best suited for simple operations, while callable classes offer more configuration
+        options. SeisBench already offers a set of standard augmentations for augmentation and preprocessing,
         e.g., for window selection, data normalization or different label encodings,
         which should cover many common use cases.
         For details on implementing custom augmentations we suggest looking at the examples provided.

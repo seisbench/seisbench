@@ -2,7 +2,6 @@ from .base import WaveformModel, Conv1dSame
 
 import torch
 import torch.nn as nn
-from obspy.signal.trigger import trigger_onset
 import numpy as np
 
 
@@ -107,7 +106,8 @@ class PhaseNet(WaveformModel):
 
     def classify_aggregate(self, annotations, argdict):
         """
-        Converts the annotations to discrete thresholds using :py:func:`~seisbench.models.base.WaveformModel.picks_from_annotations`.
+        Converts the annotations to discrete thresholds using
+        :py:func:`~seisbench.models.base.WaveformModel.picks_from_annotations`.
         Trigger onset thresholds for picks are derived from the argdict at keys "[phase]_threshold".
 
         :param annotations: See description in superclass

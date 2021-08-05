@@ -1,7 +1,7 @@
 import seisbench
 from .base import BenchmarkDataset
 from seisbench.util.trace_ops import (
-    rotate_stream_to_ZNE,
+    rotate_stream_to_zne,
     stream_to_array,
     trace_has_spikes,
 )
@@ -261,11 +261,12 @@ class GEOFON(BenchmarkDataset):
         sampling_rate = stream[0].stats.sampling_rate
         if any(trace.stats.sampling_rate != sampling_rate for trace in stream):
             seisbench.logger.warning(
-                f'Found inconsistent sampling rates for {picks[0].waveform_id.id[:-1]} in event {event_params["source_id"]}'
+                f"Found inconsistent sampling rates for {picks[0].waveform_id.id[:-1]} "
+                f'in event {event_params["source_id"]}'
             )
             return
 
-        rotate_stream_to_ZNE(stream, inventory)
+        rotate_stream_to_zne(stream, inventory)
 
         t_start = min(pick.time for pick in picks) - time_before
         t_end = max(pick.time for pick in picks) + time_after

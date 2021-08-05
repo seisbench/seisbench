@@ -370,9 +370,7 @@ def test_flexible_horizontal_components(caplog):
     caplog.clear()
     stream = obspy.Stream([trace_z, trace_n, trace_e, trace_2_test2])
     with caplog.at_level(logging.WARNING):
-        times, data = dummy.stream_to_arrays(
-            stream, strict=True, flexible_horizontal_components=True
-        )
+        dummy.stream_to_arrays(stream, strict=True, flexible_horizontal_components=True)
     assert "This might lead to undefined behavior." not in caplog.text
 
 
@@ -618,6 +616,12 @@ def test_waveform_pipeline_instantiation():
         seisbench.models.WaveformPipeline({})
 
     class MyPipeline(seisbench.models.WaveformPipeline):
+        def annotate(self, stream, **kwargs):
+            pass
+
+        def classify(self, stream, **kwargs):
+            pass
+
         @classmethod
         def component_classes(cls):
             return {}
@@ -627,6 +631,12 @@ def test_waveform_pipeline_instantiation():
 
 def test_waveform_pipeline_list_pretrained(tmp_path):
     class MyPipeline(seisbench.models.WaveformPipeline):
+        def annotate(self, stream, **kwargs):
+            pass
+
+        def classify(self, stream, **kwargs):
+            pass
+
         @classmethod
         def component_classes(cls):
             return {}
@@ -650,6 +660,12 @@ def test_waveform_pipeline_list_pretrained(tmp_path):
 
 def test_waveform_pipeline_from_pretrained(tmp_path):
     class MyPipeline(seisbench.models.WaveformPipeline):
+        def annotate(self, stream, **kwargs):
+            pass
+
+        def classify(self, stream, **kwargs):
+            pass
+
         @classmethod
         def component_classes(cls):
             return {"gpd": seisbench.models.GPD}

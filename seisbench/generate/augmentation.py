@@ -13,9 +13,9 @@ class Normalize:
     :param detrend_axis: The axis along with detrending should be applied.
                          None indicates no normalization.
     :type detrend_axis: int, None
-    :param amp_norm: The axis (single axis or tuple) which should be jointly amplitude normalized.
+    :param amp_norm_axis: The axis (single axis or tuple) which should be jointly amplitude normalized.
                      None indicates no normalization.
-    :type amp_norm: int, None
+    :type amp_norm_axis: int, None
     :param amp_norm_type: Type of amplitude normalization. Supported types:
         - "peak": division by the absolute peak of the trace
         - "std": division by the standard deviation of the trace
@@ -401,8 +401,9 @@ class RandomArrayRotation:
     All arrays need to have the same length along the target axis.
 
     .. warning::
-        This augmentation does **not** modify the metadata, as positional entries anyhow become non-unique after rotation.
-        Workflows should therefore always first generate labels from metadata and then jointly rotate data and labels.
+        This augmentation does **not** modify the metadata, as positional entries anyhow become non-unique
+        after rotation. Workflows should therefore always first generate labels from metadata and then jointly
+        rotate data and labels.
 
     :param keys: Single key specification or list of key specifications.
                  Each key specification is either a string, for identical input and output keys,

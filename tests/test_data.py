@@ -207,7 +207,7 @@ def test_writer(caplog, tmp_path: Path):
     # Test empty writer
     with seisbench.data.WaveformDataWriter(
         tmp_path / "writer_a" / "metadata.csv", tmp_path / "writer_a" / "waveforms.hdf5"
-    ) as writer:
+    ):
         pass
 
     assert (tmp_path / "writer_a").is_dir()  # Path exists

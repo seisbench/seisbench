@@ -46,7 +46,8 @@ def stream_to_array(stream, component_order):
         if len(c_stream) > 1:
             # If multiple traces are found, issue a warning and write them into the data ordered by their length
             seisbench.logger.warning(
-                f"Found multiple traces for {c_stream[0].id} starting at {stream[0].stats.starttime}. Completeness will be wrong in case of overlapping traces."
+                f"Found multiple traces for {c_stream[0].id} starting at {stream[0].stats.starttime}. "
+                f"Completeness will be wrong in case of overlapping traces."
             )
             c_stream = sorted(c_stream, key=lambda x: x.stats.npts)
 
@@ -65,7 +66,7 @@ def stream_to_array(stream, component_order):
     return starttime, data, completeness
 
 
-def rotate_stream_to_ZNE(stream, inventory):
+def rotate_stream_to_zne(stream, inventory):
     """
     Tries to rotate the stream to ZNE inplace. There are several possible failures, which are silently ignored.
 
@@ -76,15 +77,15 @@ def rotate_stream_to_ZNE(stream, inventory):
     """
     try:
         stream.rotate("->ZNE", inventory=inventory)
-    except ValueError as e:
+    except ValueError:
         pass
-    except NotImplementedError as e:
+    except NotImplementedError:
         pass
-    except AttributeError as e:
+    except AttributeError:
         pass
-    except ObsPyException as e:
+    except ObsPyException:
         pass
-    except Exception as e:
+    except Exception:
         # Required, because obspy throws a plain Exception for missing channel metadata
         pass
 

@@ -91,13 +91,14 @@ class SupervisedLabeller(ABC):
                 raise ValueError(f"Binary labels should lie within 0-1 range.")
 
         for label in self.label_columns:
-            if not label in metadata:
+            if label not in metadata:
                 # Ignore labels that are not present
                 continue
 
             if (isinstance(metadata[label], (int, np.integer))) and self.ndim == 3:
                 raise ValueError(
-                    f"Only provided single arrival in metadata {label} column to multiple windows. Check augmentation workflow."
+                    f"Only provided single arrival in metadata {label} column to multiple windows. "
+                    f"Check augmentation workflow."
                 )
 
     def __call__(self, state_dict):
@@ -113,8 +114,8 @@ class PickLabeller(SupervisedLabeller, ABC):
     """
     Abstract class for PickLabellers implementing common functionality
 
-    :param label_columns: Specify the columns to use for pick labelling, defaults to None and columns are inferred from metadata.
-                          Columns can either be specified as list or dict.
+    :param label_columns: Specify the columns to use for pick labelling, defaults to None and columns are inferred from
+                          metadata. Columns can either be specified as list or dict.
                           For a list, each entry is treated as its own pick type.
                           The dict should contain a mapping from column name to pick label, e.g.,
                           {"trace_Pg_arrival_sample": "P"}.
@@ -220,7 +221,7 @@ class ProbabilisticLabeller(PickLabeller):
         for label_column, label in self.label_columns.items():
             i = self.label_ids[label]
 
-            if not label_column in metadata:
+            if label_column not in metadata:
                 # Unknown pick
                 continue
 
@@ -311,7 +312,7 @@ class StepLabeller(PickLabeller):
         for label_column, label in self.label_columns.items():
             i = self.label_ids[label]
 
-            if not label_column in metadata:
+            if label_column not in metadata:
                 # Unknown pick
                 continue
 
@@ -345,7 +346,8 @@ class ProbabilisticPointLabeller(ProbabilisticLabeller):
     This class relies on the ProbabilisticLabeller, but instead of probability curves only returns the probabilities
     at one point.
 
-    :param position: Position to label as fraction of the total trace length. Defaults to 0.5, i.e., the center of the window.
+    :param position: Position to label as fraction of the total trace length. Defaults to 0.5, i.e.,
+                     the center of the window.
     :type position: float
     :param kwargs: Passed to ProbabilisticLabeller
     """
@@ -574,7 +576,7 @@ class StandardLabeller(PickLabeller):
         # Identify shape of entry
         nan_dummy = np.ones(1) * np.nan  # Only used for all nan arrays
         for x in arrival_array:
-            if not x is None:
+            if x is not None:
                 nan_dummy = np.ones_like(x, dtype=float) * np.nan
                 break
 

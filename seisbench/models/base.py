@@ -195,7 +195,8 @@ class WaveformModel(SeisBenchModel, ABC):
     it always outputs obspy streams with the annotations.
     These can for example be functions of pick probability over time.
     In contrast, the :py:func:`classify` function can tailor it's output to the model type.
-    For example, a picking model might output picks, while a magnitude estimation model might only output a scalar magnitude.
+    For example, a picking model might output picks, while a magnitude estimation model might only output
+    a scalar magnitude.
     Internally, :py:func:`classify` will usually rely on :py:func:`annotate` and simply add steps to it's output.
 
     For details see the documentation of these functions.
@@ -213,8 +214,8 @@ class WaveformModel(SeisBenchModel, ABC):
                           or of a pick at a certain location. This will provide an :py:func:`annotate` function.
                           If an :py:func:`classify_aggregate` function is provided by the inheriting model,
                           this will also provide a :py:func:`classify` function.
-                        - "array" for prediction curves, i.e., probabilities over time for the arrival of certain wave types.
-                          This will provide an :py:func:`annotate` function.
+                        - "array" for prediction curves, i.e., probabilities over time for the arrival of certain wave
+                          types. This will provide an :py:func:`annotate` function.
                           If an :py:func:`classify_aggregate` function is provided by the inheriting model,
                           this will also provide a :py:func:`classify` function.
                         - "regression" for a regression value, i.e., the sample of the arrival within a window.
@@ -225,10 +226,10 @@ class WaveformModel(SeisBenchModel, ABC):
     :type default_args: dict[str, any]
     :param in_samples: Number of input samples in time
     :type in_samples: int
-    :param pred_sample: For a "point" prediction: sample number of the sample in a window for which the prediction is valid.
-                        For an "array" prediction: a tuple of first and last sample defining the prediction range.
-                        Note that the number of output samples and input samples within the given range are not required
-                        to agree.
+    :param pred_sample: For a "point" prediction: sample number of the sample in a window for which the prediction is
+                        valid. For an "array" prediction: a tuple of first and last sample defining the prediction
+                        range. Note that the number of output samples and input samples within the given range are
+                        not required to agree.
     :type pred_sample: int, tuple
     :param labels: Labels for the different predictions in the output, e.g., Noise, P, S
     :type labels: list or string
@@ -545,12 +546,13 @@ class WaveformModel(SeisBenchModel, ABC):
     def _annotate_array(self, times, data, argdict):
         """
         Annotation function for an array prediction model using a sliding window approach.
-        Will use the key `overlap` from the `argdict` to determine the overlap (in samples) between two neighboring windows.
-        Overlapping predictions will be averaged. NaN predictions will be ignored in the averaging.
+        Will use the key `overlap` from the `argdict` to determine the overlap (in samples) between two neighboring
+        windows. Overlapping predictions will be averaged. NaN predictions will be ignored in the averaging.
         If after regularly spacing windows there are leftover samples at the end, one additional window with potentially
         larger overlap is added to the end.
         This function expects model outputs after postprocessing for each window to be 1D arrays (only sample dimension)
-        or 2D arrays (sample and channel dimension in this order) and that each prediction has the same number of output samples.
+        or 2D arrays (sample and channel dimension in this order) and that each prediction has the same number of output
+        samples.
         """
         overlap = argdict.get("overlap", 0)
 
@@ -647,7 +649,8 @@ class WaveformModel(SeisBenchModel, ABC):
     @staticmethod
     def _trim_nan(x):
         """
-        Removes all starting and trailing nan values from a 1D array and returns the new array and the number of NaNs removed per side.
+        Removes all starting and trailing nan values from a 1D array and returns the new array and the number of NaNs
+        removed per side.
         """
         mask_forward = np.cumprod(np.isnan(x)).astype(
             bool
@@ -662,7 +665,8 @@ class WaveformModel(SeisBenchModel, ABC):
 
     def _recursive_torch_to_numpy(self, x):
         """
-        Recursively converts torch.Tensor objects to numpy arrays while preserving any overarching tuple or list structure.
+        Recursively converts torch.Tensor objects to numpy arrays while preserving any overarching tuple
+        or list structure.
         :param x:
         :return:
         """
@@ -730,10 +734,10 @@ class WaveformModel(SeisBenchModel, ABC):
 
     def classify_aggregate(self, annotations, argdict):
         """
-        An aggregation function that converts the annotation streams returned by :py:func:`annotate` into a classification.
-        A classification may be an arbitrary object.
-        However, when implementing a model which already exists in similar form, we recommend using the same output format.
-        For example, all pick outputs should have the same format.
+        An aggregation function that converts the annotation streams returned by :py:func:`annotate` into
+        a classification. A classification may be an arbitrary object. However, when implementing a model which already
+        exists in similar form, we recommend using the same output format. For example, all pick outputs should have
+        the same format.
 
         :param annotations: Annotations returned from :py:func:`annotate`
         :param argdict: Dictionary of arguments
@@ -828,7 +832,8 @@ class WaveformModel(SeisBenchModel, ABC):
 
         :param stream: Input stream
         :type stream: obspy.core.Stream
-        :param strict: If true, only if recordings for all components are available, otherwise impute missing data with zeros.
+        :param strict: If true, only if recordings for all components are available, otherwise impute missing
+                       data with zeros.
         :type strict: bool, default True
         :param flexible_horizontal_components: If true, accepts traces with Z12 components as ZNE and vice versa.
                                                This is usually acceptable for rotationally invariant models,
@@ -837,7 +842,10 @@ class WaveformModel(SeisBenchModel, ABC):
         :return: output_times: Start times for each array
         :return: output_data: Arrays with waveforms
         """
-        seqnum = 0  # Obspy raises an error when trying to compare traces. The seqnum hack guarantees that no two tuples reach comparison of the traces.
+
+        # Obspy raises an error when trying to compare traces.
+        # The seqnum hack guarantees that no two tuples reach comparison of the traces.
+        seqnum = 0
         if len(stream) == 0:
             return [], []
 

@@ -1,7 +1,7 @@
 import seisbench
 from seisbench.data.base import BenchmarkDataset
 from seisbench.util.trace_ops import (
-    rotate_stream_to_ZNE,
+    rotate_stream_to_zne,
     stream_to_array,
     trace_has_spikes,
     waveform_id_to_network_station_location,
@@ -141,11 +141,12 @@ class ETHZ(BenchmarkDataset):
                     self.no_data_catches += 1
                     continue
 
-                rotate_stream_to_ZNE(waveforms, inv)
+                rotate_stream_to_zne(waveforms, inv)
 
                 if len(waveforms) == 0:
                     seisbench.logger.debug(
-                        f'Found no waveforms for {waveform_id_to_network_station_location(picks[0].waveform_id.id)} in event {event_params["source_id"]}'
+                        f"Found no waveforms for {waveform_id_to_network_station_location(picks[0].waveform_id.id)}"
+                        f' in event {event_params["source_id"]}'
                     )
                     continue
 
@@ -154,7 +155,8 @@ class ETHZ(BenchmarkDataset):
                     trace.stats.sampling_rate != sampling_rate for trace in waveforms
                 ):
                     seisbench.logger.warning(
-                        f"Found inconsistent sampling rates for {waveform_id_to_network_station_location(picks[0].waveform_id.id)} in event {event}."
+                        f"Found inconsistent sampling rates for "
+                        f"{waveform_id_to_network_station_location(picks[0].waveform_id.id)} in event {event}."
                         f"Resampling traces to common sampling rate."
                     )
                     waveforms.resample(sampling_rate)

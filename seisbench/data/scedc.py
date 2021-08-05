@@ -139,9 +139,10 @@ class Ross2018JGRFM(BenchmarkDataset):
         ]
 
         for f in data_urls:
-            # Uses callback_if_uncached only to be able to utilize the cache mechanism
-            # Concurrent accesses are anyhow already controlled by the callback_if_uncached call wrapping _download_dataset
-            # It's therefore considered save to set force=True
+            # Uses callback_if_uncached only to be able to utilize the cache mechanism.
+            # Concurrent accesses are anyhow already controlled
+            # by the callback_if_uncached call wrapping _download_dataset.
+            # It's therefore considered save to set force=True.
             filename = f[f.rfind("/") + 1 :]
 
             def callback_download_original(path):
@@ -288,9 +289,10 @@ class Ross2018JGRPick(BenchmarkDataset):
         ]
 
         for f in data_urls:
-            # Uses callback_if_uncached only to be able to utilize the cache mechanism
-            # Concurrent accesses are anyhow already controlled by the callback_if_uncached call wrapping _download_dataset
-            # It's therefore considered save to set force=True
+            # Uses callback_if_uncached only to be able to utilize the cache mechanism.
+            # Concurrent accesses are anyhow already controlled
+            # by the callback_if_uncached call wrapping _download_dataset.
+            # It's therefore considered save to set force=True.
             filename = f[f.rfind("/") + 1 :]
 
             def callback_download_original(path):

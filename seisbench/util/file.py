@@ -144,19 +144,20 @@ def callback_if_uncached(
     If one of the files does not exists, but file.partial does, the behaviour depends on force and wait_for_file.
 
     .. warning::
-        While making concurrent callbacks unlikely, they can still happen, if the function is called twice in short time,
-        i.e., the second starts before the first created a .partial file.
+        While making concurrent callbacks unlikely, they can still happen, if the function is called twice in short
+        time, i.e., the second starts before the first created a .partial file.
 
-    :param files: A list of files to check.
-    :type files: list[union[Path, str]]
+    :param files: A list of files or single file to check.
+    :type files: list[union[Path, str]], Path, str
     :param callback: A callback, taking one parameter, a list of target file names. Will be called if a file is missing.
-        The callback will be given the same parameter as provided in files, just with files renamed to file.partial.
-        The function will move the files afterwards, but will ignore empty files.
+                     The callback will be given the same parameter as provided in files, just with files renamed
+                     to file.partial. The function will move the files afterwards, but will ignore empty files.
     :type callback: callable
-    :param force: If true, and not all files exist, ignore and remove all partial files and execute callback.
-        Only use this parameter if no other instance of callback_if_uncached is currently requesting the same file.
+    :param force: If true, and not all files exist, ignore and remove all partial files and execute callback. Only use
+                  this parameter if no other instance of callback_if_uncached is currently requesting the same file.
     :type force: bool
-    :param wait_for_file: If true, not all files exist, but partial files exist, sleep until files exists or no partial files exist.
+    :param wait_for_file: If true, not all files exist, but partial files exist, sleep until files exists or no partial
+                          files exist.
     :type wait_for_file: bool
     :param test_interval: Sleep interval for wait_for_file.
     :type test_interval: float

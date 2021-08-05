@@ -3,7 +3,6 @@ from .base import WaveformModel
 import torch
 import torch.nn as nn
 import numpy as np
-from obspy.signal.trigger import trigger_onset
 
 
 class GPD(WaveformModel):
@@ -21,7 +20,7 @@ class GPD(WaveformModel):
         citation = (
             "Ross, Z. E., Meier, M.-A., Hauksson, E., & Heaton, T. H. (2018). "
             "Generalized Seismic Phase Detection with Deep Learning. "
-            "ArXiv:1805.01075 [Physics]. http://arxiv.org/abs/1805.01075"
+            "ArXiv:1805.01075 [Physics]. https://arxiv.org/abs/1805.01075"
         )
         super().__init__(
             citation=citation,
@@ -103,7 +102,8 @@ class GPD(WaveformModel):
 
     def classify_aggregate(self, annotations, argdict):
         """
-        Converts the annotations to discrete picks using :py:func:`~seisbench.models.base.WaveformModel.picks_from_annotations`.
+        Converts the annotations to discrete picks using
+        :py:func:`~seisbench.models.base.WaveformModel.picks_from_annotations`.
         Trigger onset thresholds for picks are derived from the argdict at keys "[phase]_threshold".
 
         :param annotations: See description in superclass
