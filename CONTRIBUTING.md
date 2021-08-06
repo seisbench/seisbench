@@ -22,7 +22,13 @@ There are multiple ways in which you can contribute:
   please raise an issue or mention this in the pull request.
   We'll then discuss possibilities.
 
-When contributing, please include the appropriate label with the issue submission on GitHub where possible (e.g. bug --> _'bug'_, feature request --> _'enhancement'_, data or model addition --> _'dataset/model extension'_).
+When contributing, please include the appropriate label with the issue submission on GitHub where possible:
+
+- Bug --> **'bug'**
+- Feature request --> **'enhancement'**
+- For dataset or model addition 
+  - dataset addition --> **'dataset extension'**
+  - model addition --> **'model extension'**
 
 ## Installing SeisBench for development purposes
 
