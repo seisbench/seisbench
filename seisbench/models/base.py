@@ -763,7 +763,7 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         for trace in stream:
             if trace.stats.sampling_rate == sampling_rate:
-                return
+                continue
             if trace.stats.sampling_rate % sampling_rate == 0:
                 trace.decimate(int(trace.stats.sampling_rate / sampling_rate))
             else:
