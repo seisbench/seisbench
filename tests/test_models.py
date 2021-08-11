@@ -728,3 +728,19 @@ def test_dpp_ps():
     y = model(x)
 
     assert y.shape == (16, 500)
+
+
+def test_resample():
+    # Only tests for correct target frequencies and number of samples, but not for correct content
+    t1 = obspy.Trace(np.random.rand(1000), header={"sampling_rate": 100})  # Decimate
+    t2 = obspy.Trace(np.random.rand(1000), header={"sampling_rate": 25})  # Unchanged
+    t3 = obspy.Trace(np.random.rand(1000), header={"sampling_rate": 40})  # Resample
+
+    s = obspy.Stream([t1, t2, t3])
+    seisbench.models.WaveformModel.resample(s, 25)
+    assert s[0].stats.sampling_rate == 25
+    assert len(s[0]) == 250
+    assert s[1].stats.sampling_rate == 25
+    assert len(s[1]) == 1000
+    assert s[1].stats.sampling_rate == 25
+    assert len(s[2]) == 625

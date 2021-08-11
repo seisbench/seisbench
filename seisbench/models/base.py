@@ -765,9 +765,12 @@ class WaveformModel(SeisBenchModel, ABC):
             if trace.stats.sampling_rate == sampling_rate:
                 continue
             if trace.stats.sampling_rate % sampling_rate == 0:
-                trace.decimate(int(trace.stats.sampling_rate / sampling_rate))
+                trace.filter("lowpass", freq=sampling_rate * 0.5, zerophase=True)
+                trace.decimate(
+                    int(trace.stats.sampling_rate / sampling_rate), no_filter=True
+                )
             else:
-                trace.resample(sampling_rate)
+                trace.resample(sampling_rate, no_filter=True)
 
     @staticmethod
     def groups_stream_by_instrument(stream):
