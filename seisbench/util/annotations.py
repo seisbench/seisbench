@@ -49,6 +49,18 @@ class Pick:
             return True
         return False
 
+    def __str__(self):
+        parts = [self.trace_id]
+        if self.peak_time is None:
+            parts.append(str(self.start_time))
+        else:
+            parts.append(str(self.peak_time))
+
+        if self.phase is not None:
+            parts.append(str(self.phase))
+
+        return "\t".join(parts)
+
 
 class Detection:
     """
@@ -82,3 +94,8 @@ class Detection:
         if self.trace_id < other.trace_id:
             return True
         return False
+
+    def __str__(self):
+        parts = [self.trace_id, str(self.start_time), str(self.end_time)]
+
+        return "\t".join(parts)
