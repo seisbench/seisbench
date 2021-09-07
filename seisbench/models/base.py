@@ -745,12 +745,6 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         return annotations
 
-    def _parse_metadata(self):
-        super()._parse_metadata()
-        self._component_order = self._weights_metadata.get(
-            "component_order", seisbench.config["component_order"]
-        )
-
     @staticmethod
     def resample(stream, sampling_rate):
         """
