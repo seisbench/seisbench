@@ -60,6 +60,27 @@ class DeepPhasePick(WaveformPipeline):
         # Picker()
 
 
+class SeparableConv1d(nn.Module):
+    """
+    A depthwise separable convolution combine from two convolutions:
+    1. A grouped convolution
+    2. A pointwise convolution
+
+    Assumes padding="same"
+    """
+    def __init__(self, in_channels, out_channels, kernel_size):
+        super(SeparableConv1d, self).__init__()
+        assert kernel_size % 2 == 1  # Required for padding
+        self.depthwise = nn.Conv1d(in_channels, out_channels, kernel_size=kernel_size,
+                                   groups=in_channels, padding=kernel_size // 2)
+        self.pointwise = nn.Conv1d(out_channels, out_channels, kernel_size=1)
+
+    def forward(self, x):
+        out = self.depthwise(x)
+        out = self.pointwise(out)
+        return out
+
+
 class DPPDetector(WaveformModel):
     def __init__(self, input_channels=3, nclasses=3):
         super().__init__()
@@ -70,28 +91,19 @@ class DPPDetector(WaveformModel):
         self.classes = nclasses
         self.stride = 1
 
-        # groups == in_channels in Conv1d is for “depthwise convolution”, equivalent to keras SeparableConv1D layer.
-
-        self.conv1 = nn.Conv1d(
-            self.in_channels,
-            12,
-            17,
-            self.stride,
-            padding=17 // 2,
-            groups=self.in_channels,
-        )
+        self.conv1 = SeparableConv1d(self.in_channels, 12, 17)
         self.bn1 = nn.BatchNorm1d(12, eps=1e-3, momentum=0.99)
         self.dropout1 = nn.Dropout(0.25)
-        self.conv2 = nn.Conv1d(12, 24, 11, self.stride, padding=11 // 2, groups=12)
+        self.conv2 = SeparableConv1d(12, 24, 11)
         self.bn2 = nn.BatchNorm1d(24, eps=1e-3, momentum=0.99)
         self.dropout2 = nn.Dropout(0.25)
-        self.conv3 = nn.Conv1d(24, 48, 5, self.stride, padding=5 // 2, groups=24)
+        self.conv3 = SeparableConv1d(24, 48, 5)
         self.bn3 = nn.BatchNorm1d(48, eps=1e-3, momentum=0.99)
         self.dropout3 = nn.Dropout(0.3)
-        self.conv4 = nn.Conv1d(48, 96, 9, self.stride, padding=9 // 2, groups=48)
+        self.conv4 = SeparableConv1d(48, 96, 9)
         self.bn4 = nn.BatchNorm1d(96, eps=1e-3, momentum=0.99)
         self.dropout4 = nn.Dropout(0.4)
-        self.conv5 = nn.Conv1d(96, 192, 17, self.stride, padding=17 // 2, groups=96)
+        self.conv5 = SeparableConv1d(96, 192, 17)
         self.bn5 = nn.BatchNorm1d(192, eps=1e-3, momentum=0.99)
         self.dropout5 = nn.Dropout(0.25)
 
