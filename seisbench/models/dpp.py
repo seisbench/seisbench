@@ -66,13 +66,19 @@ class SeparableConv1d(nn.Module):
     1. A grouped convolution
     2. A pointwise convolution
 
-    Assumes padding="same"
+    Assumes padding="same" and odd kernel_size
     """
+
     def __init__(self, in_channels, out_channels, kernel_size):
         super(SeparableConv1d, self).__init__()
         assert kernel_size % 2 == 1  # Required for padding
-        self.depthwise = nn.Conv1d(in_channels, out_channels, kernel_size=kernel_size,
-                                   groups=in_channels, padding=kernel_size // 2)
+        self.depthwise = nn.Conv1d(
+            in_channels,
+            out_channels,
+            kernel_size=kernel_size,
+            groups=in_channels,
+            padding=kernel_size // 2,
+        )
         self.pointwise = nn.Conv1d(out_channels, out_channels, kernel_size=1)
 
     def forward(self, x):
