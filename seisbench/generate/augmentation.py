@@ -75,7 +75,9 @@ class Normalize:
     def _amp_norm(self, x):
         if self.amp_norm_axis is not None:
             if self.amp_norm_type == "peak":
-                x = x / (np.amax(x, axis=self.amp_norm_axis, keepdims=True) + self.eps)
+                x = x / (
+                    np.max(np.abs(x), axis=self.amp_norm_axis, keepdims=True) + self.eps
+                )
             elif self.amp_norm_type == "std":
                 x = x / (np.std(x, axis=self.amp_norm_axis, keepdims=True) + self.eps)
         return x

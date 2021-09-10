@@ -69,7 +69,7 @@ def test_normalize():
     state_dict = copy.deepcopy(base_state_dict)
     norm(state_dict)
     assert (np.mean(state_dict["X"][0], axis=-1) < 1e-10).all()
-    assert np.isclose(np.max(state_dict["X"][0], axis=-1), 1).all()
+    assert np.isclose(np.max(np.abs(state_dict["X"][0]), axis=-1), 1).all()
 
     # std normalization
     norm = Normalize(demean_axis=-1, amp_norm_axis=-1, amp_norm_type="std")
