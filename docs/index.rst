@@ -1,4 +1,4 @@
-.. figure::  _static/seisbench_logo_subtitle.svg
+.. figure::  _static/seisbench_logo_subtitle_outlined.svg
    :align:   center
 
 
