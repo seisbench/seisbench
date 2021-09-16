@@ -2,9 +2,10 @@ What is SeisBench?
 ==================
 
 
-Unifying access to seismological data
--------------------------------------
-SeisBench standardises access to publicly available seismological datasets for machine learning,
+Unifying access to ML models and seismological data
+---------------------------------------------------
+SeisBench standardises access to publicly available seismological datasets for machine learning. 
+It also provides a unified point of access to notable ML models for seismic tasks in seismology,
 enabling easy comparison and benchmarking of ML models. All datasets are stored in the following format.
 
 .. figure::  ../_static/dataset_format.svg

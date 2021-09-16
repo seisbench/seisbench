@@ -5,12 +5,21 @@
 Welcome to SeisBench's documentation!
 =====================================
 
-The Seismology Benchmark collection (*SeisBench*) provides a unified API for accessing 
-and training of machine learning algorithms across seismic datasets. It has been built to 
+The Seismology Benchmark collection (*SeisBench*) is an open-source python toolbox for 
+machine learning in seismology. It provides a unified API for accessing 
+and training machine learning algorithms on seismic datasets. SeisBench has been built to 
 alleviate traditional bottlenecks when applying machine learning techniques to seismic data, 
-in particular the processes of data collection and labelling.
+in particular the steps of data collection and labelling.
 
-*SeisBench* is built to be extensible and modular, allowing for easy addition of new models 
+.. figure::  ./_static/schematic_fig_sb_only.svg
+   :align:   center
+|
+
+To learn more about the dataset API, including the datasets currently integrated see :ref:`benchmark_datasets`. Alternatively,
+if you would like to know more about how to build, and train models, along with information on the machine learning models 
+readily available through *SeisBench*, see :ref:`models`. 
+
+SeisBench is built to be extensible and modular, allowing for easy incorporation of new models 
 and datasets. Users are explicitly encouraged to contribute, as any future iterations will
 be based of community feedback. 
 

@@ -10,10 +10,3 @@ SeisBench is available directly through the pip package manager. To install loca
 
     pip install seisbench
 
-
-Installing via anaconda
------------------------
-
-Also available through anaconda, to install locally run. ::
-
-    conda install seisbench
