@@ -17,7 +17,7 @@ jobs:
           python-version: 3.9
 
       - name: Install setuptools
-        run: pip install setuptools
+        run: pip install setuptools wheel
 
       - name: Build binary wheel and source tarball
         run: |
