@@ -40,8 +40,8 @@ if os.name == "nt":
         exit_code_callback(process)
     required = common_req
 else:
-    # Linux, Mac OS: Installation via standard pip
-    required = common_req + dependant_req
+    # Linux, Mac OS: Installation via standard pip - GDAL not req.
+    required = common_req + dependant_req[2:4]
 
 setup(
     name="seisbench",

@@ -2,7 +2,6 @@
 #   1. Checks if black formatting is followed.
 #   2. Runs all tests.
 #
-# Note: Tests are performed on Windows os only to save billable minutes.
 
 name: test_push_action
 on:
@@ -28,10 +27,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # os: [ubuntu-latest, macos-latest, windows-latest]
-        os: [windows-latest]
-        # python-version: [3.6, 3.7, 3.8, 3.9]
-        python-version: [3.6]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: [3.6, 3.7, 3.8, 3.9]
         
     steps:
       - uses: actions/checkout@v2
@@ -39,17 +36,6 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: ${{ matrix.python-version }}
-      
-      # - name: Cache pip
-      #   uses: actions/cache@v2
-      #   with:
-      #     # This path is specific to Ubuntu
-      #     path: seisbench_cache
-      #     # Look to see if there is a cache hit for the corresponding requirements file
-      #     key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-pip-
-      #       ${{ runner.os }}-
       
       # Load SeisBench cache to ensure data sets are always locally available
       - name: Cache SeisBench
