@@ -1,0 +1,30 @@
+name: publish_action
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+
+      - name: Install setuptools
+        run: pip install setuptools
+
+      - name: Build binary wheel and source tarball
+        run: python setup.py sdist bdist_wheel
+
+      - name: Publish package
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
