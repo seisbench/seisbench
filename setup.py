@@ -45,7 +45,7 @@ else:
 
 setup(
     name="seisbench",
-    version="0.1.1",
+    version="0.1.2",
     author="Jack Woollam,Jannes Münchmeyer",
     author_email="jack.woollam@kit.edu,munchmej@gfz-potsdam.de",
     description="The seismological machine learning benchmark collection",
