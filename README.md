@@ -1,4 +1,4 @@
-![image](docs/_static/seisbench_logo_subtitle_outlined.svg)
+![image](https://raw.githubusercontent.com/seisbench/seisbench/main/docs/_static/seisbench_logo_subtitle_outlined.svg)
 ---
 The Seismology Benchmark collection (*SeisBench*) is an open-source python toolbox for 
 machine learning in seismology.
