@@ -8,7 +8,7 @@ with open("requirements.txt") as f:
 
 setup(
     name="seisbench",
-    version="0.0.1",
+    version="0.0.0",
     author="Jack Woollam,Jannes Münchmeyer",
     author_email="jack.woollam@kit.edu,munchmej@gfz-potsdam.de",
     description="The seismological machine learning benchmark collection",
