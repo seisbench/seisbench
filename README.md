@@ -1,50 +1,54 @@
-![image](docs/_static/seisbench_logo_subtitle.svg)
+![image](docs/_static/seisbench_logo_subtitle_outlined.svg)
 ---
-SeisBench (*The Seismology Benchmark Collection*) is a toolbox to unifying the application of machine learning pipelines to seismic data. 
+The Seismology Benchmark collection (*SeisBench*) is an open-source python toolbox for 
+machine learning in seismology.
+It provides a unified API for accessing seismic datasets and training and applying machine learning algorithms to seismic data.
+SeisBench has been built to reduce the overhead when applying or developing machine learning techniques for seismic data.
+
+## Getting started
+
+SeisBench offers three core modules, `data`, `models`, and `generate`.
+`data` provides access to benchmark datasets and offers functionality for loading datasets.
+`models` offers a collection of machine learning models for seismology.
+You can easily create models, load pretrained models or train models on any dataset.
+`generate` contains tools for building data generation pipelines.
+They bridge the gap between `data` and `models`.
+
+The easiest way of getting started is through our colab notebooks.
+
+Dataset basics: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01a_dataset_basics.ipynb)
+
+Model API: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01b_model_api.ipynb)
+
+Generator Pipelines: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/seisbench/seisbench/blob/main/examples/01c_generator_pipelines.ipynb)
+
+Training PhaseNet (advanced): [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02_training_phasenet.ipynb)
+
+Alternatively, you can clone the repository and run the same [examples](./examples) locally.
+
+To get detailed information on Seisbench check out the [SeisBench documentation](https://seisbench.readthedocs.io/).
 
 ## Installation
 
-To install SeisBench and the required dependencies, run `pip install -e .` in the root directory of this repository.
-Make sure to include the `-e` argument, as this will automatically propagate changes to the SeisBench code into the installed package.
-For development, it is recommended to install SeisBench into a separate virtual environment, e.g., using anaconda. 
+SeisBench can be installed in two ways.
+In both cases, you might consider installing SeisBench in a virtual environment, for example using [conda](https://docs.conda.io/en/latest/).
 
-## Example dataset loading
-To load the example dataset, run the following commands in a python shell in the repository root directory.
-```python
-import seisbench.data
-
-# When requesting the dataset the first time, this will download the dataset.
-# Afterwards it will load the cached version from ~/.seisbench/dummydataset.
-# The SeisBench path can be set with the environment variable SEISBENCH_CACHE_ROOT
-dummy = seisbench.data.DummyDataset()
-
-print(len(dummy))
-print(dummy.metadata)
-
-dummy.filter(dummy["source_magnitude"] > 2)
-waveforms = dummy.get_waveforms()
-print(waveforms.shape)
+The recommended way is installation through pip.
+Simply run:
+```
+pip install seisbench
 ```
 
-## Code formatting
-SeisBench currently uses the [black code formatter](https://github.com/psf/black) (subject to change).
-The formatter can be installed using pre-commit hooks.
-To do so, run the following commands inside the repository:
+Alternatively, you can install the latest version from source.
+For this approach, clone the repository, switch to the repository root and run:
 ```
-pip install pre-commit
-pre-commit install
+pip install .
 ```
-Note that the black code style can be imposed later as well,
-so if you are experiencing issues with installing black, just ignore the style.
-
-## Tests
-Run tests using `pytest` by running `python -m pytest` in the repository root directory.
-
-## Documentation
-The documentation is currently not hosted, but can be built from source.
-To build the documentation first install the requirements from `docs/requirements.txt`.
-Then run `make html` to build the docs in html format.
-The output will appear in `docs/_build/html`.
 
 ## Contributing
-See the [contribution guidelines](CONTRIBUTING.md).
+There are many ways to contribute to SeisBench and we are always looking forward to your contributions.
+Check out the [contribution guidelines](CONTRIBUTING.md) for details on how to contribute.
+
+## Citation
+A reference publication for SeisBench is under publication.
+Please check back later.

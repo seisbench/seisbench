@@ -13,7 +13,7 @@ Dataset basics
 .. raw:: html
 
     <embed>
-        <a href="https://colab.research.google.com/github/googlecolab/colabtools/blob/master/notebooks/colab-github-demo.ipynb">
+        <a href="https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01a_dataset_basics.ipynb">
             <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
         </a>
     </embed>
@@ -28,7 +28,7 @@ Model basics
 .. raw:: html
 
     <embed>
-        <a href="https://colab.research.google.com/github/googlecolab/colabtools/blob/master/notebooks/colab-github-demo.ipynb">
+        <a href="https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01b_model_api.ipynb">
             <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
         </a>
     </embed>
@@ -43,7 +43,7 @@ Generator pipelines
 .. raw:: html
 
     <embed>
-        <a href="https://colab.research.google.com/github/googlecolab/colabtools/blob/master/notebooks/colab-github-demo.ipynb">
+        <a href="https://colab.research.google.com/seisbench/seisbench/blob/main/examples/01c_generator_pipelines.ipynb">
             <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
         </a>
     </embed>
@@ -57,7 +57,7 @@ Training ML models on seismic data
 .. raw:: html
 
     <embed>
-        <a href="https://colab.research.google.com/github/googlecolab/colabtools/blob/master/notebooks/colab-github-demo.ipynb">
+        <a href="https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02_training_phasenet.ipynb">
             <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
         </a>
     </embed>

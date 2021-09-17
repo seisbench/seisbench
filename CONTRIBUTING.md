@@ -63,6 +63,13 @@ make html
 ```
 The output will appear in `docs/_build/html`.
 
+## Building the documentation
+
+In case your change touches the documentation, you might want to build the documentation.
+To build the documentation first install the requirements from `docs/requirements.txt`.
+Then run `make html` to build the docs in html format.
+The output will appear in `docs/_build/html`.
+
 ## Code structure
 
 SeisBench consists of:
@@ -108,9 +115,10 @@ You want to contribute to SeisBench? That's great news. Here's a quick guide.
    If unsure, check the branching policy above or open an issue to discuss.
 1. Write your code.
 1. Add tests to your code. Any new feature or bugfix needs a test.
+1. Make sure the code style is correct. SeisBench uses the [black code formatter](https://github.com/psf/black). Enforcing code style can easily be achieved by installing the pre-commit hook mentioned above.
 1. When adding a new feature, make sure the feature is properly documented.
 1. Push to your fork and open a pull request. We will review the PR and may suggest some changes or improvements.
 
-**SeisBench is under GPLv3 license.
+**SeisBench is distributed under GPLv3 license.
 Please ensure that all the code you contribute can be distributed under this license.
 Sending a PR implies that you agree with this.**
