@@ -100,9 +100,12 @@ class Ross2018JGRFM(BenchmarkDataset):
     https://doi.org/10.1029/2017JB015251
 
     Note that this dataset contains picks as well.
+
     .. warning::
+
         This dataset only contains traces for the Z component.
         It therefore ignores the default SeisBench the component_order.
+
     """
 
     def __init__(self, **kwargs):
@@ -250,9 +253,12 @@ class Ross2018JGRPick(BenchmarkDataset):
     https://doi.org/10.1029/2017JB015251
 
     Note that this dataset contains polarities as well.
+
     .. warning::
+
         This dataset only contains traces for the Z component.
         It therefore ignores the default SeisBench the component_order.
+
     """
 
     def __init__(self, **kwargs):

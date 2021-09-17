@@ -101,6 +101,21 @@ below.
 NEIC
 ----
 
+The National Earthquake Information Centre (NEIC) benchmark dataset comprises ~1.3 million seismic phase arrivals with 
+global source-station paths. As information on the trace start-time and station information is missing for this dataset, 
+it is stored in the SeisBench format, but without this normally required information
+
+
+.. admonition:: Citation
+
+    Yeck, W. L., Patton, J. M., Ross, Z. E., Hayes, G. P., Guy, M. R., Ambruz, N. B., Shelly, D. R., Benz, H. M., Earle, P. S., (2021)
+    Leveraging Deep Learning in Global 24/7 Real-Time Earthquake Monitoring at the National Earthquake Information Center.
+    
+    https://doi.org/10.1785/0220200178
+
+
+
+
 SCEDC
 -----
 
