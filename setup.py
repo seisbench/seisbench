@@ -49,6 +49,12 @@ setup(
     author="Jack Woollam,Jannes Münchmeyer",
     author_email="jack.woollam@kit.edu,munchmej@gfz-potsdam.de",
     description="The seismological machine learning benchmark collection",
+    license="GPLv3",
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+        "Operating System :: OS Independent",
+    ],
     long_description=long_description,
     long_description_content_type="text/markdown",
     license="GPLv3",

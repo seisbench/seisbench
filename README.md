@@ -1,5 +1,11 @@
 ![image](https://raw.githubusercontent.com/seisbench/seisbench/main/docs/_static/seisbench_logo_subtitle_outlined.svg)
 ---
+![PyPI - License](https://img.shields.io/pypi/l/seisbench)
+![GitHub Workflow Status](https://img.shields.io/github/workflow/status/seisbench/seisbench/main_push_action)
+![Read the Docs](https://img.shields.io/readthedocs/seisbench)
+![PyPI](https://img.shields.io/pypi/v/seisbench)
+[![Python 3.6](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/downloads/release/python-360/)
+
 The Seismology Benchmark collection (*SeisBench*) is an open-source python toolbox for 
 machine learning in seismology.
 It provides a unified API for accessing seismic datasets and training and applying machine learning algorithms to seismic data.
