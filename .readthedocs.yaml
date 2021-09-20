@@ -10,4 +10,5 @@ python:
   version: 3.7
   install:
     - requirements: docs/requirements.txt
-    - requirements: requirements/req_common.txt
+    - method: setuptools
+      path: seisbench
