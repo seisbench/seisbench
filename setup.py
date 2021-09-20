@@ -57,7 +57,6 @@ setup(
     ],
     long_description=long_description,
     long_description_content_type="text/markdown",
-    license="GPLv3",
     url="https://github.com/seisbench/seisbench",
     packages=find_packages(exclude="tests"),
     python_requires=">=3.6",
