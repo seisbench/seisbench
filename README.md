@@ -24,7 +24,7 @@ Generator Pipelines: [![Open In Colab](https://colab.research.google.com/assets/
 
 Training PhaseNet (advanced): [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02_training_phasenet.ipynb)
 
-Alternatively, you can clone the repository and run the same [examples](./examples) locally.
+Alternatively, you can clone the repository and run the same [examples](https://github.com/seisbench/seisbench/tree/main/examples) locally.
 
 To get detailed information on Seisbench check out the [SeisBench documentation](https://seisbench.readthedocs.io/).
 
@@ -47,7 +47,7 @@ pip install .
 
 ## Contributing
 There are many ways to contribute to SeisBench and we are always looking forward to your contributions.
-Check out the [contribution guidelines](CONTRIBUTING.md) for details on how to contribute.
+Check out the [contribution guidelines](https://github.com/seisbench/seisbench/blob/main/CONTRIBUTING.md) for details on how to contribute.
 
 ## Citation
 A reference publication for SeisBench is under publication.
