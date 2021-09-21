@@ -1,9 +1,9 @@
 ![image](https://raw.githubusercontent.com/seisbench/seisbench/main/docs/_static/seisbench_logo_subtitle_outlined.svg)
 ---
-![PyPI - License](https://img.shields.io/pypi/l/seisbench)
-![GitHub Workflow Status](https://img.shields.io/github/workflow/status/seisbench/seisbench/main_push_action)
-![Read the Docs](https://img.shields.io/readthedocs/seisbench)
-![PyPI](https://img.shields.io/pypi/v/seisbench)
+[![PyPI - License](https://img.shields.io/pypi/l/seisbench)](https://github.com/seisbench/seisbench/blob/main/LICENSE)
+[![GitHub Workflow Status](https://img.shields.io/github/workflow/status/seisbench/seisbench/main_push_action)](https://github.com/seisbench/seisbench)
+[![Read the Docs](https://img.shields.io/readthedocs/seisbench)](https://seisbench.readthedocs.io/en/latest/)
+[![PyPI](https://img.shields.io/pypi/v/seisbench)](https://pypi.org/project/seisbench/)
 [![Python 3.6](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/downloads/release/python-360/)
 
 The Seismology Benchmark collection (*SeisBench*) is an open-source python toolbox for 
@@ -26,7 +26,7 @@ Dataset basics: [![Open In Colab](https://colab.research.google.com/assets/colab
 
 Model API: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01b_model_api.ipynb)
 
-Generator Pipelines: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/seisbench/seisbench/blob/main/examples/01c_generator_pipelines.ipynb)
+Generator Pipelines: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01c_generator_pipelines.ipynb)
 
 Training PhaseNet (advanced): [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02_training_phasenet.ipynb)
 
@@ -44,12 +44,13 @@ Simply run:
 ```
 pip install seisbench
 ```
-
-Alternatively, you can install the latest version from source.
+This is the preferred method of installation for Mac and Linux devices. Alternatively, you can install the latest version from source.
 For this approach, clone the repository, switch to the repository root and run:
 ```
 pip install .
 ```
+which will install SeisBench in your current python environment. This is the preffered method for installation for Windows devices.
+
 
 ## Contributing
 There are many ways to contribute to SeisBench and we are always looking forward to your contributions.
