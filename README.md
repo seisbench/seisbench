@@ -1,5 +1,9 @@
-![image](https://raw.githubusercontent.com/seisbench/seisbench/main/docs/_static/seisbench_logo_subtitle_outlined.svg)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/seisbench/seisbench/main/docs/_static/seisbench_logo_subtitle_outlined.svg" />
+</p>
+
 ---
+
 [![PyPI - License](https://img.shields.io/pypi/l/seisbench)](https://github.com/seisbench/seisbench/blob/main/LICENSE)
 [![GitHub Workflow Status](https://img.shields.io/github/workflow/status/seisbench/seisbench/main_push_action)](https://github.com/seisbench/seisbench)
 [![Read the Docs](https://img.shields.io/readthedocs/seisbench)](https://seisbench.readthedocs.io/en/latest/)
@@ -8,8 +12,8 @@
 
 The Seismology Benchmark collection (*SeisBench*) is an open-source python toolbox for 
 machine learning in seismology.
-It provides a unified API for accessing seismic datasets and training and applying machine learning algorithms to seismic data.
-SeisBench has been built to reduce the overhead when applying or developing machine learning techniques for seismic data.
+It provides a unified API for accessing seismic datasets and both training and applying machine learning algorithms to seismic data.
+SeisBench has been built to reduce the overhead when applying or developing machine learning techniques for seismological tasks.
 
 ## Getting started
 
@@ -22,17 +26,16 @@ They bridge the gap between `data` and `models`.
 
 The easiest way of getting started is through our colab notebooks.
 
-Dataset basics: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01a_dataset_basics.ipynb)
-
-Model API: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01b_model_api.ipynb)
-
-Generator Pipelines: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01c_generator_pipelines.ipynb)
-
-Training PhaseNet (advanced): [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02_training_phasenet.ipynb)
+| Examples |  |
+|---|---|
+| Dataset basics | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01a_dataset_basics.ipynb) |
+| Model API | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01b_model_api.ipynb) |
+| Generator Pipelines | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01c_generator_pipelines.ipynb) |
+| Training PhaseNet (advanced) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02_training_phasenet.ipynb) |
 
 Alternatively, you can clone the repository and run the same [examples](https://github.com/seisbench/seisbench/tree/main/examples) locally.
 
-To get detailed information on Seisbench check out the [SeisBench documentation](https://seisbench.readthedocs.io/).
+For more detailed information on Seisbench check out the [SeisBench documentation](https://seisbench.readthedocs.io/).
 
 ## Installation
 
@@ -49,7 +52,7 @@ For this approach, clone the repository, switch to the repository root and run:
 ```
 pip install .
 ```
-which will install SeisBench in your current python environment. This is the preffered method for installation for Windows devices.
+which will install SeisBench in your current python environment. This is the preferred method for installation for Windows devices.
 
 
 ## Contributing
