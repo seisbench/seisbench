@@ -43,7 +43,7 @@ Generator pipelines
 .. raw:: html
 
     <embed>
-        <a href="https://colab.research.google.com/seisbench/seisbench/blob/main/examples/01c_generator_pipelines.ipynb">
+        <a href="https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01c_generator_pipelines.ipynb">
             <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
         </a>
     </embed>
