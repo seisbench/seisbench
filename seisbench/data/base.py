@@ -1789,6 +1789,63 @@ class BenchmarkDataset(WaveformDataset, ABC):
 
         return chunks
 
+    @staticmethod
+    def _sample_without_replacement(indexes, n_samples):
+        """
+        Sample indexes without replacement.
+
+        :param indexes: indexes to sample.
+        :type indexes: array-like
+        :param n_samples: The number of samples to choose.
+        :type n_samples: int.
+        :return (chosen_idxs, complement_idxs): The chosen indexes and remaining indexes.
+        :rtype: (list, list)
+
+        """
+        chosen_idxs = np.random.choice(indexes, n_samples, replace=False)
+        complement_idxs = list(set(indexes).symmetric_difference(chosen_idxs))
+        return chosen_idxs, complement_idxs
+
+    def _set_splits_random_sampling(self, ratios=(0.6, 0.1, 0.3), random_seed=42):
+        """
+        Set train/dev/test split randomly, labelling examples from dataset.
+        The number of random choices for each split is pre-defined with parameter ratios,
+        choosing the proportion of train/dev/test samples to select respectively.
+
+        :param ratios: train/dev/test ratio respectively, defaults to (0.6, 0.1, 0.3)
+        :type ratios: (float, float, float)
+        :param random_seed: Set the random seed, defaults to 42.
+        :type random_seed: int
+        :return:
+
+        """
+        np.random.seed(seed=random_seed)
+
+        assert (
+            len(ratios) == 3
+        ), f"Only train/dev/test ratios should be specified. Got {len(ratios)} ratios."
+
+        train_ratio, dev_ratio, test_ratio = ratios
+
+        n_train_samples = int(self.__len__() * train_ratio)
+        n_dev_samples = int(self.__len__() * dev_ratio)
+        n_test_samples = self.__len__() - n_dev_samples - n_train_samples
+
+        assert (
+            self.__len__() == n_train_samples + n_dev_samples + n_test_samples
+        ), "`ratios` must sum to 1"
+
+        train_idxs, dev_and_test_idxs = self._sample_without_replacement(
+            indexes=np.arange(self.__len__()), n_samples=n_train_samples
+        )
+        dev_idxs, test_idxs = self._sample_without_replacement(
+            indexes=dev_and_test_idxs, n_samples=n_dev_samples
+        )
+
+        self.metadata.loc[train_idxs, "split"] = "train"
+        self.metadata.loc[dev_idxs, "split"] = "dev"
+        self.metadata.loc[test_idxs, "split"] = "test"
+
     def _download_preprocessed(self, metadata_path, waveforms_path, chunk):
         """
         Downloads the dataset in the correct format, usually from the remote root.
