@@ -1,4 +1,5 @@
-from seisbench.data.bnase import BenchmarkDataset
+import seisbench
+from .base import BenchmarkDataset
 
 
 class Iquique(BenchmarkDataset):
@@ -17,6 +18,12 @@ class Iquique(BenchmarkDataset):
             "performance demonstration over a local seismic network. "
             "Seismological Research Letters, 90(2A), pp.491-502. "
             "https://doi.org/10.1785/0220180312"
+        )
+
+        seisbench.logger.warning(
+            "Check available storage and memory before downloading and general use "
+            "of Iquique dataset. "
+            "Dataset size: waveforms.hdf5 ~5Gb, metadata.csv ~2.6Mb"
         )
 
         super().__init__(citation=citation, repository_lookup=True, **kwargs)
