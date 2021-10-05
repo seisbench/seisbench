@@ -7,7 +7,7 @@ class Iquique(BenchmarkDataset):
     Iquique Benchmark Dataset of local events used for training in Woollam (2019)
     study (see citation).
 
-    Splits are set using standard random sampling of :py:class: BenchmarkDataset.
+    Splits are set using standard random sampling of :py:class:`seisbench.data.base.BenchmarkDataset`.
     """
 
     def __init__(self, **kwargs):

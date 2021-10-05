@@ -45,6 +45,14 @@ INSTANCE dataset
     :show-inheritance:
     :exclude-members: InstanceTypeDataset
 
+Iquique dataset
+-----------------------------------
+
+.. automodule:: seisbench.data.iquique
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 LenDB dataset
 -----------------------------------
 
