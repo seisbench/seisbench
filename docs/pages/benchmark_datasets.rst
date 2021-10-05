@@ -73,10 +73,34 @@ and waveform examples as counts is also available :py:class:`~seisbench.data.ins
     https://doi.org/10.13127/INSTANCE
 
 
+Iquique
+-------
+
+.. figure::  ../_static/iquique_mapplot.png
+   :align:   center
+
+
+The :py:class:`~seisbench.data.iquique.Iquique` dataset contains 13,400 examples of picked arrivals from 
+the aftershock sequence following the Mw=8.1 Iquique earthquake occuring in N. Chile in 2014. All stations 
+are 100Hz, 3-component stations. The waveforms contain examples of earthquakes only. 
+
+.. warning::
+
+    Dataset size: waveforms.hdf5 **~5Gb**, metadata.csv **~2.6Mb**
+
+.. admonition:: Citation
+
+    Woollam, J., Rietbrock, A., Bueno, A. and De Angelis, S., 2019. 
+    Convolutional neural network for seismic phase classification, 
+    performance demonstration over a local seismic network. 
+    Seismological Research Letters, 90(2A), pp.491-502. 
+    https://doi.org/10.1785/0220180312
+
+
 LENDB
 -----
 
-.. figure::  ../_static/scedc_mapplot.png
+.. figure::  ../_static/lendb_mapplot.png
    :align:   center
 
 The :py:class:`~seisbench.data.lendb.LENDB` dataset is a published benchmark dataset (see citation below) of local
