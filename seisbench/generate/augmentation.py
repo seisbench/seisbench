@@ -101,6 +101,28 @@ class Normalize:
         return f"Normalize ({desc})"
 
 
+class Copy:
+    """
+    A copy augmentation. Maps data from a given key in the state_dict to a new key.
+
+    :param key: The keys for reading from and writing to the state dict.
+                A a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
+
+    """
+
+    def __init__(self, key=("X", "Xc")):
+        self.key = key
+
+    def __call__(self, state_dict):
+        x, metadata = state_dict[self.key[0]]
+        state_dict[self.key[1]] = (x, metadata)
+
+    def __str__(self):
+        return f"Copy (prev_key={self.key[0]}, new_key={self.key[1]})"
+
+
 class Filter:
     """
     Implements a filter augmentation, closely based on scipy.signal.butter.
@@ -497,3 +519,6 @@ class GaussianNoise:
         x = x + noise
 
         state_dict[self.key[1]] = (x, metadata)
+
+    def __str__(self):
+        return f"GaussianNoise (Scale (mu={self.scale[0]}, sigma={self.scale[1]}))"
