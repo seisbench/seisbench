@@ -1,3 +1,4 @@
+import seisbench
 import seisbench.models
 from seisbench.models.base import ActivationLSTMCell, CustomLSTM
 
@@ -744,3 +745,35 @@ def test_resample():
     assert len(s[1]) == 1000
     assert s[1].stats.sampling_rate == 25
     assert len(s[2]) == 625
+
+
+def test_parse_seisbench_requirements():
+    model = seisbench.models.GPD()
+
+    # Minimum version
+    model._weights_metadata = {"seisbench_requirement": seisbench.__version__}
+    model._parse_metadata()
+
+    # Newer version
+    model._weights_metadata = {"seisbench_requirement": seisbench.__version__ + "a"}
+    with pytest.raises(ValueError):
+        model._parse_metadata()
+
+    # Older version
+    version = seisbench.__version__
+    version = version[:-1] + chr(ord(version[-1]) - 1)
+    model._weights_metadata = {"seisbench_requirement": version}
+    model._parse_metadata()
+
+
+def test_parse_default_args():
+    model = seisbench.models.GPD()
+
+    # Minimum version
+    default_args = {"dummy": 1, "stride": 100}
+    model._weights_metadata = {"default_args": default_args}
+    model._parse_metadata()
+
+    for key in default_args:
+        assert key in model.default_args
+        assert model.default_args[key] == default_args[key]

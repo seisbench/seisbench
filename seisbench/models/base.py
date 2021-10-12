@@ -70,6 +70,16 @@ class SeisBenchModel(nn.Module):
         """
         Load pretrained model with weights.
 
+        A pretrained model weights consists of two files. A weights file [name].pt and a [name].json config file.
+        The config file is not mandatory, but strongly recommended. The config file can (and should) contain the
+        following entries, even though all arguments are optional:
+
+        - "docstring": A string documenting the pipeline. Usually also contains information on the author.
+        - "model_args": Argument dictionary passed to the init function of the pipeline.
+        - "seisbench_requirement": The minimal version of SeisBench required to use the weights file.
+        - "default_args": Default args for the :py:func:`annotate`/:py:func:`classify` functions.
+          These arguments will supersede any potential constructor settings.
+
         :param name: Model name prefix.
         :type name: str
         :param force: Force execution of download callback, defaults to False
@@ -180,7 +190,23 @@ class SeisBenchModel(nn.Module):
         return weights
 
     def _parse_metadata(self):
+        # Load docstring
         self._weights_docstring = self._weights_metadata.get("docstring", "")
+
+        # Check version requirement
+        seisbench_requirement = self._weights_metadata.get(
+            "seisbench_requirement", None
+        )
+        if seisbench_requirement is not None:
+            if seisbench_requirement > seisbench.__version__:
+                raise ValueError(
+                    f"Weights require seisbench version at least {seisbench_requirement}, "
+                    f"but the installed version is {seisbench.__version__}."
+                )
+
+        # Parse default args - Config default_args supersede constructor args
+        default_args = self._weights_metadata.get("default_args", {})
+        self.default_args.update(default_args)
 
 
 class WaveformModel(SeisBenchModel, ABC):
