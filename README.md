@@ -47,13 +47,12 @@ Simply run:
 ```
 pip install seisbench
 ```
-This is the preferred method of installation for Mac and Linux devices. Alternatively, you can install the latest version from source.
+Alternatively, you can install the latest version from source.
 For this approach, clone the repository, switch to the repository root and run:
 ```
 pip install .
 ```
-which will install SeisBench in your current python environment. This is the preferred method for installation for Windows devices.
-
+which will install SeisBench in your current python environment.
 
 ## Contributing
 There are many ways to contribute to SeisBench and we are always looking forward to your contributions.

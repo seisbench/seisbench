@@ -4,8 +4,6 @@ from obspy.clients.fdsn.mass_downloader.domain import (
     RectangularDomain,
 )
 from obspy.geodetics.base import locations2degrees
-import fiona
-import shapely.geometry
 
 
 class RectangleDomain(RectangularDomain):
@@ -87,6 +85,15 @@ class Germany(Domain):
 
     def __init__(self):
         Domain.__init__(self)
+        try:
+            import fiona
+            import shapely.geometry
+        except ModuleNotFoundError:
+            raise ModuleNotFoundError(
+                "The Germany domain requires fiona and shapely. "
+                "Please install fiona and shapely, e.g., using pip."
+            )
+
         fiona_collection = fiona.open("./shape_files/DEU_adm/DEU_adm0.shp")
         geometry = fiona_collection.next()["geometry"]
         self.shape = shapely.geometry.asShape(geometry)
