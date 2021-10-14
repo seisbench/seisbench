@@ -779,7 +779,8 @@ class WaveformModel(SeisBenchModel, ABC):
         :param sampling_rate: Sampling rate (sps) to resample to
         :type sampling_rate: float
         """
-        for trace in stream:
+        del_list = []
+        for i, trace in enumerate(stream):
             if trace.stats.sampling_rate == sampling_rate:
                 continue
             if trace.stats.sampling_rate % sampling_rate == 0:
@@ -788,7 +789,16 @@ class WaveformModel(SeisBenchModel, ABC):
                     int(trace.stats.sampling_rate / sampling_rate), no_filter=True
                 )
             else:
-                trace.resample(sampling_rate, no_filter=True)
+                # This exception handling is required because very short traces in obspy can cause a crash during resampling.
+                # For details see: https://github.com/obspy/obspy/pull/2885
+                # TODO: Remove the try except block and bump obspy version requirement to a version without this issue.
+                try:
+                    trace.resample(sampling_rate, no_filter=True)
+                except ZeroDivisionError:
+                    del_list.append(i)
+
+        for i in del_list:
+            del stream[i]
 
     @staticmethod
     def groups_stream_by_instrument(stream):
