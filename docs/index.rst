@@ -13,11 +13,14 @@ in particular the steps of data collection and labelling.
 
 .. figure::  ./_static/schematic_fig_sb_only.svg
    :align:   center
+
 |
+
 
 To learn more about the dataset API, including the datasets currently integrated see :ref:`benchmark_datasets`. Alternatively,
 if you would like to know more about how to build, and train models, along with information on the machine learning models 
-readily available through *SeisBench*, see :ref:`models`. 
+readily available through *SeisBench*, see :ref:`models`.
+For an extensive reference of all features, check the code :ref:`documentation_overview`.
 
 SeisBench is built to be extensible and modular, allowing for easy incorporation of new models 
 and datasets. Users are explicitly encouraged to contribute, as any future iterations will
@@ -30,19 +33,16 @@ be based of community feedback.
    
       *citation*
 
-
-
 .. toctree::
    :maxdepth: 2
    :hidden:
 
-   pages/overview.rst
+   self
    pages/installation_and_usage.rst
    pages/data_format.rst
    pages/benchmark_datasets.rst
    pages/models.rst
    pages/examples.rst
-   pages/extending.rst
    pages/contributing.rst
    pages/documentation/overview.rst
 

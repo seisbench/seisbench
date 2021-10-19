@@ -3,45 +3,54 @@
 SeisBench Model API
 ===================
 
-SeisBench model structure
+Overview
 -------------------------
 
-Any SeisBench Model should subclass :py:class:`~seisbench.models.base.SeisBenchModel`.
-This top-level interface encompasses all models applied in SeisBench. If the
-model exploits waveform information (e.g. used in phase picking or event detection), the
-:py:class:`~seisbench.models.base.WaveformModel` base class should instead be subclassed.
+SeisBench offers the abstract class :py:class:`~seisbench.models.base.WaveformModel` that every SeisBench model should subclass.
+This class offers two core functions, ``annotate`` and ``classify``.
+Both of the functions are automatically generated based on configurations and submethods implemented in the specific model.
+The :py:class:`~seisbench.models.base.SeisBenchModel` bridges the gap between the pytorch interface of the models and the obspy interface common in seismology.
+It automatically assembles obspy streams into pytorch tensors and reassembles the results into streams.
+It also takes care of batch processing.
+Computations can be run on GPU by simply moving the model to GPU.
 
-
-.. code-block:: python
-
-    from seisbench.data import WaveformModel
-
-    class PickingModel(WaveformModel):
-        """
-        A simple example picking model.
-        """
-        pass
-
-
-:py:class:`~seisbench.models.base.SeisBenchModel` inherits from
-`torch.nn.Module <https://pytorch.org/docs/stable/generated/torch.nn.Module.html>`__, allowing for the construction
-of deep learning-based models natively through PyTorch, in addition to those which use more 'traditional' methods (e.g. STA/LTA).
-
+The ``annotate`` function takes an obspy stream object as input and returns annotations as stream again.
+For example, for picking models the output would be the characteristic functions, i.e., the pick probabilities over time.
 
 .. code-block:: python
 
-    from seisbench.data import WaveformModel
+    stream = obspy.read("my_waveforms.mseed")
+    annotations = model.annotate(stream)  # Returns obspy stream object with annotations
 
-    class DLPickingModel(WaveformModel):
-        """
-        A simple example DL-based picking model.
-        """
-        pass
+The ``classify`` function also takes an obspy stream as input, but in contrast to the ``annotate`` function returns discrete results.
+The structure of these results might be model dependent.
+For example, a pure picking model will return a list of picks, while a picking and detection model might return a list of picks and a list of detections.
 
-:py:class:`~seisbench.models.base.WaveformModel` is an abstract interface for processing waveforms. Based on the
-properties specified by the inheriting models, WaveformModel automatically provides the respective functions to convert
-input waveform streams into predictions.
+.. code-block:: python
 
+    stream = obspy.read("my_waveforms.mseed")
+    picks = model.classify(stream)  # Returns a list of picks
+    for pick in picks:
+        print(pick)
+
+Both ``annotate`` and ``classify`` can be supplied with waveforms from multiple stations at once and will automatically handle the correct grouping of the traces.
+For details on how to build your own model with SeisBench, check the documentation of :py:class:`~seisbench.models.base.WaveformModel`.
+For details on how to apply models, check out the :ref:`examples`.
+
+Loading pretrained models
+-------------------------
+For annotating waveforms in a meaningful way, trained model weights are required.
+SeisBench offers a range of pretrained model weights through a common interface.
+Model weights are downloaded on the first use and cached locally afterwards.
+
+.. code-block:: python
+
+    import seisbench.models as sbm
+
+    sbm.GPD.list_pretrained()                  # Get available models
+    model = sbm.GPD.from_pretrained("geofon")  # Load the model trained on GEOFON
+
+Pretrained models can not only be used for annotating data, but also offer a great starting point for transfer learning.
 
 Models integrated into SeisBench
 --------------------------------
