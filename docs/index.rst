@@ -11,7 +11,7 @@ and training machine learning algorithms on seismic datasets. SeisBench has been
 alleviate traditional bottlenecks when applying machine learning techniques to seismic data, 
 in particular the steps of data collection and labelling.
 
-.. figure::  ./_static/schematic_fig_sb_only.svg
+.. figure::  ./_static/schematic_fig_sb.svg
    :align:   center
 
 |
@@ -31,7 +31,12 @@ be based of community feedback.
 
    Please cite any work in which SeisBench was used:
    
-      *citation*
+      Woollam, J., Münchmeyer, J., Tilmann, F., Rietbrock, A., Lange, D., Bornstein, T., Diehl, T., Giuchi, C., Haslinger, F., 
+      Jozinović, D., Michelini, A., Saul, J., & Soto, H. (2021).
+      SeisBench - A Toolbox for Machine Learning in Seismology. 
+      https://arxiv.org/abs/2111.00786,
+      (pre-print)
+
 
 .. toctree::
    :maxdepth: 2
