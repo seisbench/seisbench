@@ -59,6 +59,20 @@ which will install SeisBench in your current python environment.
 There are many ways to contribute to SeisBench and we are always looking forward to your contributions.
 Check out the [contribution guidelines](https://github.com/seisbench/seisbench/blob/main/CONTRIBUTING.md) for details on how to contribute.
 
-## Citation
-A reference publication for SeisBench is under publication.
-Please check back later.
+## References
+Reference publications for SeisBench:
+
+---
+
+* [SeisBench - A Toolbox for Machine Learning in Seismology](https://arxiv.org/abs/2111.00786)
+
+  _Reference publication for software (pre-print)._
+
+---
+
+* [Which picker fits my data? A quantitative evaluation of deep learning based seismic pickers](https://arxiv.org/abs/2110.13671)
+
+  _Example of in-depth bencharking study of deep learning-based picking routines using the SeisBench framework (pre-print)._
+
+---
+
