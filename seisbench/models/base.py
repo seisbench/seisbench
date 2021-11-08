@@ -417,11 +417,12 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         output = obspy.Stream()
         for (pred_time, pred_rate, pred) in zip(pred_times, pred_rates, preds):
+            # Define and store default labels
+            if self.labels is None:
+                self.labels = list(range(pred.shape[1]))
+
             for i in range(pred.shape[1]):
-                if self.labels is None:
-                    label = i
-                else:
-                    label = self.labels[i]
+                label = self.labels[i]
 
                 trimmed_pred, f, _ = self._trim_nan(pred[:, i])
                 trimmed_start = pred_time + f / pred_rate

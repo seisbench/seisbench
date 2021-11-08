@@ -777,3 +777,16 @@ def test_parse_default_args():
     for key in default_args:
         assert key in model.default_args
         assert model.default_args[key] == default_args[key]
+
+
+def test_default_labels():
+    model = seisbench.models.PhaseNet(
+        sampling_rate=200
+    )  # Higher sampling rate ensures trace is long enough
+    stream = obspy.read()
+
+    assert model.labels is None
+
+    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+
+    assert model.labels == [0, 1, 2]
