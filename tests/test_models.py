@@ -473,7 +473,7 @@ def test_predictions_to_stream():
     preds[0][:100] = np.nan  # Test proper shift
     trace = obspy.Trace(np.zeros(100), header={"network": "SB", "station": "ABC1"})
 
-    stream = dummy._predictions_to_stream(pred_rates, pred_times, preds, trace)
+    stream = dummy._predictions_to_stream(pred_rates, pred_times, preds, trace.stats)
 
     assert stream[0].stats.starttime == pred_times[0] + 1
     assert stream[1].stats.starttime == pred_times[0] + 1

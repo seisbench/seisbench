@@ -401,18 +401,20 @@ class WaveformModel(SeisBenchModel, ABC):
             )
 
             # Write to output stream
-            output += self._predictions_to_stream(pred_rates, pred_times, preds, trace)
+            output += self._predictions_to_stream(
+                pred_rates, pred_times, preds, trace.stats
+            )
 
         return output
 
-    def _predictions_to_stream(self, pred_rates, pred_times, preds, trace):
+    def _predictions_to_stream(self, pred_rates, pred_times, preds, trace_stats):
         """
         Converts a set of predictions to obspy streams
 
         :param pred_rates: Sampling rates of the prediction arrays
         :param pred_times: Start time of each prediction array
         :param preds: The prediction arrays, each with shape (samples, channels)
-        :param trace: A source trace to extract trace naming from
+        :param trace_stats: A source trace.stats object to extract trace naming from
         :return: Obspy stream of predictions
         """
         output = obspy.Stream()
@@ -432,9 +434,9 @@ class WaveformModel(SeisBenchModel, ABC):
                         {
                             "starttime": trimmed_start,
                             "sampling_rate": pred_rate,
-                            "network": trace.stats.network,
-                            "station": trace.stats.station,
-                            "location": trace.stats.location,
+                            "network": trace_stats.network,
+                            "station": trace_stats.station,
+                            "location": trace_stats.location,
                             "channel": f"{self.__class__.__name__}_{label}",
                         },
                     )
