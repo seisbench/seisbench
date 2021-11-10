@@ -5,3 +5,4 @@ obspy>=1.2
 tqdm>=4.52
 torch>=1.7.0
 scipy>=1.5
+nest_asyncio>=1.5.1
