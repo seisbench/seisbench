@@ -26,6 +26,6 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/seisbench/seisbench",
     packages=find_packages(exclude="tests"),
-    python_requires=">=3.6",
+    python_requires=">=3.7",
     install_requires=required,
 )
