@@ -914,3 +914,15 @@ def test_annotate_phasenet():
     annotations = model.annotate(stream)
     assert len(annotations) > 0
     model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+
+
+def test_annotate_basicphaseae():
+    # Tests that the annotate/classify functions run without crashes and annotate produces an output
+    model = seisbench.models.BasicPhaseAE(
+        sampling_rate=400
+    )  # Higher sampling rate ensures trace is long enough
+    stream = obspy.read()
+
+    annotations = model.annotate(stream)
+    assert len(annotations) > 0
+    model.classify(stream)  # Ensures classify succeeds even though labels are unknown

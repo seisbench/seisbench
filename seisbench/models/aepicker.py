@@ -2,6 +2,7 @@ from .base import WaveformModel
 
 import torch
 import torch.nn as nn
+import numpy as np
 
 
 class BasicPhaseAE(WaveformModel):
@@ -38,7 +39,7 @@ class BasicPhaseAE(WaveformModel):
             citation=citation,
             in_samples=600,
             output_type="array",
-            default_args={"overlap": 100},
+            default_args={"overlap": 300},
             pred_sample=(0, 600),
             labels=phases,
             sampling_rate=sampling_rate,
@@ -88,3 +89,41 @@ class BasicPhaseAE(WaveformModel):
         x_out = self.softmax(self.out(x_r1))
 
         return x_out
+
+    def annotate_window_pre(self, window, argdict):
+        # Add a demean and normalize step to the preprocessing
+        window = window - np.mean(window, axis=-1, keepdims=True)
+        std = np.std(window, axis=-1, keepdims=True)
+        std[std == 0] = 1  # Avoid NaN errors
+        window = window / std
+        return window
+
+    def annotate_window_post(self, pred, argdict):
+        # Transpose predictions to correct shape
+        pred[:, 130] = np.nan
+        pred[:, -130:] = np.nan
+        return pred.T
+
+    def classify_aggregate(self, annotations, argdict):
+        """
+        Converts the annotations to discrete thresholds using
+        :py:func:`~seisbench.models.base.WaveformModel.picks_from_annotations`.
+        Trigger onset thresholds for picks are derived from the argdict at keys "[phase]_threshold".
+
+        :param annotations: See description in superclass
+        :param argdict: See description in superclass
+        :return: List of picks
+        """
+        picks = []
+        for phase in self.labels:
+            if phase == "N":
+                # Don't pick noise
+                continue
+
+            picks += self.picks_from_annotations(
+                annotations.select(channel=f"BasicPhaseAE_{phase}"),
+                argdict.get(f"{phase}_threshold", 0.3),
+                phase,
+            )
+
+        return sorted(picks)
