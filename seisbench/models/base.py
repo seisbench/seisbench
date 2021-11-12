@@ -17,6 +17,7 @@ import warnings
 from obspy.signal.trigger import trigger_onset
 import asyncio
 import nest_asyncio
+from packaging import version
 
 
 class SeisBenchModel(nn.Module):
@@ -200,7 +201,9 @@ class SeisBenchModel(nn.Module):
             "seisbench_requirement", None
         )
         if seisbench_requirement is not None:
-            if seisbench_requirement > seisbench.__version__:
+            if version.parse(seisbench_requirement) > version.parse(
+                seisbench.__version__
+            ):
                 raise ValueError(
                     f"Weights require seisbench version at least {seisbench_requirement}, "
                     f"but the installed version is {seisbench.__version__}."

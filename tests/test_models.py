@@ -831,7 +831,7 @@ def test_parse_seisbench_requirements():
     model._parse_metadata()
 
     # Newer version
-    model._weights_metadata = {"seisbench_requirement": seisbench.__version__ + "a"}
+    model._weights_metadata = {"seisbench_requirement": seisbench.__version__ + "1"}
     with pytest.raises(ValueError):
         model._parse_metadata()
 
