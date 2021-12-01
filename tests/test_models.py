@@ -926,3 +926,24 @@ def test_annotate_basicphaseae():
     annotations = model.annotate(stream)
     assert len(annotations) > 0
     model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+
+
+def test_short_traces(caplog):
+    # Test that on both point and array models short traces do not cause an infinite loop, but a warning
+    stream = obspy.read()
+    t0 = stream[0].stats.starttime
+    stream = stream.slice(t0, t0 + 1)  # Cut very short trace
+
+    model = seisbench.models.GPD()
+    with caplog.at_level(logging.WARNING):
+        ann = model.annotate(stream)
+    assert "Output might be empty." in caplog.text
+    assert len(ann) == 0
+
+    caplog.clear()
+
+    model = seisbench.models.EQTransformer()
+    with caplog.at_level(logging.WARNING):
+        ann = model.annotate(stream)
+    assert "Output might be empty." in caplog.text
+    assert len(ann) == 0

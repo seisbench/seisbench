@@ -534,6 +534,7 @@ class WaveformModel(SeisBenchModel, ABC):
                     "Parts of the input stream consist of fragments shorter than the number "
                     "of input samples. Output might be empty."
                 )
+                elem = await queue_in.get()
                 continue
 
             # Generate windows and preprocess
@@ -604,6 +605,7 @@ class WaveformModel(SeisBenchModel, ABC):
                     "Parts of the input stream consist of fragments shorter than the number "
                     "of input samples. Output might be empty."
                 )
+                elem = await queue_in.get()
                 continue
 
             # Add one more trace to the end
