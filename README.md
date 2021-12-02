@@ -59,6 +59,17 @@ which will install SeisBench in your current python environment.
 There are many ways to contribute to SeisBench and we are always looking forward to your contributions.
 Check out the [contribution guidelines](https://github.com/seisbench/seisbench/blob/main/CONTRIBUTING.md) for details on how to contribute.
 
+## Known issues
+
+- Some institutions and internet providers are blocking access to our data and model repository, as it is running on a non-standard port.
+  This usually manifests in timeouts when trying to download data or model weights.
+  We are working on a permanent solution for the issue.
+  In the meantime, if you are having trouble, try downloading through another network/VPN if possible.
+  Otherwise, reach out to us, and we will work on finding a solution.
+  
+- Pytorch currently does not support python 3.10, making it impossible to install seisbench in python 3.10.
+  We recommend using python 3.7, 3.8 or 3.9, until pytorch is available for python 3.10.
+
 ## References
 Reference publications for SeisBench:
 
