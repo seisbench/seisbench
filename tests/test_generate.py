@@ -1,4 +1,3 @@
-from seisbench import data
 import seisbench.generate
 import seisbench.generate.labeling
 from seisbench.generate import (
@@ -1597,3 +1596,7 @@ def test_copy():
     copy_wrong_key = Copy(key=("z", "Xc"))
     with pytest.raises(KeyError):
         copy_wrong_key(state_dict)
+
+    # Check deepcopy ok
+    state_dict["X"][0][0, 500] = 2
+    assert state_dict["Xc"][0][0, 500] != 2

@@ -117,7 +117,7 @@ class Copy:
 
     def __call__(self, state_dict):
         x, metadata = state_dict[self.key[0]]
-        state_dict[self.key[1]] = (x, metadata)
+        state_dict[self.key[1]] = (x.copy(), copy.deepcopy(metadata))
 
     def __str__(self):
         return f"Copy (prev_key={self.key[0]}, new_key={self.key[1]})"
