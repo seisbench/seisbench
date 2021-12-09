@@ -1,3 +1,4 @@
+import seisbench
 import seisbench.models
 from seisbench.models.base import ActivationLSTMCell, CustomLSTM
 
@@ -8,6 +9,7 @@ import torch
 from unittest.mock import patch
 import logging
 import pytest
+import asyncio
 
 
 def test_weights_docstring():
@@ -472,7 +474,12 @@ def test_predictions_to_stream():
     preds[0][:100] = np.nan  # Test proper shift
     trace = obspy.Trace(np.zeros(100), header={"network": "SB", "station": "ABC1"})
 
-    stream = dummy._predictions_to_stream(pred_rates, pred_times, preds, trace)
+    stream = dummy._predictions_to_stream(
+        pred_rates[0], pred_times[0], preds[0], trace.stats
+    )
+    stream += dummy._predictions_to_stream(
+        pred_rates[1], pred_times[1], preds[1], trace.stats
+    )
 
     assert stream[0].stats.starttime == pred_times[0] + 1
     assert stream[1].stats.starttime == pred_times[0] + 1
@@ -496,46 +503,116 @@ def test_predictions_to_stream():
     assert stream[5].stats.sampling_rate == 50
 
 
-def test_annotate_point():
+@pytest.mark.asyncio
+async def test_cut_fragments_point():
     dummy = DummyWaveformModel(
         component_order="ZNE", in_samples=1000, sampling_rate=100
     )
-    times = [0]
     data = [np.ones((3, 10000))]
-    with patch(
-        "seisbench.models.WaveformModel._predict_and_postprocess_windows"
-    ) as predict_func:
-        predict_func.return_value = 91 * [0]
-        pred_times, pred_rates, full_preds = dummy._annotate_point(
-            times, data, {"stride": 100, "sampling_rate": 100}
-        )
-        argdict, fragments = predict_func.call_args[0]
 
-    assert fragments.shape == (91, 3, 1000)
-    assert len(pred_times) == len(pred_rates) == len(full_preds) == 1
-    assert full_preds[0].shape == (91, 1)
-    assert pred_rates[0] == 1
+    queue_in = asyncio.Queue()
+    queue_out = asyncio.Queue()
+
+    queue_in.put_nowait((0, data[0], None))
+    queue_in.put_nowait(None)
+    await dummy._cut_fragments_point(
+        queue_in, queue_out, {"stride": 100, "sampling_rate": 100}
+    )
+    out = []
+    while True:
+        try:
+            elem = queue_out.get_nowait()
+            out.append(elem[0])
+        except asyncio.QueueEmpty:
+            break
+    assert len(out) == 91
+    assert out[0].shape == (3, 1000)
 
 
-def test_annotate_array():
+@pytest.mark.asyncio
+async def test_reassemble_blocks_point():
+    dummy = DummyWaveformModel(
+        component_order="ZNE", in_samples=1000, sampling_rate=100
+    )
+    queue_in = asyncio.Queue()
+    queue_out = asyncio.Queue()
+
+    trace_stats = obspy.read()[0].stats
+
+    for i in range(100):
+        queue_in.put_nowait(([0], (0, i, 100, trace_stats)))
+    queue_in.put_nowait(None)
+
+    await dummy._reassemble_blocks_point(
+        queue_in, queue_out, {"stride": 100, "sampling_rate": 100}
+    )
+    out = []
+    while True:
+        try:
+            elem = queue_out.get_nowait()
+            out.append(elem[0])
+        except asyncio.QueueEmpty:
+            break
+    assert len(out) == 1
+    assert out[0][0] == 1
+    assert out[0][2].shape == (100, 1)
+
+
+@pytest.mark.asyncio
+async def test_cut_fragments_array():
     dummy = DummyWaveformModel(
         component_order="ZNE", in_samples=1000, sampling_rate=100, pred_sample=(0, 1000)
     )
-    times = [0]
     data = [np.ones((3, 10001))]
-    with patch(
-        "seisbench.models.WaveformModel._predict_and_postprocess_windows"
-    ) as predict_func:
-        predict_func.return_value = 12 * [np.ones((1000, 3))]
-        pred_times, pred_rates, full_preds = dummy._annotate_array(
-            times, data, {"overlap": 100, "sampling_rate": 100}
-        )
-        argdict, fragments = predict_func.call_args[0]
 
-    assert fragments.shape == (12, 3, 1000)
-    assert len(pred_times) == len(pred_rates) == len(full_preds) == 1
-    assert full_preds[0].shape == (10001, 3)
-    assert pred_rates[0] == 100.0
+    queue_in = asyncio.Queue()
+    queue_out = asyncio.Queue()
+
+    queue_in.put_nowait((0, data[0], None))
+    queue_in.put_nowait(None)
+    await dummy._cut_fragments_array(
+        queue_in, queue_out, {"overlap": 100, "sampling_rate": 100}
+    )
+    out = []
+    while True:
+        try:
+            elem = queue_out.get_nowait()
+            out.append(elem[0])
+        except asyncio.QueueEmpty:
+            break
+    assert len(out) == 12
+    assert out[0].shape == (3, 1000)
+
+
+@pytest.mark.asyncio
+async def test_reassemble_blocks_array():
+    dummy = DummyWaveformModel(
+        component_order="ZNE", in_samples=1000, sampling_rate=100, pred_sample=(0, 1000)
+    )
+    queue_in = asyncio.Queue()
+    queue_out = asyncio.Queue()
+
+    trace_stats = obspy.read()[0].stats
+
+    starts = [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200, 8100, 9000, 9001]
+
+    for i in range(12):
+        queue_in.put_nowait((np.ones((1000, 3)), (0, starts[i], 12, trace_stats)))
+    queue_in.put_nowait(None)
+
+    await dummy._reassemble_blocks_array(
+        queue_in, queue_out, {"overlap": 100, "sampling_rate": 100}
+    )
+    out = []
+    while True:
+        try:
+            elem = queue_out.get_nowait()
+            out.append(elem[0])
+        except asyncio.QueueEmpty:
+            break
+    assert len(out) == 1
+    assert out[0][0] == 100.0
+    assert out[0][2].shape == (10001, 3)
 
 
 def test_picks_from_annotations():
@@ -744,3 +821,129 @@ def test_resample():
     assert len(s[1]) == 1000
     assert s[1].stats.sampling_rate == 25
     assert len(s[2]) == 625
+
+
+def test_parse_seisbench_requirements():
+    model = seisbench.models.GPD()
+
+    # Minimum version
+    model._weights_metadata = {"seisbench_requirement": seisbench.__version__}
+    model._parse_metadata()
+
+    # Newer version
+    model._weights_metadata = {"seisbench_requirement": seisbench.__version__ + "1"}
+    with pytest.raises(ValueError):
+        model._parse_metadata()
+
+    # Older version
+    version = seisbench.__version__
+    version = version[:-1] + chr(ord(version[-1]) - 1)
+    model._weights_metadata = {"seisbench_requirement": version}
+    model._parse_metadata()
+
+
+def test_parse_default_args():
+    model = seisbench.models.GPD()
+
+    # Minimum version
+    default_args = {"dummy": 1, "stride": 100}
+    model._weights_metadata = {"default_args": default_args}
+    model._parse_metadata()
+
+    for key in default_args:
+        assert key in model.default_args
+        assert model.default_args[key] == default_args[key]
+
+
+def test_default_labels():
+    model = seisbench.models.PhaseNet(
+        sampling_rate=200
+    )  # Higher sampling rate ensures trace is long enough
+    stream = obspy.read()
+
+    assert model.labels is None
+
+    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+
+    assert model.labels == [0, 1, 2]
+
+
+def test_annotate_cred():
+    # Tests that the annotate/classify functions run without crashes and annotate produces an output
+    model = seisbench.models.CRED(
+        sampling_rate=400
+    )  # Higher sampling rate ensures trace is long enough
+    stream = obspy.read()
+
+    annotations = model.annotate(stream)
+    assert len(annotations) > 0
+    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+
+
+def test_annotate_eqtransformer():
+    # Tests that the annotate/classify functions run without crashes and annotate produces an output
+    model = seisbench.models.EQTransformer(
+        sampling_rate=400
+    )  # Higher sampling rate ensures trace is long enough
+    stream = obspy.read()
+
+    annotations = model.annotate(stream)
+    assert len(annotations) > 0
+    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+
+
+def test_annotate_gpd():
+    # Tests that the annotate/classify functions run without crashes and annotate produces an output
+    model = seisbench.models.GPD(
+        sampling_rate=100
+    )  # Higher sampling rate ensures trace is long enough
+    stream = obspy.read()
+
+    annotations = model.annotate(stream)
+    assert len(annotations) > 0
+    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+
+
+def test_annotate_phasenet():
+    # Tests that the annotate/classify functions run without crashes and annotate produces an output
+    model = seisbench.models.PhaseNet(
+        sampling_rate=400
+    )  # Higher sampling rate ensures trace is long enough
+    stream = obspy.read()
+
+    annotations = model.annotate(stream)
+    assert len(annotations) > 0
+    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+
+
+def test_annotate_basicphaseae():
+    # Tests that the annotate/classify functions run without crashes and annotate produces an output
+    model = seisbench.models.BasicPhaseAE(
+        sampling_rate=400
+    )  # Higher sampling rate ensures trace is long enough
+    stream = obspy.read()
+
+    annotations = model.annotate(stream)
+    assert len(annotations) > 0
+    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+
+
+def test_short_traces(caplog):
+    # Test that on both point and array models short traces do not cause an infinite loop, but a warning
+    stream = obspy.read()
+    t0 = stream[0].stats.starttime
+    stream = stream.slice(t0, t0 + 1)  # Cut very short trace
+
+    model = seisbench.models.GPD()
+    with caplog.at_level(logging.WARNING):
+        ann = model.annotate(stream)
+    assert "Output might be empty." in caplog.text
+    assert len(ann) == 0
+
+    caplog.clear()
+
+    model = seisbench.models.EQTransformer()
+    with caplog.at_level(logging.WARNING):
+        ann = model.annotate(stream)
+    assert "Output might be empty." in caplog.text
+    assert len(ann) == 0

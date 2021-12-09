@@ -11,13 +11,16 @@ and training machine learning algorithms on seismic datasets. SeisBench has been
 alleviate traditional bottlenecks when applying machine learning techniques to seismic data, 
 in particular the steps of data collection and labelling.
 
-.. figure::  ./_static/schematic_fig_sb_only.svg
+.. figure::  ./_static/schematic_fig_sb.svg
    :align:   center
+
 |
+
 
 To learn more about the dataset API, including the datasets currently integrated see :ref:`benchmark_datasets`. Alternatively,
 if you would like to know more about how to build, and train models, along with information on the machine learning models 
-readily available through *SeisBench*, see :ref:`models`. 
+readily available through *SeisBench*, see :ref:`models`.
+For an extensive reference of all features, check the code :ref:`documentation_overview`.
 
 SeisBench is built to be extensible and modular, allowing for easy incorporation of new models 
 and datasets. Users are explicitly encouraged to contribute, as any future iterations will
@@ -28,21 +31,23 @@ be based of community feedback.
 
    Please cite any work in which SeisBench was used:
    
-      *citation*
-
+      Woollam, J., Münchmeyer, J., Tilmann, F., Rietbrock, A., Lange, D., Bornstein, T., Diehl, T., Giuchi, C., Haslinger, F., 
+      Jozinović, D., Michelini, A., Saul, J., & Soto, H. (2021).
+      SeisBench - A Toolbox for Machine Learning in Seismology. 
+      https://arxiv.org/abs/2111.00786,
+      (pre-print)
 
 
 .. toctree::
    :maxdepth: 2
    :hidden:
 
-   pages/overview.rst
+   self
    pages/installation_and_usage.rst
    pages/data_format.rst
    pages/benchmark_datasets.rst
    pages/models.rst
    pages/examples.rst
-   pages/extending.rst
    pages/contributing.rst
    pages/documentation/overview.rst
 

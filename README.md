@@ -8,7 +8,8 @@
 [![GitHub Workflow Status](https://img.shields.io/github/workflow/status/seisbench/seisbench/main_push_action)](https://github.com/seisbench/seisbench)
 [![Read the Docs](https://img.shields.io/readthedocs/seisbench)](https://seisbench.readthedocs.io/en/latest/)
 [![PyPI](https://img.shields.io/pypi/v/seisbench)](https://pypi.org/project/seisbench/)
-[![Python 3.6](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/downloads/release/python-360/)
+[![Python 3.7](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/release/python-360/)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5568813.svg)](https://doi.org/10.5281/zenodo.5568813)
 
 The Seismology Benchmark collection (*SeisBench*) is an open-source python toolbox for 
 machine learning in seismology.
@@ -48,18 +49,42 @@ Simply run:
 ```
 pip install seisbench
 ```
-This is the preferred method of installation for Mac and Linux devices. Alternatively, you can install the latest version from source.
+Alternatively, you can install the latest version from source.
 For this approach, clone the repository, switch to the repository root and run:
 ```
 pip install .
 ```
-which will install SeisBench in your current python environment. This is the preferred method for installation for Windows devices.
-
+which will install SeisBench in your current python environment.
 
 ## Contributing
 There are many ways to contribute to SeisBench and we are always looking forward to your contributions.
 Check out the [contribution guidelines](https://github.com/seisbench/seisbench/blob/main/CONTRIBUTING.md) for details on how to contribute.
 
-## Citation
-A reference publication for SeisBench is under publication.
-Please check back later.
+## Known issues
+
+- Some institutions and internet providers are blocking access to our data and model repository, as it is running on a non-standard port.
+  This usually manifests in timeouts when trying to download data or model weights.
+  We are working on a permanent solution for the issue.
+  In the meantime, if you are having trouble, try downloading through another network/VPN if possible.
+  Otherwise, reach out to us, and we will work on finding a solution.
+  
+- Pytorch currently does not support python 3.10, making it impossible to install seisbench in python 3.10.
+  We recommend using python 3.7, 3.8 or 3.9, until pytorch is available for python 3.10.
+
+## References
+Reference publications for SeisBench:
+
+---
+
+* [SeisBench - A Toolbox for Machine Learning in Seismology](https://arxiv.org/abs/2111.00786)
+
+  _Reference publication for software (pre-print)._
+
+---
+
+* [Which picker fits my data? A quantitative evaluation of deep learning based seismic pickers](https://arxiv.org/abs/2110.13671)
+
+  _Example of in-depth bencharking study of deep learning-based picking routines using the SeisBench framework (pre-print)._
+
+---
+

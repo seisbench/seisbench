@@ -37,9 +37,30 @@ Dataset contains 36,743 waveform examples.
 
 GEOFON
 ------
+
+.. figure::  ../_static/geofon_mapplot.png
+   :align:   center
+
+As part of its effort to measure and characterize relevant seismicity world-wide in real time, the GEOFON earthquake monitoring serivce acquires and analyses waveform data of over 800, globally distributed seismic stations.
+Besides automatic processing, manual analysis, especially onset re-picking, is performed routinely whenever necessary to improve the location quality.
+Usually only few picks are manual re-picked.
+However, in order to collect reference picks to improve automatic picking, the P arrivals of some events are comprehensively re-picked by an experienced analyst, irrespective of the presence or quality of automatic picks.
+For local and near-regional events also S onsets have been picked and for a small fraction both Pn and Pg are included.
+For teleseismic events almost no S onsets have been picked.
+Depth phases have been picked occasionally but not comprehensively.
+In total, there are ~275,000 waveform examples.
+The magnitudes of the events comprising this dataset range from about 2 to 9, with the bulk of the manually picked events being intermediate to large events (M 5-7).
+Regional events with smaller magnitudes are mostly in Europe and northern Chile.
+The time range covers 2009 to 2013.
+
+.. warning::
+
+    Dataset size: waveforms.hdf5 **~25.8Gb**, metadata.csv **~99Mb**.
+
+
 .. admonition:: Citation
 
-    *citation*
+    *Citation information will be added.*
 
 
 INSTANCE

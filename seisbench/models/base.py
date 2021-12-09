@@ -15,6 +15,9 @@ import numpy as np
 import obspy
 import warnings
 from obspy.signal.trigger import trigger_onset
+import asyncio
+import nest_asyncio
+from packaging import version
 
 
 class SeisBenchModel(nn.Module):
@@ -69,6 +72,16 @@ class SeisBenchModel(nn.Module):
     def from_pretrained(cls, name, force=False, wait_for_file=False):
         """
         Load pretrained model with weights.
+
+        A pretrained model weights consists of two files. A weights file [name].pt and a [name].json config file.
+        The config file is not mandatory, but strongly recommended. The config file can (and should) contain the
+        following entries, even though all arguments are optional:
+
+        - "docstring": A string documenting the pipeline. Usually also contains information on the author.
+        - "model_args": Argument dictionary passed to the init function of the pipeline.
+        - "seisbench_requirement": The minimal version of SeisBench required to use the weights file.
+        - "default_args": Default args for the :py:func:`annotate`/:py:func:`classify` functions.
+          These arguments will supersede any potential constructor settings.
 
         :param name: Model name prefix.
         :type name: str
@@ -180,7 +193,25 @@ class SeisBenchModel(nn.Module):
         return weights
 
     def _parse_metadata(self):
+        # Load docstring
         self._weights_docstring = self._weights_metadata.get("docstring", "")
+
+        # Check version requirement
+        seisbench_requirement = self._weights_metadata.get(
+            "seisbench_requirement", None
+        )
+        if seisbench_requirement is not None:
+            if version.parse(seisbench_requirement) > version.parse(
+                seisbench.__version__
+            ):
+                raise ValueError(
+                    f"Weights require seisbench version at least {seisbench_requirement}, "
+                    f"but the installed version is {seisbench.__version__}."
+                )
+
+        # Parse default args - Config default_args supersede constructor args
+        default_args = self._weights_metadata.get("default_args", {})
+        self.default_args.update(default_args)
 
 
 class WaveformModel(SeisBenchModel, ABC):
@@ -287,11 +318,13 @@ class WaveformModel(SeisBenchModel, ABC):
         self.labels = labels
 
         self._annotate_function_mapping = {
-            "point": self._annotate_point,
-            "array": self._annotate_array,
+            "point": (self._cut_fragments_point, self._reassemble_blocks_point),
+            "array": (self._cut_fragments_array, self._reassemble_blocks_array),
         }
 
-        self._annotate_function = self._annotate_function_mapping.get(output_type, None)
+        self._annotate_functions = self._annotate_function_mapping.get(
+            output_type, None
+        )
 
     def __str__(self):
         return f"Component order:\t{self.component_order}\n{super().__str__()}"
@@ -333,10 +366,31 @@ class WaveformModel(SeisBenchModel, ABC):
         :param kwargs:
         :return: Obspy stream of annotations
         """
-        if self._annotate_function is None:
+        nest_asyncio.apply()
+        call = self._annotate_async(
+            stream, strict, flexible_horizontal_components, **kwargs
+        )
+        return asyncio.run(call)
+
+    async def _annotate_async(
+        self, stream, strict=True, flexible_horizontal_components=True, **kwargs
+    ):
+        """
+        Wrapper for the annotate function that can be called using asyncio.run.
+        Parameters as for :py:func:`annotate`.
+
+        :param stream:
+        :param strict:
+        :param flexible_horizontal_components:
+        :param kwargs:
+        :return:
+        """
+        if self._annotate_functions is None:
             raise NotImplementedError(
                 "This model has no annotate function implemented."
             )
+
+        cut_fragments, reassemble_blocks = self._annotate_functions
 
         # Kwargs overwrite default args
         argdict = self.default_args.copy()
@@ -358,60 +412,416 @@ class WaveformModel(SeisBenchModel, ABC):
         # Group stream
         groups = self.groups_stream_by_instrument(stream)
 
-        # Stream to arrays to windows
-        for group in groups:
-            trace = group[0]
-            # Sampling rate of the data. Equal to self.sampling_rate is this is not None
-            argdict["sampling_rate"] = trace.stats.sampling_rate
+        # Sampling rate of the data. Equal to self.sampling_rate is this is not None
+        argdict["sampling_rate"] = groups[0][0].stats.sampling_rate
 
+        # Queues for multiprocessing
+        batch_size = argdict.get("batch_size", 64)
+        queue_groups = asyncio.Queue()  # Waveform groups
+        queue_raw_blocks = (
+            asyncio.Queue()
+        )  # Waveforms as blocks of arrays and their metadata
+        queue_raw_fragments = asyncio.Queue(
+            4 * batch_size
+        )  # Raw waveform fragments with the correct input size
+        queue_preprocessed_fragments = asyncio.Queue(
+            4 * batch_size
+        )  # Preprocessed input fragments
+        queue_raw_pred = asyncio.Queue()  # Queue for raw (but unbatched) predictions
+        queue_postprocessed_pred = (
+            asyncio.Queue()
+        )  # Queue for raw (but unbatched) predictions
+        queue_pred_blocks = asyncio.Queue()  # Queue for blocks of predictions
+        queue_results = asyncio.Queue()  # Results streams
+
+        # TODO: Enable multiprocessing by starting multiple workers for some tasks
+        #       Also requires to send multiple None values to the queues for stopping
+        process_streams_to_arrays = asyncio.create_task(
+            self._process_streams_to_arrays(
+                queue_groups, queue_raw_blocks, strict, flexible_horizontal_components
+            )
+        )
+        process_cut_fragments = asyncio.create_task(
+            cut_fragments(queue_raw_blocks, queue_raw_fragments, argdict)
+        )
+        process_annotate_window_pre = asyncio.create_task(
+            self._process_annotate_window_pre(
+                queue_raw_fragments, queue_preprocessed_fragments, argdict
+            )
+        )
+        process_predict = asyncio.create_task(
+            self._process_predict(queue_preprocessed_fragments, queue_raw_pred, argdict)
+        )
+        process_annotate_window_post = asyncio.create_task(
+            self._process_annotate_window_post(
+                queue_raw_pred, queue_postprocessed_pred, argdict
+            )
+        )
+        process_reassemble_blocks = asyncio.create_task(
+            reassemble_blocks(queue_postprocessed_pred, queue_pred_blocks, argdict)
+        )
+        process_predictions_to_streams = asyncio.create_task(
+            self._process_predictions_to_streams(queue_pred_blocks, queue_results)
+        )
+
+        for group in groups:
+            await queue_groups.put(group)
+        await queue_groups.put(None)
+
+        await process_streams_to_arrays
+        await queue_raw_blocks.put(None)
+        await process_cut_fragments
+        await queue_raw_fragments.put(None)
+        await process_annotate_window_pre
+        await queue_preprocessed_fragments.put(None)
+        await process_predict
+        await queue_raw_pred.put(None)
+        await process_annotate_window_post
+        await queue_postprocessed_pred.put(None)
+        await process_reassemble_blocks
+        await queue_pred_blocks.put(None)
+        await process_predictions_to_streams
+
+        while True:
+            try:
+                output += queue_results.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+        return output
+
+    async def _process_streams_to_arrays(
+        self, queue_in, queue_out, strict, flexible_horizontal_components
+    ):
+        """
+        Wrapper around :py:func:`stream_to_arrays`, adding the functionality to read from and write to queues.
+
+        :param queue_in: Input queue
+        :param queue_out: Output queue
+        :param strict: See :py:func:`stream_to_arrays`
+        :param flexible_horizontal_components: See :py:func:`stream_to_arrays`
+        :return: None
+        """
+        group = await queue_in.get()
+        while group is not None:
             times, data = self.stream_to_arrays(
                 group,
                 strict=strict,
                 flexible_horizontal_components=flexible_horizontal_components,
             )
+            for t0, block in zip(times, data):
+                await queue_out.put((t0, block, group[0].stats))
+            group = await queue_in.get()
 
-            pred_times, pred_rates, preds = self._annotate_function(
-                times, data, argdict
+    async def _cut_fragments_point(self, queue_in, queue_out, argdict):
+        """
+        Cuts numpy arrays into fragments for point prediction models.
+
+        :param queue_in: Input queue
+        :param queue_out: Output queue
+        :param argdict: Dictionary of arguments
+        :return: None
+        """
+        stride = argdict.get("stride", 1)
+
+        elem = await queue_in.get()
+        while elem is not None:
+            t0, block, trace_stats = elem
+
+            starts = np.arange(0, block.shape[1] - self.in_samples + 1, stride)
+            if len(starts) == 0:
+                seisbench.logger.warning(
+                    "Parts of the input stream consist of fragments shorter than the number "
+                    "of input samples. Output might be empty."
+                )
+                elem = await queue_in.get()
+                continue
+
+            # Generate windows and preprocess
+            for s in starts:
+                window = block[:, s : s + self.in_samples]
+                # The combination of trace_stats and t0 is a unique identifier
+                # s can be used to reassemble the block, len(starts) allows to identify if the block is complete yet
+                metadata = (t0, s, len(starts), trace_stats)
+                await queue_out.put((window, metadata))
+
+            elem = await queue_in.get()
+
+    async def _reassemble_blocks_point(self, queue_in, queue_out, argdict):
+        """
+        Reassembles point predictions into numpy arrays.
+
+        :param queue_in: Input queue
+        :param queue_out: Output queue
+        :param argdict: Dictionary of arguments
+        :return: None
+        """
+        stride = argdict.get("stride", 1)
+        buffer = defaultdict(list)  # Buffers predictions until a block is complete
+
+        elem = await queue_in.get()
+        while elem is not None:
+            window, metadata = elem
+            t0, s, len_starts, trace_stats = metadata
+            key = f"{t0}_{trace_stats.network}.{trace_stats.station}.{trace_stats.station}.{trace_stats.channel[:-1]}"
+
+            buffer[key].append(elem)
+            if len(buffer[key]) == len_starts:
+                preds = [(s, window) for window, (_, s, _, _) in buffer[key]]
+                preds = sorted(preds)  # Sort by start
+                preds = [window for s, window in preds]
+                preds = np.stack(preds, axis=0)
+                if preds.ndim == 1:
+                    preds = preds.reshape(-1, 1)
+                pred_time = t0 + self.pred_sample / argdict["sampling_rate"]
+                pred_rate = argdict["sampling_rate"] / stride
+
+                await queue_out.put(((pred_rate, pred_time, preds), trace_stats))
+
+                del buffer[key]
+
+            elem = await queue_in.get()
+
+    async def _cut_fragments_array(self, queue_in, queue_out, argdict):
+        """
+        Cuts numpy arrays into fragments for array prediction models.
+
+        :param queue_in: Input queue
+        :param queue_out: Output queue
+        :param argdict: Dictionary of arguments
+        :return: None
+        """
+        overlap = argdict.get("overlap", 0)
+
+        elem = await queue_in.get()
+        while elem is not None:
+            t0, block, trace_stats = elem
+
+            starts = np.arange(
+                0, block.shape[1] - self.in_samples + 1, self.in_samples - overlap
             )
+            if len(starts) == 0:
+                seisbench.logger.warning(
+                    "Parts of the input stream consist of fragments shorter than the number "
+                    "of input samples. Output might be empty."
+                )
+                elem = await queue_in.get()
+                continue
 
-            # Write to output stream
-            output += self._predictions_to_stream(pred_rates, pred_times, preds, trace)
+            # Add one more trace to the end
+            if starts[-1] + self.in_samples < block.shape[1]:
+                starts = np.concatenate([starts, [block.shape[1] - self.in_samples]])
 
-        return output
+            # Generate windows and preprocess
+            for s in starts:
+                window = block[:, s : s + self.in_samples]
+                # The combination of trace_stats and t0 is a unique identifier
+                # s can be used to reassemble the block, len(starts) allows to identify if the block is complete yet
+                metadata = (t0, s, len(starts), trace_stats)
+                await queue_out.put((window, metadata))
 
-    def _predictions_to_stream(self, pred_rates, pred_times, preds, trace):
+            elem = await queue_in.get()
+
+    async def _reassemble_blocks_array(self, queue_in, queue_out, argdict):
+        """
+        Reassembles array predictions into numpy arrays.
+
+        :param queue_in: Input queue
+        :param queue_out: Output queue
+        :param argdict: Dictionary of arguments
+        :return: None
+        """
+        overlap = argdict.get("overlap", 0)
+        buffer = defaultdict(list)  # Buffers predictions until a block is complete
+
+        elem = await queue_in.get()
+        while elem is not None:
+            window, metadata = elem
+            t0, s, len_starts, trace_stats = metadata
+            key = f"{t0}_{trace_stats.network}.{trace_stats.station}.{trace_stats.station}.{trace_stats.channel[:-1]}"
+
+            buffer[key].append(elem)
+            if len(buffer[key]) == len_starts:
+                preds = [(s, window) for window, (_, s, _, _) in buffer[key]]
+                preds = sorted(preds)  # Sort by start
+                starts = [s for s, window in preds]
+                preds = [window for s, window in preds]
+                preds = np.stack(preds, axis=0)
+
+                # Number of prediction samples per input sample
+                prediction_sample_factor = preds[0].shape[0] / (
+                    self.pred_sample[1] - self.pred_sample[0]
+                )
+
+                # Maximum number of predictions covering a point
+                coverage = int(
+                    np.ceil(self.in_samples / (self.in_samples - overlap) + 1)
+                )
+
+                pred_length = int(
+                    np.ceil(
+                        (np.max(starts) + self.in_samples) * prediction_sample_factor
+                    )
+                )
+                pred_merge = (
+                    np.zeros_like(
+                        preds[0], shape=(pred_length, preds[0].shape[1], coverage)
+                    )
+                    * np.nan
+                )
+                for i, (pred, start) in enumerate(zip(preds, starts)):
+                    pred_start = int(start * prediction_sample_factor)
+                    pred_merge[
+                        pred_start : pred_start + pred.shape[0], :, i % coverage
+                    ] = pred
+
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        action="ignore", message="Mean of empty slice"
+                    )
+                    preds = np.nanmean(pred_merge, axis=-1)
+
+                pred_time = t0 + self.pred_sample[0] / argdict["sampling_rate"]
+                pred_rate = argdict["sampling_rate"] * prediction_sample_factor
+
+                await queue_out.put(((pred_rate, pred_time, preds), trace_stats))
+
+                del buffer[key]
+
+            elem = await queue_in.get()
+
+    async def _process_annotate_window_pre(self, queue_in, queue_out, argdict):
+        """
+        Wrapper with queue IO functionality around :py:func:`annotate_window_pre`
+
+        :param queue_in: Input queue
+        :param queue_out: Output queue
+        :param argdict: Dictionary of arguments
+        :return: None
+        """
+        elem = await queue_in.get()
+        while elem is not None:
+            window, metadata = elem
+            await queue_out.put((self.annotate_window_pre(window, argdict), metadata))
+            elem = await queue_in.get()
+
+    async def _process_predict(self, queue_in, queue_out, argdict):
+        """
+        Prediction function, gathering predictions until a batch is full and handing them to :py:func:`_predict_buffer`.
+
+        :param queue_in: Input queue
+        :param queue_out: Output queue
+        :param argdict: Dictionary of arguments
+        :return: None
+        """
+        buffer = []
+        batch_size = argdict.get("batch_size", 64)
+
+        elem = await queue_in.get()
+        while True:
+            if elem is not None:
+                buffer.append(elem)
+
+            if len(buffer) == batch_size or (elem is None and len(buffer) > 0):
+                pred = self._predict_buffer([window for window, metadata in buffer])
+                for pred_window, (_, metadata) in zip(pred, buffer):
+                    await queue_out.put((pred_window, metadata))
+                buffer = []
+
+            if elem is None:
+                break
+
+            elem = await queue_in.get()
+
+    def _predict_buffer(self, buffer):
+        """
+        Batches model inputs, runs prediction, and unbatches output
+
+        :param buffer: List of inputs to the model
+        :return: Unpacked predictions
+        """
+        fragments = np.stack(buffer)
+        fragments = np.stack(fragments, axis=0)
+        fragments = torch.tensor(fragments, device=self.device, dtype=torch.float32)
+
+        train_mode = self.training
+        try:
+            self.eval()
+            with torch.no_grad():
+                preds = self(fragments)
+        finally:
+            if train_mode:
+                self.train()
+        preds = self._recursive_torch_to_numpy(preds)
+        # Unbatch window predictions
+        reshaped_preds = [pred for pred in self._recursive_slice_pred(preds)]
+        return reshaped_preds
+
+    async def _process_annotate_window_post(self, queue_in, queue_out, argdict):
+        """
+        Wrapper with queue IO functionality around :py:func:`annotate_window_post`
+
+        :param queue_in: Input queue
+        :param queue_out: Output queue
+        :param argdict: Dictionary of arguments
+        :return: None
+        """
+        elem = await queue_in.get()
+        while elem is not None:
+            window, metadata = elem
+            await queue_out.put((self.annotate_window_post(window, argdict), metadata))
+            elem = await queue_in.get()
+
+    async def _process_predictions_to_streams(self, queue_in, queue_out):
+        """
+        Wrapper with queue IO functionality around :py:func:`_predictions_to_stream`
+
+        :param queue_in: Input queue
+        :param queue_out: Output queue
+        :return: None
+        """
+        elem = await queue_in.get()
+        while elem is not None:
+            (pred_rate, pred_time, preds), trace_stats = elem
+            await queue_out.put(
+                self._predictions_to_stream(pred_rate, pred_time, preds, trace_stats)
+            )
+            elem = await queue_in.get()
+
+    def _predictions_to_stream(self, pred_rate, pred_time, pred, trace_stats):
         """
         Converts a set of predictions to obspy streams
 
         :param pred_rates: Sampling rates of the prediction arrays
         :param pred_times: Start time of each prediction array
         :param preds: The prediction arrays, each with shape (samples, channels)
-        :param trace: A source trace to extract trace naming from
+        :param trace_stats: A source trace.stats object to extract trace naming from
         :return: Obspy stream of predictions
         """
         output = obspy.Stream()
-        for (pred_time, pred_rate, pred) in zip(pred_times, pred_rates, preds):
-            for i in range(pred.shape[1]):
-                if self.labels is None:
-                    label = i
-                else:
-                    label = self.labels[i]
 
-                trimmed_pred, f, _ = self._trim_nan(pred[:, i])
-                trimmed_start = pred_time + f / pred_rate
-                output.append(
-                    obspy.Trace(
-                        trimmed_pred,
-                        {
-                            "starttime": trimmed_start,
-                            "sampling_rate": pred_rate,
-                            "network": trace.stats.network,
-                            "station": trace.stats.station,
-                            "location": trace.stats.location,
-                            "channel": f"{self.__class__.__name__}_{label}",
-                        },
-                    )
+        # Define and store default labels
+        if self.labels is None:
+            self.labels = list(range(pred.shape[1]))
+
+        for i in range(pred.shape[1]):
+            label = self.labels[i]
+
+            trimmed_pred, f, _ = self._trim_nan(pred[:, i])
+            trimmed_start = pred_time + f / pred_rate
+            output.append(
+                obspy.Trace(
+                    trimmed_pred,
+                    {
+                        "starttime": trimmed_start,
+                        "sampling_rate": pred_rate,
+                        "network": trace_stats.network,
+                        "station": trace_stats.station,
+                        "location": trace_stats.location,
+                        "channel": f"{self.__class__.__name__}_{label}",
+                    },
                 )
+            )
 
         return output
 
@@ -497,152 +907,6 @@ class WaveformModel(SeisBenchModel, ABC):
         :return: Postprocessed predictions
         """
         return pred
-
-    def _annotate_point(self, times, data, argdict):
-        """
-        Annotation function for a point prediction model using a sliding window approach.
-        Will use the key `stride` from the `argdict` to determine the shift (in samples) between two windows.
-        Default `stride` is 1.
-        This function expects model outputs after postprocessing for each window to be scalar or 1D arrays.
-        """
-        stride = argdict.get("stride", 1)
-
-        pred_times = []
-        pred_rates = []
-        full_preds = []
-
-        # Iterate over all blocks of waveforms
-        for t0, block in zip(times, data):
-            starts = np.arange(0, block.shape[1] - self.in_samples + 1, stride)
-            if len(starts) == 0:
-                seisbench.logger.warning(
-                    "Parts of the input stream consist of fragments shorter than the number "
-                    "of input samples. Output might be empty."
-                )
-                continue
-
-            # Generate windows and preprocess
-            fragments = [
-                self.annotate_window_pre(block[:, s : s + self.in_samples], argdict)
-                for s in starts
-            ]
-            fragments = np.stack(fragments, axis=0)
-            fragments = torch.tensor(fragments, device=self.device, dtype=torch.float32)
-
-            with torch.no_grad():
-                preds = self._predict_and_postprocess_windows(argdict, fragments)
-                preds = np.stack(preds, axis=0)
-                if preds.ndim == 1:
-                    preds = preds.reshape(-1, 1)
-
-                pred_times.append(t0 + self.pred_sample / argdict["sampling_rate"])
-                pred_rates.append(argdict["sampling_rate"] / stride)
-                full_preds.append(preds)
-
-        return pred_times, pred_rates, full_preds
-
-    def _annotate_array(self, times, data, argdict):
-        """
-        Annotation function for an array prediction model using a sliding window approach.
-        Will use the key `overlap` from the `argdict` to determine the overlap (in samples) between two neighboring
-        windows. Overlapping predictions will be averaged. NaN predictions will be ignored in the averaging.
-        If after regularly spacing windows there are leftover samples at the end, one additional window with potentially
-        larger overlap is added to the end.
-        This function expects model outputs after postprocessing for each window to be 1D arrays (only sample dimension)
-        or 2D arrays (sample and channel dimension in this order) and that each prediction has the same number of output
-        samples.
-        """
-        overlap = argdict.get("overlap", 0)
-
-        pred_times = []
-        pred_rates = []
-        full_preds = []
-
-        # Iterate over all blocks of waveforms
-        for t0, block in zip(times, data):
-            starts = np.arange(
-                0, block.shape[1] - self.in_samples + 1, self.in_samples - overlap
-            )
-            if len(starts) == 0:
-                seisbench.logger.warning(
-                    "Parts of the input stream consist of fragments shorter than the number "
-                    "of input samples. Output might be empty."
-                )
-                continue
-
-            # Add one more trace to the end
-            if starts[-1] + self.in_samples < block.shape[1]:
-                starts = np.concatenate([starts, [block.shape[1] - self.in_samples]])
-
-            # Generate windows and preprocess
-            fragments = [
-                self.annotate_window_pre(block[:, s : s + self.in_samples], argdict)
-                for s in starts
-            ]
-            fragments = np.stack(fragments, axis=0)
-            fragments = torch.tensor(fragments, device=self.device, dtype=torch.float32)
-
-            with torch.no_grad():
-                preds = self._predict_and_postprocess_windows(argdict, fragments)
-
-                # Number of prediction samples per input sample
-                prediction_sample_factor = preds[0].shape[0] / (
-                    self.pred_sample[1] - self.pred_sample[0]
-                )
-
-                # Maximum number of predictions covering a point
-                coverage = int(
-                    np.ceil(self.in_samples / (self.in_samples - overlap) + 1)
-                )
-
-                pred_length = int(np.ceil(block.shape[1] * prediction_sample_factor))
-                pred_merge = (
-                    np.zeros_like(
-                        preds[0], shape=(pred_length, preds[0].shape[1], coverage)
-                    )
-                    * np.nan
-                )
-                for i, (pred, start) in enumerate(zip(preds, starts)):
-                    pred_start = int(start * prediction_sample_factor)
-                    pred_merge[
-                        pred_start : pred_start + pred.shape[0], :, i % coverage
-                    ] = pred
-
-                with warnings.catch_warnings():
-                    warnings.filterwarnings(
-                        action="ignore", message="Mean of empty slice"
-                    )
-                    preds = np.nanmean(pred_merge, axis=-1)
-
-                pred_times.append(t0 + self.pred_sample[0] / argdict["sampling_rate"])
-                pred_rates.append(argdict["sampling_rate"] * prediction_sample_factor)
-                full_preds.append(preds)
-
-        return pred_times, pred_rates, full_preds
-
-    def _predict_and_postprocess_windows(self, argdict, fragments):
-        train_mode = self.training
-        preds = []
-        try:
-            self.eval()
-            batch_size = argdict.get("batch_size", 64)
-            p0 = 0
-            # Iterate over batches
-            while p0 < fragments.shape[0]:
-                preds.append(self(fragments[p0 : p0 + batch_size]))
-                p0 += batch_size
-        finally:
-            if train_mode:
-                self.train()
-        preds = self._recursive_torch_to_numpy(preds)
-        # Separate and postprocess window predictions
-        reshaped_preds = []
-        for pred_batch in preds:
-            reshaped_preds += [
-                self.annotate_window_post(pred, argdict)
-                for pred in self._recursive_slice_pred(pred_batch)
-            ]
-        return reshaped_preds
 
     @staticmethod
     def _trim_nan(x):
@@ -753,7 +1017,8 @@ class WaveformModel(SeisBenchModel, ABC):
         :param sampling_rate: Sampling rate (sps) to resample to
         :type sampling_rate: float
         """
-        for trace in stream:
+        del_list = []
+        for i, trace in enumerate(stream):
             if trace.stats.sampling_rate == sampling_rate:
                 continue
             if trace.stats.sampling_rate % sampling_rate == 0:
@@ -762,7 +1027,16 @@ class WaveformModel(SeisBenchModel, ABC):
                     int(trace.stats.sampling_rate / sampling_rate), no_filter=True
                 )
             else:
-                trace.resample(sampling_rate, no_filter=True)
+                # This exception handling is required because very short traces in obspy can cause a crash during resampling.
+                # For details see: https://github.com/obspy/obspy/pull/2885
+                # TODO: Remove the try except block and bump obspy version requirement to a version without this issue.
+                try:
+                    trace.resample(sampling_rate, no_filter=True)
+                except ZeroDivisionError:
+                    del_list.append(i)
+
+        for i in del_list:
+            del stream[i]
 
     @staticmethod
     def groups_stream_by_instrument(stream):
