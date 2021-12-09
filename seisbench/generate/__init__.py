@@ -10,6 +10,7 @@ from .augmentation import (
     AddGap,
     RandomArrayRotation,
     GaussianNoise,
+    Copy,
 )
 from .labeling import (
     SupervisedLabeller,

@@ -15,6 +15,7 @@ from seisbench.generate import (
     StandardLabeller,
     DetectionLabeller,
     StepLabeller,
+    Copy,
 )
 from seisbench.data import DummyDataset
 
@@ -1573,3 +1574,29 @@ def test_standard_labeller_no_labels_in_metadata():
     labeller(state_dict)
 
     assert state_dict["y"][0] == 2  # Labeled as noise
+
+
+def test_copy():
+
+    state_dict = {"X": (5 * np.random.rand(3, 1000), None)}
+
+    # Default params copy
+    copy_default = Copy(key=("X", "Xc"))
+    copy_default(state_dict)
+    assert "Xc" in state_dict.keys()
+
+    # Write to new key copy
+    copy_new_key = Copy(key=("X", "abc"))
+    copy_new_key(state_dict)
+    assert "abc" in state_dict.keys()
+
+    assert set(["Xc", "X", "abc"]) == set(state_dict.keys())
+
+    # Wrong key selection
+    copy_wrong_key = Copy(key=("z", "Xc"))
+    with pytest.raises(KeyError):
+        copy_wrong_key(state_dict)
+
+    # Check deepcopy ok
+    state_dict["X"][0][0, 500] = 2
+    assert state_dict["Xc"][0][0, 500] != 2

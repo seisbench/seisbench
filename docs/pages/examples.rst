@@ -51,6 +51,19 @@ Generator pipelines
 Use the in-built generator functionality in SeisBench to enhance your ML processing workflows.
 
 
+.. _applied_stream_picking:
+
+Deploy ML pickers
+-------------------
+.. raw:: html
+
+    <embed>
+        <a href="https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01d_deploy_model_on_streams_example.ipynb">
+            <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+        </a>
+    </embed>
+
+Rapidly deploy ML models integrated in SeisBench to seismic streams. 
 
 Training ML models on seismic data
 ----------------------------------
