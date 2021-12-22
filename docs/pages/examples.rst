@@ -58,7 +58,7 @@ Deploy ML pickers
 .. raw:: html
 
     <embed>
-        <a href="https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01d_deploy_model_on_streams_example.ipynb">
+        <a href="https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02a_deploy_model_on_streams_example.ipynb">
             <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
         </a>
     </embed>
@@ -70,7 +70,7 @@ Training ML models on seismic data
 .. raw:: html
 
     <embed>
-        <a href="https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02_training_phasenet.ipynb">
+        <a href="https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03a_training_phasenet.ipynb">
             <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
         </a>
     </embed>
