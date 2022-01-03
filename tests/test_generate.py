@@ -59,9 +59,9 @@ def test_normalize():
     state_dict = copy.deepcopy(base_state_dict)
     norm(state_dict)
     # Detrending was applied
-    assert (
-        state_dict["X"][0] == scipy.signal.detrend(base_state_dict["X"][0], axis=-1)
-    ).all()
+    assert np.allclose(
+        state_dict["X"][0], scipy.signal.detrend(base_state_dict["X"][0], axis=-1)
+    )
     # No std normalization has been applied. Data generation ensures std >> 1 is fulfilled.
     assert not np.isclose(np.std(state_dict["X"][0], axis=-1), 1).all()
 
