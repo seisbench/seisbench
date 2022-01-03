@@ -65,6 +65,19 @@ Deploy ML pickers
 
 Rapidly deploy ML models integrated in SeisBench to seismic streams. 
 
+Using DeepDenoiser
+__________________________________
+.. raw:: html
+
+    <embed>
+        <a href="https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02b_deep_denoiser.ipynb">
+            <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+        </a>
+    </embed>
+
+Denoising seismic waveform streams with DeepDenoiser in SeisBench.
+
+
 Training ML models on seismic data
 ----------------------------------
 .. raw:: html
