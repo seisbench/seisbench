@@ -260,12 +260,16 @@ class WaveformModel(SeisBenchModel, ABC):
                         range. Note that the number of output samples and input samples within the given range are
                         not required to agree.
     :type pred_sample: int, tuple
-    :param labels: Labels for the different predictions in the output, e.g., Noise, P, S
-    :type labels: list or string
+    :param labels: Labels for the different predictions in the output, e.g., Noise, P, S. If a function is passed,
+                   it will be called for every label generation and be provided with the stats of the trace that was
+                   annotated.
+    :type labels: list or string or callable
     :param filter_args: Arguments to be passed to :py:func:`obspy.filter` in :py:func:`annotate_stream_pre`
     :type filter_args: tuple
     :param filter_kwargs: Keyword arguments to be passed to :py:func:`obspy.filter` in :py:func:`annotate_stream_pre`
     :type filter_kwargs: dict
+    :param grouping: Level of grouping for annotating streams. Supports "instrument" and "channel".
+    :type grouping: str
     :param kwargs: Kwargs are passed to the superclass
     """
 
@@ -280,6 +284,7 @@ class WaveformModel(SeisBenchModel, ABC):
         labels=None,
         filter_args=None,
         filter_kwargs=None,
+        grouping="instrument",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -299,6 +304,15 @@ class WaveformModel(SeisBenchModel, ABC):
         self.pred_sample = pred_sample
         self.filter_args = filter_args
         self.filter_kwargs = filter_kwargs
+        self._grouping = grouping
+
+        if grouping == "channel":
+            if component_order is not None:
+                seisbench.logger.warning(
+                    "Grouping is 'channel' but component_order is given. "
+                    "component_order will be ignored, as every channel is treated separately."
+                )
+            self._component_order = None
 
         # Validate pred sample
         if output_type == "point" and not isinstance(pred_sample, (int, float)):
@@ -410,7 +424,7 @@ class WaveformModel(SeisBenchModel, ABC):
         self.annotate_stream_validate(stream, argdict)
 
         # Group stream
-        groups = self.groups_stream_by_instrument(stream)
+        groups = self.group_stream(stream)
 
         # Sampling rate of the data. Equal to self.sampling_rate is this is not None
         argdict["sampling_rate"] = groups[0][0].stats.sampling_rate
@@ -597,6 +611,10 @@ class WaveformModel(SeisBenchModel, ABC):
         while elem is not None:
             t0, block, trace_stats = elem
 
+            if self._grouping == "channel":
+                # Add fake channel dimension
+                block = block.reshape((-1,) + block.shape)
+
             starts = np.arange(
                 0, block.shape[1] - self.in_samples + 1, self.in_samples - overlap
             )
@@ -615,6 +633,9 @@ class WaveformModel(SeisBenchModel, ABC):
             # Generate windows and preprocess
             for s in starts:
                 window = block[:, s : s + self.in_samples]
+                if self._grouping == "channel":
+                    # Remove fake channel dimension
+                    window = window[0]
                 # The combination of trace_stats and t0 is a unique identifier
                 # s can be used to reassemble the block, len(starts) allows to identify if the block is complete yet
                 metadata = (t0, s, len(starts), trace_stats)
@@ -702,7 +723,12 @@ class WaveformModel(SeisBenchModel, ABC):
         elem = await queue_in.get()
         while elem is not None:
             window, metadata = elem
-            await queue_out.put((self.annotate_window_pre(window, argdict), metadata))
+            preprocessed = self.annotate_window_pre(window, argdict)
+            if isinstance(preprocessed, tuple):  # Contains piggyback information
+                assert len(preprocessed) == 2
+                await queue_out.put(preprocessed + (metadata,))
+            else:  # No piggyback information, add none as piggyback
+                await queue_out.put((preprocessed, None, metadata))
             elem = await queue_in.get()
 
     async def _process_predict(self, queue_in, queue_out, argdict):
@@ -723,9 +749,9 @@ class WaveformModel(SeisBenchModel, ABC):
                 buffer.append(elem)
 
             if len(buffer) == batch_size or (elem is None and len(buffer) > 0):
-                pred = self._predict_buffer([window for window, metadata in buffer])
-                for pred_window, (_, metadata) in zip(pred, buffer):
-                    await queue_out.put((pred_window, metadata))
+                pred = self._predict_buffer([window for window, _, _ in buffer])
+                for pred_window, (_, piggyback, metadata) in zip(pred, buffer):
+                    await queue_out.put((pred_window, piggyback, metadata))
                 buffer = []
 
             if elem is None:
@@ -768,8 +794,13 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         elem = await queue_in.get()
         while elem is not None:
-            window, metadata = elem
-            await queue_out.put((self.annotate_window_post(window, argdict), metadata))
+            window, piggyback, metadata = elem
+            await queue_out.put(
+                (
+                    self.annotate_window_post(window, piggyback, argdict=argdict),
+                    metadata,
+                )
+            )
             elem = await queue_in.get()
 
     async def _process_predictions_to_streams(self, queue_in, queue_out):
@@ -805,7 +836,10 @@ class WaveformModel(SeisBenchModel, ABC):
             self.labels = list(range(pred.shape[1]))
 
         for i in range(pred.shape[1]):
-            label = self.labels[i]
+            if callable(self.labels):
+                label = self.labels(trace_stats)
+            else:
+                label = self.labels[i]
 
             trimmed_pred, f, _ = self._trim_nan(pred[:, i])
             trimmed_start = pred_time + f / pred_rate
@@ -887,16 +921,19 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         Runs preprocessing on window level for the annotate function, e.g., normalization.
         By default returns the input window.
+        Can alternatively return a tuple of the input window and piggyback information that is returned at
+        :py:func:`annotate_window_post`.
+        This can for example be used to transfer normalization information.
         Inheriting classes should overwrite this function if necessary.
 
         :param window: Input window
         :type window: numpy.array
         :param argdict: Dictionary of arguments
-        :return: Preprocessed window
+        :return: Preprocessed window and optionally piggyback information that is passed to annotate window post
         """
         return window
 
-    def annotate_window_post(self, pred, argdict):
+    def annotate_window_post(self, pred, piggyback=None, argdict=None):
         """
         Runs postprocessing on the predictions of a window for the annotate function, e.g., reformatting them.
         By default returns the original prediction.
@@ -904,6 +941,7 @@ class WaveformModel(SeisBenchModel, ABC):
 
         :param pred: Predictions for one window. The data type depends on the model.
         :param argdict: Dictionary of arguments
+        :param piggyback: Piggyback information, by default None.
         :return: Postprocessed predictions
         """
         return pred
@@ -1038,10 +1076,9 @@ class WaveformModel(SeisBenchModel, ABC):
         for i in del_list:
             del stream[i]
 
-    @staticmethod
-    def groups_stream_by_instrument(stream):
+    def group_stream(self, stream, by="instrument"):
         """
-        Perform instrument-based grouping of input stream.
+        Perform grouping of input stream, by instrument or channel.
 
         :param stream: Input stream
         :type stream: obspy.core.Stream
@@ -1050,7 +1087,12 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         groups = defaultdict(list)
         for trace in stream:
-            groups[trace.id[:-1]].append(trace)
+            if self._grouping == "instrument":
+                groups[trace.id[:-1]].append(trace)
+            elif self._grouping == "channel":
+                groups[trace.id].append(trace)
+            else:
+                raise ValueError(f"Unknown grouping parameter '{by}'.")
 
         return list(groups.values())
 
@@ -1120,7 +1162,12 @@ class WaveformModel(SeisBenchModel, ABC):
 
         sampling_rate = stream[0].stats.sampling_rate
 
-        component_order = self._component_order
+        if self._grouping == "channel":
+            # Use the provided component
+            component_order = stream[0].id[-1]
+        else:
+            component_order = self._component_order
+
         comp_dict = {c: i for i, c in enumerate(component_order)}
 
         matches = [
@@ -1249,6 +1296,10 @@ class WaveformModel(SeisBenchModel, ABC):
                     if t1 < trace.stats.endtime:
                         start_sorted.put((t1, seqnum, trace.slice(starttime=t1)))
                         seqnum += 1
+
+        if self._grouping == "channel":
+            # Remove channel dimension
+            output_data = [data[0] for data in output_data]
 
         return output_times, output_data
 

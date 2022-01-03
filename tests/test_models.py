@@ -90,7 +90,7 @@ class DummyWaveformModel(seisbench.models.WaveformModel):
         return "cpu"
 
 
-def test_stream_to_arrays():
+def test_stream_to_arrays_instrument():
     t0 = UTCDateTime(0)
     stats_z = {
         "network": "SB",
@@ -291,6 +291,38 @@ def test_stream_to_arrays():
         assert (data[i][2] == trace_e.data[0]).all()
 
 
+def test_stream_to_arrays_channel():
+    t0 = UTCDateTime(0)
+    stats_z = {
+        "network": "SB",
+        "station": "TEST",
+        "channel": "HHZ",
+        "sampling_rate": 100,
+        "starttime": t0,
+    }
+    dummy = DummyWaveformModel(grouping="channel")
+
+    trace_z = obspy.Trace(np.ones(1000), stats_z)
+
+    # Simple
+    stream = obspy.Stream([trace_z])
+    times, data = dummy.stream_to_arrays(
+        stream,
+    )
+    assert len(times) == len(data) == 1
+    assert times[0] == t0
+    assert data[0].shape == (len(trace_z.data),)
+    assert (data[0] == trace_z.data).all()
+
+    # Separate fragments
+    stream = obspy.Stream([trace_z.slice(t0, t0 + 1), trace_z.slice(t0 + 2, t0 + 3)])
+    times, data = dummy.stream_to_arrays(stream, strict=True)
+    assert len(times) == len(data) == 2
+    for i in range(2):
+        assert times[i] == t0 + 2 * i
+        assert data[i].shape == (101,)
+
+
 def test_flexible_horizontal_components(caplog):
     t0 = UTCDateTime(0)
     stats_z = {
@@ -390,10 +422,22 @@ def test_group_stream_by_instrument():
     )
 
     dummy = DummyWaveformModel(component_order="ZNE")
-    groups = dummy.groups_stream_by_instrument(stream)
+
+    dummy._grouping = "instrument"
+    groups = dummy.group_stream(stream)
 
     assert len(groups) == 4
     assert list(sorted([len(x) for x in groups])) == [1, 1, 1, 3]
+
+    dummy._grouping = "channel"
+    groups = dummy.group_stream(stream)
+
+    assert len(groups) == 6
+    assert list(sorted([len(x) for x in groups])) == [1, 1, 1, 1, 1, 1]
+
+    dummy._grouping = "invalid"
+    with pytest.raises(ValueError):
+        dummy.group_stream(stream)
 
 
 def test_recursive_torch_to_numpy():
@@ -947,3 +991,7 @@ def test_short_traces(caplog):
         ann = model.annotate(stream)
     assert "Output might be empty." in caplog.text
     assert len(ann) == 0
+
+
+def test_deep_denoiser():
+    seisbench.models.DeepDenoiser()

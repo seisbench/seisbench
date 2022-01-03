@@ -98,7 +98,7 @@ class BasicPhaseAE(WaveformModel):
         window = window / std
         return window
 
-    def annotate_window_post(self, pred, argdict):
+    def annotate_window_post(self, pred, piggyback=None, argdict=None):
         # Transpose predictions to correct shape
         pred[:, 130] = np.nan
         pred[:, -130:] = np.nan

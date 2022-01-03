@@ -212,7 +212,7 @@ class EQTransformer(WaveformModel):
 
         return tuple(outputs)
 
-    def annotate_window_post(self, pred, argdict):
+    def annotate_window_post(self, pred, piggyback=None, argdict=None):
         # Combine predictions in one array
         prenan, postnan = argdict.get("blinding", (0, 0))
         pred = np.stack(pred, axis=-1)
