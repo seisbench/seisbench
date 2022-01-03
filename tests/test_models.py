@@ -972,6 +972,17 @@ def test_annotate_basicphaseae():
     model.classify(stream)  # Ensures classify succeeds even though labels are unknown
 
 
+def test_annotate_deepdenoiser():
+    # Tests that the annotate/classify functions run without crashes and annotate produces an output
+    model = seisbench.models.DeepDenoiser(
+        sampling_rate=400
+    )  # Higher sampling rate ensures trace is long enough
+    stream = obspy.read()
+
+    annotations = model.annotate(stream)
+    assert len(annotations) > 0
+
+
 def test_short_traces(caplog):
     # Test that on both point and array models short traces do not cause an infinite loop, but a warning
     stream = obspy.read()
