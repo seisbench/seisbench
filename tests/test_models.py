@@ -1006,3 +1006,14 @@ def test_short_traces(caplog):
 
 def test_deep_denoiser():
     seisbench.models.DeepDenoiser()
+
+
+def test_annotate_deep_denoiser():
+    stream = obspy.read()
+
+    model = seisbench.models.DeepDenoiser()
+    annotations = model.annotate(stream)
+
+    assert len(annotations) == 3
+    for i in range(3):
+        assert annotations[i].data.shape == (3000,)
