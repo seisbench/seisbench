@@ -100,7 +100,7 @@ class PhaseNet(WaveformModel):
         window = window / std
         return window
 
-    def annotate_window_post(self, pred, argdict):
+    def annotate_window_post(self, pred, piggyback=None, argdict=None):
         # Transpose predictions to correct shape
         return pred.T
 
