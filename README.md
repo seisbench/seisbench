@@ -63,10 +63,12 @@ Check out the [contribution guidelines](https://github.com/seisbench/seisbench/b
 
 ## Known issues
 
-- Some institutions and internet providers are blocking access to our data and model repository, as it is running on a non-standard port.
+- Some institutions and internet providers are blocking access to our data and model repository, as it is running on a non-standard port (2443).
   This usually manifests in timeouts when trying to download data or model weights.
+  To verify the issue, try accessing [https://dcache-demo.desy.de:2443/](https://dcache-demo.desy.de:2443/) directly from the same machine.
   We are working on a permanent solution for the issue.
   In the meantime, if you are having trouble, try downloading through another network/VPN if possible.
+  You can also contact your network administrator to allow access to port 2443 on our server.
   Otherwise, reach out to us, and we will work on finding a solution.
   
 - Pytorch currently does not support python 3.10, making it impossible to install seisbench in python 3.10.

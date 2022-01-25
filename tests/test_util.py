@@ -3,8 +3,10 @@ from seisbench.util.trace_ops import waveform_id_to_network_station_location
 
 from pathlib import Path
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import os
+import requests
+import logging
 
 
 def test_callback_if_uncached(tmp_path: Path):
@@ -75,3 +77,43 @@ def test_waveform_id_to_network_station_location():
     assert waveform_id_to_network_station_location("NET.STA.LOC.CHA") == "NET.STA.LOC"
     assert waveform_id_to_network_station_location("NET.STA..CHA") == "NET.STA."
     assert waveform_id_to_network_station_location("invalid") == "invalid"
+
+
+def test_precheck_url(caplog):
+    # Timeout
+    with patch("requests.head") as head_mock:
+
+        def side_effect_raise(*args, **kwargs):
+            raise requests.Timeout()
+
+        head_mock.side_effect = side_effect_raise
+
+        with caplog.at_level(logging.WARNING):
+            seisbench.util.precheck_url(seisbench.remote_root, timeout=5)
+        assert "timeout" in caplog.text
+
+    caplog.clear()
+
+    # ConnectionError
+    with patch("requests.head") as head_mock:
+
+        def side_effect_raise(*args, **kwargs):
+            raise requests.ConnectionError()
+
+        head_mock.side_effect = side_effect_raise
+
+        with caplog.at_level(logging.WARNING):
+            seisbench.util.precheck_url(seisbench.remote_root, timeout=5)
+        assert "connection error" in caplog.text
+
+    caplog.clear()
+
+    # 400+ response code
+    with patch("requests.head") as head_mock:
+        response_mock = MagicMock()
+        response_mock.status_code = 400
+        head_mock.return_value = response_mock
+
+        with caplog.at_level(logging.WARNING):
+            seisbench.util.precheck_url(seisbench.remote_root, timeout=5)
+        assert "status code 400" in caplog.text
