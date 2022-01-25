@@ -9,7 +9,9 @@ import os
 from lxml import etree
 
 
-def download_http(url, target, progress_bar=True, desc="Downloading"):
+def download_http(
+    url, target, progress_bar=True, desc="Downloading", precheck_timeout=3
+):
     """
     Downloads file from http/https source. Raises a ValueError for non-200 status codes.
 
@@ -21,8 +23,12 @@ def download_http(url, target, progress_bar=True, desc="Downloading"):
     :type progress_bar: bool
     :param desc: Description for the progress bar
     :type desc: str
+    :param precheck_timeout: Timeout passed to :py:func:`precheck_url`
+    :type precheck_timeout: int
     """
     seisbench.logger.info(f"Downloading file from {url} to {target}")
+
+    precheck_url(url, timeout=precheck_timeout)
 
     req = requests.get(url, stream=True, headers={"User-Agent": "SeisBench"})
 
@@ -51,6 +57,42 @@ def download_http(url, target, progress_bar=True, desc="Downloading"):
 
     if progress_bar:
         pbar.close()
+
+
+def precheck_url(url, timeout):
+    """
+    Checks whether the url is reachable and give a 200 or 300 HTTP response code.
+    If a timeout occurs or a >=400 response code is returned, the precheck issues a warning.
+
+    :param url: URL to check
+    :param timeout: Timeout in seconds
+    """
+    if timeout <= 0:
+        # Skip check
+        return
+
+    error_description = None
+
+    try:
+        req = requests.head(url, timeout=timeout, headers={"User-Agent": "SeisBench"})
+
+        if req.status_code >= 400:  # Assumes all 200 and 300 codes are acceptable
+            error_description = f"status code {req.status_code}"
+
+    except requests.Timeout:
+        error_description = "a timeout"
+
+    except requests.ConnectionError:
+        error_description = "a connection error"
+
+    if error_description is not None:
+        seisbench.logger.warning(
+            f"The download precheck failed with {error_description}. "
+            f"This is not an error itself, but might indicate a subsequent error. "
+            f"If you encounter an error, this might be caused by the firewall setup of your "
+            f"network. "
+            f"Please check https://github.com/seisbench/seisbench#known-issues for details."
+        )
 
 
 def download_ftp(
@@ -104,14 +146,18 @@ def download_ftp(
             pbar.close()
 
 
-def ls_webdav(url):
+def ls_webdav(url, precheck_timeout=3):
     """
     Lists the files in a WebDAV directory
 
     :param url: URL of the directory to list
     :type url: str
+    :param precheck_timeout: Timeout passed to :py:func:`precheck_url`
+    :type precheck_timeout: int
     :return: List of files
     """
+    precheck_url(url, timeout=precheck_timeout)
+
     xml_request = b'<?xml version="1.0"?><a:propfind xmlns:a="DAV:"><a:prop><a:resourcetype/></a:prop></a:propfind>'
 
     req = requests.Request("PROPFIND", url, headers={"Depth": "1"}, data=xml_request)
