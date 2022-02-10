@@ -1765,7 +1765,7 @@ class BenchmarkDataset(WaveformDataset, ABC):
                 remote_chunks_path = os.path.join(cls._remote_path(), "chunks")
                 try:
                     seisbench.util.download_http(
-                        remote_chunks_path, file, progress_bar=False
+                        remote_chunks_path, file, progress_bar=False, precheck_timeout=0
                     )
                 except ValueError:
                     seisbench.logger.info("Found no remote chunk file. Progressing.")
