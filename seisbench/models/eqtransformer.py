@@ -216,8 +216,10 @@ class EQTransformer(WaveformModel):
         # Combine predictions in one array
         prenan, postnan = argdict.get("blinding", (0, 0))
         pred = np.stack(pred, axis=-1)
-        pred[:prenan] = np.nan
-        pred[-postnan:] = np.nan
+        if prenan > 0:
+            pred[:prenan] = np.nan
+        if postnan > 0:
+            pred[-postnan:] = np.nan
         return pred
 
     def annotate_window_pre(self, window, argdict):

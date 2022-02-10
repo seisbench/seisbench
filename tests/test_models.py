@@ -1017,3 +1017,33 @@ def test_annotate_deep_denoiser():
     assert len(annotations) == 3
     for i in range(3):
         assert annotations[i].data.shape == (3000,)
+
+
+def test_eqtransformer_annotate_window_post():
+    model = seisbench.models.EQTransformer()
+
+    pred = 3 * [np.ones(1000)]
+
+    # Default: No blinding
+    blinded = model.annotate_window_post(pred, argdict={})
+    assert (blinded == 1).all()
+
+    # No blinding
+    blinded = model.annotate_window_post(pred, argdict={"blinding": (0, 0)})
+    assert (blinded == 1).all()
+
+    # Front blinding
+    blinded = model.annotate_window_post(pred, argdict={"blinding": (100, 0)})
+    assert np.isnan(blinded[:100]).all()
+    assert (blinded[100:] == 1).all()
+
+    # End blinding
+    blinded = model.annotate_window_post(pred, argdict={"blinding": (0, 100)})
+    assert (blinded[:900] == 1).all()
+    assert np.isnan(blinded[900:]).all()
+
+    # Two sided blinding
+    blinded = model.annotate_window_post(pred, argdict={"blinding": (100, 100)})
+    assert np.isnan(blinded[:100]).all()
+    assert (blinded[100:900] == 1).all()
+    assert np.isnan(blinded[900:]).all()
