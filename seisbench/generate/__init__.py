@@ -16,6 +16,7 @@ from .labeling import (
     SupervisedLabeller,
     PickLabeller,
     ProbabilisticLabeller,
+    TriangularLabeller,
     DetectionLabeller,
     StandardLabeller,
     ProbabilisticPointLabeller,
