@@ -11,7 +11,6 @@ from seisbench.generate import (
     SteeredWindow,
     ChangeDtype,
     ProbabilisticLabeller,
-    TriangularLabeller,
     ProbabilisticPointLabeller,
     StandardLabeller,
     DetectionLabeller,
@@ -578,147 +577,76 @@ def test_change_dtype():
 
 
 def test_probabilistic_pick_labeller():
-    np.random.seed(42)
-    state_dict = {
-        "X": (
-            10 * np.random.rand(3, 1000),
-            {
-                "trace_p_arrival_sample": 500,
-                "trace_s_arrival_sample": 700,
-                "trace_g_arrival_sample": np.nan,
-            },
-        )
-    }
+    for form in ['gaussian', 'triangular']:
+        np.random.seed(42)
+        state_dict = {
+            "X": (
+                10 * np.random.rand(3, 1000),
+                {
+                    "trace_p_arrival_sample": 500,
+                    "trace_s_arrival_sample": 700,
+                    "trace_g_arrival_sample": np.nan,
+                },
+            )
+        }
 
-    # Assumes standard config['dimension_order'] = 'NCW'
-    # Test label construction for single window, handling NaN values
-    labeller = ProbabilisticLabeller(dim=0)
-    labeller(state_dict)
-
-    assert state_dict["y"][0].shape == (4, 1000)
-    assert np.argmax(state_dict["y"][0], axis=1)[1] == 499
-    assert np.argmax(state_dict["y"][0], axis=1)[2] == 699
-    assert (
-        state_dict["y"][0][0] == 0
-    ).all()  # Check that NaN picks are interpreted as not present
-
-    # Fails when multi_class specified and channel dim sum > 1
-    with pytest.raises(ValueError):
-        labeller = ProbabilisticLabeller(dim=1)
+        # Assumes standard config['dimension_order'] = 'NCW'
+        # Test label construction for single window, handling NaN values
+        labeller = ProbabilisticLabeller(dim=0, form = form)
         labeller(state_dict)
 
-    # Test label construction for multiple windows
-    state_dict = {
-        "X": (
-            10 * np.random.rand(5, 3, 1000),
-            {
-                "trace_p_arrival_sample": np.array([500] * 5),
-                "trace_s_arrival_sample": np.array([700] * 5),
-                "trace_g_arrival_sample": np.array([500, 500, 200, np.nan, 500]),
-            },
-        )
-    }
-    labeller = ProbabilisticLabeller(dim=1)
-    labeller(state_dict)
+        assert state_dict["y"][0].shape == (4, 1000)
+        assert np.argmax(state_dict["y"][0], axis=1)[1] == 499
+        assert np.argmax(state_dict["y"][0], axis=1)[2] == 699
+        assert (
+            state_dict["y"][0][0] == 0
+        ).all()  # Check that NaN picks are interpreted as not present
 
-    assert state_dict["y"][0].shape == (5, 4, 1000)
-    assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[1] == 499
-    assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[2] == 699
-    assert np.argmax(state_dict["y"][0][2, :, :], axis=-1)[0] == 199  # Entry with pick
-    assert (state_dict["y"][0][3, 0, :] == 0).all()
+        # Fails when multi_class specified and channel dim sum > 1
+        with pytest.raises(ValueError):
+            labeller = ProbabilisticLabeller(dim=1, form = form)
+            labeller(state_dict)
 
-    # Fails if single sample provided for multiple windows
-    state_dict = {
-        "X": (
-            10 * np.random.rand(5, 3, 1000),
-            {
-                "trace_p_arrival_sample": 500,
-                "trace_s_arrival_sample": 700,
-            },
-        )
-    }
-    with pytest.raises(ValueError):
-        labeller = ProbabilisticLabeller(dim=1)
+        # Test label construction for multiple windows
+        state_dict = {
+            "X": (
+                10 * np.random.rand(5, 3, 1000),
+                {
+                    "trace_p_arrival_sample": np.array([500] * 5),
+                    "trace_s_arrival_sample": np.array([700] * 5),
+                    "trace_g_arrival_sample": np.array([500, 500, 200, np.nan, 500]),
+                },
+            )
+        }
+        labeller = ProbabilisticLabeller(dim=1, form = form)
         labeller(state_dict)
 
-    state_dict["X"] = np.random.rand(10, 5, 3, 1000)
+        assert state_dict["y"][0].shape == (5, 4, 1000)
+        assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[1] == 499
+        assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[2] == 699
+        assert np.argmax(state_dict["y"][0][2, :, :], axis=-1)[0] == 199  # Entry with pick
+        assert (state_dict["y"][0][3, 0, :] == 0).all()
 
-    # Fails if non-compatible input data dimensions are provided
-    with pytest.raises(ValueError):
-        labeller = ProbabilisticLabeller(dim=1)
-        labeller(state_dict)
+        # Fails if single sample provided for multiple windows
+        state_dict = {
+            "X": (
+                10 * np.random.rand(5, 3, 1000),
+                {
+                    "trace_p_arrival_sample": 500,
+                    "trace_s_arrival_sample": 700,
+                },
+            )
+        }
+        with pytest.raises(ValueError):
+            labeller = ProbabilisticLabeller(dim=1, form = form)
+            labeller(state_dict)
 
+        state_dict["X"] = np.random.rand(10, 5, 3, 1000)
 
-def test_triangular_pick_labeller():
-    np.random.seed(42)
-    state_dict = {
-        "X": (
-            10 * np.random.rand(3, 1000),
-            {
-                "trace_p_arrival_sample": 500,
-                "trace_s_arrival_sample": 700,
-                "trace_g_arrival_sample": np.nan,
-            },
-        )
-    }
-
-    # Assumes standard config['dimension_order'] = 'NCW'
-    # Test label construction for single window, handling NaN values
-    labeller = TriangularLabeller(dim=0)
-    labeller(state_dict)
-
-    assert state_dict["y"][0].shape == (4, 1000)
-    assert np.argmax(state_dict["y"][0], axis=1)[1] == 499
-    assert np.argmax(state_dict["y"][0], axis=1)[2] == 699
-    assert (
-        state_dict["y"][0][0] == 0
-    ).all()  # Check that NaN picks are interpreted as not present
-
-    # Fails when multi_class specified and channel dim sum > 1
-    with pytest.raises(ValueError):
-        labeller = TriangularLabeller(dim=1)
-        labeller(state_dict)
-
-    # Test label construction for multiple windows
-    state_dict = {
-        "X": (
-            10 * np.random.rand(5, 3, 1000),
-            {
-                "trace_p_arrival_sample": np.array([500] * 5),
-                "trace_s_arrival_sample": np.array([700] * 5),
-                "trace_g_arrival_sample": np.array([500, 500, 200, np.nan, 500]),
-            },
-        )
-    }
-    labeller = TriangularLabeller(dim=1)
-    labeller(state_dict)
-
-    assert state_dict["y"][0].shape == (5, 4, 1000)
-    assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[1] == 499
-    assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[2] == 699
-    assert np.argmax(state_dict["y"][0][2, :, :], axis=-1)[0] == 199  # Entry with pick
-    assert (state_dict["y"][0][3, 0, :] == 0).all()
-
-    # Fails if single sample provided for multiple windows
-    state_dict = {
-        "X": (
-            10 * np.random.rand(5, 3, 1000),
-            {
-                "trace_p_arrival_sample": 500,
-                "trace_s_arrival_sample": 700,
-            },
-        )
-    }
-    with pytest.raises(ValueError):
-        labeller = TriangularLabeller(dim=1)
-        labeller(state_dict)
-
-    state_dict["X"] = np.random.rand(10, 5, 3, 1000)
-
-    # Fails if non-compatible input data dimensions are provided
-    with pytest.raises(ValueError):
-        labeller = TriangularLabeller(dim=1)
-        labeller(state_dict)
+        # Fails if non-compatible input data dimensions are provided
+        with pytest.raises(ValueError):
+            labeller = ProbabilisticLabeller(dim=1, form = form)
+            labeller(state_dict)
 
 
 def test_step_labeller():

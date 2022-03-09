@@ -175,21 +175,34 @@ class PickLabeller(SupervisedLabeller, ABC):
 class ProbabilisticLabeller(PickLabeller):
     r"""
     Create supervised labels from picks. The picks in example are represented
-    probabilistically with a Gaussian
+    probabilistically with forms of either:
+    - gaussian:
         \[
             X \sim \mathcal{N}(\mu,\,\sigma^{2})\,.
         \]
         and the noise class is automatically created as \[ \max \left(0, 1 - \sum_{n=1}^{c} x_{j} \right) \].
 
+    - triangular:
+                / \
+               /   \
+              /     \
+             /       \
+            /         \
+        ___/           \___
+           ----- | -----
+             2*sigma (sigma = half width)
+             
     All picks with NaN sample are treated as not present.
 
-    :param sigma: Variance of Gaussian representation in samples, defaults to 10
+    :param sigma: Variance of Gaussian (gaussian), half-width of triangular ('triangular')
+                    label representation in samples, defaults to 10.
     :type sigma: int, optional
     """
 
-    def __init__(self, sigma=10, **kwargs):
+    def __init__(self, form="gaussian", sigma=10, **kwargs):
         self.label_method = "probabilistic"
         self.sigma = sigma
+        self.form = form
         kwargs["dim"] = kwargs.get("dim", 1)
         super().__init__(label_type="multi_class", **kwargs)
 
@@ -228,9 +241,18 @@ class ProbabilisticLabeller(PickLabeller):
             if isinstance(metadata[label_column], (int, np.integer, float)):
                 # Handle single window case
                 onset = metadata[label_column]
-                label_val = gaussian_pick(
-                    onset=onset, length=X.shape[width_dim], sigma=self.sigma
-                )
+                if self.form == "gaussian":
+                    label_val = gaussian_pick(
+                        onset=onset, length=X.shape[width_dim], sigma=self.sigma
+                    )
+                elif self.form == "triangular":
+                    label_val = triangular_pick(
+                        onset=onset, length=X.shape[width_dim], sigma=self.sigma
+                    )
+                else:
+                    raise NotImplementedError(
+                        "Laber of form %s not implemented." % self.form
+                    )
                 label_val[
                     np.isnan(label_val)
                 ] = 0  # Set non-present pick probabilities to 0
@@ -239,9 +261,18 @@ class ProbabilisticLabeller(PickLabeller):
                 # Handle multi-window case
                 for j in range(X.shape[sample_dim]):
                     onset = metadata[label_column][j]
-                    label_val = gaussian_pick(
-                        onset=onset, length=X.shape[width_dim], sigma=self.sigma
-                    )
+                    if self.form == "gaussian":
+                        label_val = gaussian_pick(
+                            onset=onset, length=X.shape[width_dim], sigma=self.sigma
+                        )
+                    elif self.form == "triangular":
+                        label_val = triangular_pick(
+                            onset=onset, length=X.shape[width_dim], sigma=self.sigma
+                        )
+                    else:
+                        raise NotImplementedError(
+                            "Laber of form %s not implemented." % self.form
+                        )
                     label_val[
                         np.isnan(label_val)
                     ] = 0  # Set non-present pick probabilities to 0
@@ -269,111 +300,6 @@ class ProbabilisticLabeller(PickLabeller):
 
     def __str__(self):
         return f"ProbabilisticLabeller (label_type={self.label_type}, dim={self.dim})"
-
-
-class TriangularLabeller(PickLabeller):
-    r"""
-    Create supervised labels from picks. The picks in example are represented
-    probabilistically with a triangular label. Class transferred from ProbabilisticLabeller
-            / \
-           /   \
-          /     \
-         /       \
-        /         \
-    ___/           \___
-       ----- | -----
-        2*half_width
-
-    All picks with NaN sample are treated as not present.
-
-    :param half_width: The half width of the triangular distribution in samples
-    :type half_width: int, optional
-    """
-
-    def __init__(self, half_width=10, **kwargs):
-        self.label_method = "probabilistic"
-        self.half_width = half_width
-        kwargs["dim"] = kwargs.get("dim", 1)
-        super().__init__(label_type="multi_class", **kwargs)
-
-    def label(self, X, metadata):
-        if not self.label_columns:
-            label_columns = self._auto_identify_picklabels(metadata)
-            (
-                self.label_columns,
-                self.labels,
-                self.label_ids,
-            ) = self._colums_to_dict_and_labels(label_columns)
-
-        sample_dim, channel_dim, width_dim = self._get_dimension_order_from_config(
-            config, self.ndim
-        )
-
-        if self.ndim == 2:
-            y = np.zeros(shape=(len(self.labels), X.shape[width_dim]))
-        elif self.ndim == 3:
-            y = np.zeros(
-                shape=(
-                    X.shape[sample_dim],
-                    len(self.labels),
-                    X.shape[width_dim],
-                )
-            )
-
-        # Construct pick labels
-        for label_column, label in self.label_columns.items():
-            i = self.label_ids[label]
-
-            if label_column not in metadata:
-                # Unknown pick
-                continue
-
-            if isinstance(metadata[label_column], (int, np.integer, float)):
-                # Handle single window case
-                onset = metadata[label_column]
-                label_val = triangular_pick(
-                    onset=onset, length=X.shape[width_dim], half_width=self.half_width
-                )
-                label_val[
-                    np.isnan(label_val)
-                ] = 0  # Set non-present pick probabilities to 0
-                y[i, :] = np.maximum(y[i, :], label_val)
-            else:
-                # Handle multi-window case
-                for j in range(X.shape[sample_dim]):
-                    onset = metadata[label_column][j]
-                    label_val = triangular_pick(
-                        onset=onset,
-                        length=X.shape[width_dim],
-                        half_width=self.half_width,
-                    )
-                    label_val[
-                        np.isnan(label_val)
-                    ] = 0  # Set non-present pick probabilities to 0
-                    y[j, i, :] = np.maximum(y[j, i, :], label_val)
-
-        y /= np.maximum(
-            1, np.nansum(y, axis=channel_dim, keepdims=True)
-        )  # Ensure total probability mass is at most 1
-
-        # Construct noise label
-        if self.ndim == 2:
-            y[self.label_ids["Noise"], :] = 1 - np.nansum(y, axis=channel_dim)
-            y = self._swap_dimension_order(
-                y,
-                current_dim="CW",
-                expected_dim=config["dimension_order"].replace("N", ""),
-            )
-        elif self.ndim == 3:
-            y[:, self.label_ids["Noise"], :] = 1 - np.nansum(y, axis=channel_dim)
-            y = self._swap_dimension_order(
-                y, current_dim="NCW", expected_dim=config["dimension_order"]
-            )
-
-        return y
-
-    def __str__(self):
-        return f"TriangularLabeller (label_type={self.label_type}, dim={self.dim})"
 
 
 class StepLabeller(PickLabeller):
@@ -820,7 +746,7 @@ def gaussian_pick(onset, length, sigma):
     return np.exp(-np.power(x - onset, 2.0) / (2 * np.power(sigma, 2.0)))
 
 
-def triangular_pick(onset, length, half_width):
+def triangular_pick(onset, length, sigma):
     r"""
     Create triangular representation of pick in time series.
     Transffered from gaussian_pick
@@ -829,15 +755,15 @@ def triangular_pick(onset, length, half_width):
     :type onset: float
     :param length: The length of the trace time series in samples
     :type length: int
-    :param half_width: The half width of the triangular distribution in samples
-    :type half_width: float
+    :param sigma: The half width of the triangular distribution in samples
+    :type sigma: float
     :return y: 1D time series with triangular representation of pick
     :rtype: np.ndarray
     """
     x = np.linspace(1, length, length)
-    y1 = -(x - onset) / half_width + 1
+    y1 = -(x - onset) / sigma + 1
     y1 *= (y1 >= 0) & (y1 <= 1)
-    y2 = (x - onset) / half_width + 1
+    y2 = (x - onset) / sigma + 1
     y2 *= (y2 >= 0) & (y2 <= 1)
     y = y1 + y2
     return y
