@@ -343,7 +343,9 @@ class TriangularLabeller(PickLabeller):
                 for j in range(X.shape[sample_dim]):
                     onset = metadata[label_column][j]
                     label_val = triangular_pick(
-                        onset=onset, length=X.shape[width_dim], half_width=self.half_width
+                        onset=onset,
+                        length=X.shape[width_dim],
+                        half_width=self.half_width,
                     )
                     label_val[
                         np.isnan(label_val)
@@ -833,9 +835,9 @@ def triangular_pick(onset, length, half_width):
     :rtype: np.ndarray
     """
     x = np.linspace(1, length, length)
-    y1 = -(x - onset)/half_width + 1
-    y1 *= (y1>=0) & (y1 <=1)
-    y2 = (x - onset)/half_width + 1
-    y2 *= (y2>=0) & (y2 <=1)
+    y1 = -(x - onset) / half_width + 1
+    y1 *= (y1 >= 0) & (y1 <= 1)
+    y2 = (x - onset) / half_width + 1
+    y2 *= (y2 >= 0) & (y2 <= 1)
     y = y1 + y2
     return y

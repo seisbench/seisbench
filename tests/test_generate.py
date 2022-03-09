@@ -648,6 +648,7 @@ def test_probabilistic_pick_labeller():
         labeller = ProbabilisticLabeller(dim=1)
         labeller(state_dict)
 
+
 def test_triangular_pick_labeller():
     np.random.seed(42)
     state_dict = {
