@@ -175,7 +175,7 @@ class PickLabeller(SupervisedLabeller, ABC):
 class ProbabilisticLabeller(PickLabeller):
     r"""
     Create supervised labels from picks. The picks in example are represented
-    probabilistically with forms of either:
+    probabilistically with forms of:
     - gaussian:
         \[
             X \sim \mathcal{N}(\mu,\,\sigma^{2})\,.
@@ -191,11 +191,20 @@ class ProbabilisticLabeller(PickLabeller):
         ___/           \___
            ----- | -----
              2*sigma (sigma = half width)
-             
+
+    - box:
+            ------------
+            |          |
+            |          |
+            |          |
+    ---------          --------
+            ---- | ----
+             2*sigma (sigma = half width)
+
     All picks with NaN sample are treated as not present.
 
     :param sigma: Variance of Gaussian (gaussian), half-width of triangular ('triangular')
-                    label representation in samples, defaults to 10.
+                or box function ('box') label representation in samples, defaults to 10.
     :type sigma: int, optional
     """
 
@@ -249,6 +258,10 @@ class ProbabilisticLabeller(PickLabeller):
                     label_val = triangular_pick(
                         onset=onset, length=X.shape[width_dim], sigma=self.sigma
                     )
+                elif self.form == "box":
+                    label_val = box_pick(
+                        onset=onset, length=X.shape[width_dim], sigma=self.sigma
+                    )
                 else:
                     raise NotImplementedError(
                         "Laber of form %s not implemented." % self.form
@@ -267,6 +280,10 @@ class ProbabilisticLabeller(PickLabeller):
                         )
                     elif self.form == "triangular":
                         label_val = triangular_pick(
+                            onset=onset, length=X.shape[width_dim], sigma=self.sigma
+                        )
+                    elif self.form == "box":
+                        label_val = box_pick(
                             onset=onset, length=X.shape[width_dim], sigma=self.sigma
                         )
                     else:
@@ -749,7 +766,7 @@ def gaussian_pick(onset, length, sigma):
 def triangular_pick(onset, length, sigma):
     r"""
     Create triangular representation of pick in time series.
-    Transffered from gaussian_pick
+    Transferred from gaussian_pick
 
     :param onset: The nearest sample to pick onset
     :type onset: float
@@ -764,6 +781,24 @@ def triangular_pick(onset, length, sigma):
     y1 = -(x - onset) / sigma + 1
     y1 *= (y1 >= 0) & (y1 <= 1)
     y2 = (x - onset) / sigma + 1
-    y2 *= (y2 >= 0) & (y2 <= 1)
+    y2 *= (y2 >= 0) & (y2 < 1)
     y = y1 + y2
     return y
+
+
+def box_pick(onset, length, sigma):
+    r"""
+    Create box representation of pick in time series.
+    Transferred from gaussian_pick
+
+    :param onset: The nearest sample to pick onset
+    :type onset: float
+    :param length: The length of the trace time series in samples
+    :type length: int
+    :param sigma: The half width of the box distribution in samples
+    :type sigma: float
+    :return y: 1D time series with box representation of pick
+    :rtype: np.ndarray
+    """
+    x = np.linspace(1, length, length)
+    return ((x - onset - 1) <= sigma) & (-(x - onset) < sigma)
