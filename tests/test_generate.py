@@ -1,3 +1,6 @@
+import sys
+
+sys.path.append("/home/niyiyu/Research/MachineLearning/seisbench/")
 import seisbench.generate
 import seisbench.generate.labeling
 from seisbench.generate import (
@@ -577,7 +580,7 @@ def test_change_dtype():
 
 
 def test_probabilistic_pick_labeller():
-    for form in ['gaussian', 'triangular']:
+    for form in ["gaussian", "triangular", "box"]:
         np.random.seed(42)
         state_dict = {
             "X": (
@@ -592,19 +595,23 @@ def test_probabilistic_pick_labeller():
 
         # Assumes standard config['dimension_order'] = 'NCW'
         # Test label construction for single window, handling NaN values
-        labeller = ProbabilisticLabeller(dim=0, form = form)
+        labeller = ProbabilisticLabeller(dim=0, form=form)
         labeller(state_dict)
 
         assert state_dict["y"][0].shape == (4, 1000)
-        assert np.argmax(state_dict["y"][0], axis=1)[1] == 499
-        assert np.argmax(state_dict["y"][0], axis=1)[2] == 699
+        if form == "box":
+            assert np.array_equiv(state_dict["y"][0][1][490:510], np.ones(20))
+            assert np.array_equiv(state_dict["y"][0][2][690:710], np.ones(20))
+        else:
+            assert np.argmax(state_dict["y"][0], axis=1)[1] == 499
+            assert np.argmax(state_dict["y"][0], axis=1)[2] == 699
         assert (
             state_dict["y"][0][0] == 0
         ).all()  # Check that NaN picks are interpreted as not present
 
         # Fails when multi_class specified and channel dim sum > 1
         with pytest.raises(ValueError):
-            labeller = ProbabilisticLabeller(dim=1, form = form)
+            labeller = ProbabilisticLabeller(dim=1, form=form)
             labeller(state_dict)
 
         # Test label construction for multiple windows
@@ -618,13 +625,22 @@ def test_probabilistic_pick_labeller():
                 },
             )
         }
-        labeller = ProbabilisticLabeller(dim=1, form = form)
+        labeller = ProbabilisticLabeller(dim=1, form=form)
         labeller(state_dict)
 
         assert state_dict["y"][0].shape == (5, 4, 1000)
-        assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[1] == 499
-        assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[2] == 699
-        assert np.argmax(state_dict["y"][0][2, :, :], axis=-1)[0] == 199  # Entry with pick
+        if form == "box":
+            assert np.array_equiv(state_dict["y"][0][3, 1, 490:510], np.ones(20))
+            assert np.array_equiv(state_dict["y"][0][3, 2, 690:710], np.ones(20))
+            assert np.array_equiv(
+                state_dict["y"][0][2, 0, 190:210], np.ones(20)
+            )  # Entry with pick
+        else:
+            assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[1] == 499
+            assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[2] == 699
+            assert (
+                np.argmax(state_dict["y"][0][2, :, :], axis=-1)[0] == 199
+            )  # Entry with pick
         assert (state_dict["y"][0][3, 0, :] == 0).all()
 
         # Fails if single sample provided for multiple windows
@@ -638,14 +654,14 @@ def test_probabilistic_pick_labeller():
             )
         }
         with pytest.raises(ValueError):
-            labeller = ProbabilisticLabeller(dim=1, form = form)
+            labeller = ProbabilisticLabeller(dim=1, form=form)
             labeller(state_dict)
 
         state_dict["X"] = np.random.rand(10, 5, 3, 1000)
 
         # Fails if non-compatible input data dimensions are provided
         with pytest.raises(ValueError):
-            labeller = ProbabilisticLabeller(dim=1, form = form)
+            labeller = ProbabilisticLabeller(dim=1, form=form)
             labeller(state_dict)
 
 

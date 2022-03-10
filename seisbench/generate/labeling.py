@@ -212,6 +212,11 @@ class ProbabilisticLabeller(PickLabeller):
         self.label_method = "probabilistic"
         self.sigma = sigma
         self.form = form
+        self._labelform_fn_mapper = {
+            "gaussian": gaussian_pick,
+            "triangular": triangular_pick,
+            "box": box_pick,
+        }
         kwargs["dim"] = kwargs.get("dim", 1)
         super().__init__(label_type="multi_class", **kwargs)
 
@@ -250,22 +255,13 @@ class ProbabilisticLabeller(PickLabeller):
             if isinstance(metadata[label_column], (int, np.integer, float)):
                 # Handle single window case
                 onset = metadata[label_column]
-                if self.form == "gaussian":
-                    label_val = gaussian_pick(
-                        onset=onset, length=X.shape[width_dim], sigma=self.sigma
-                    )
-                elif self.form == "triangular":
-                    label_val = triangular_pick(
-                        onset=onset, length=X.shape[width_dim], sigma=self.sigma
-                    )
-                elif self.form == "box":
-                    label_val = box_pick(
+                if self.form in self._labelform_fn_mapper.keys():
+                    label_val = self._labelform_fn_mapper[self.form](
                         onset=onset, length=X.shape[width_dim], sigma=self.sigma
                     )
                 else:
-                    raise NotImplementedError(
-                        "Laber of form %s not implemented." % self.form
-                    )
+                    raise ValueError(f"Labler of form {self.form} is not implemented.")
+
                 label_val[
                     np.isnan(label_val)
                 ] = 0  # Set non-present pick probabilities to 0
@@ -274,22 +270,15 @@ class ProbabilisticLabeller(PickLabeller):
                 # Handle multi-window case
                 for j in range(X.shape[sample_dim]):
                     onset = metadata[label_column][j]
-                    if self.form == "gaussian":
-                        label_val = gaussian_pick(
-                            onset=onset, length=X.shape[width_dim], sigma=self.sigma
-                        )
-                    elif self.form == "triangular":
-                        label_val = triangular_pick(
-                            onset=onset, length=X.shape[width_dim], sigma=self.sigma
-                        )
-                    elif self.form == "box":
-                        label_val = box_pick(
+                    if self.form in self._labelform_fn_mapper.keys():
+                        label_val = self._labelform_fn_mapper[self.form](
                             onset=onset, length=X.shape[width_dim], sigma=self.sigma
                         )
                     else:
-                        raise NotImplementedError(
-                            "Laber of form %s not implemented." % self.form
+                        raise ValueError(
+                            f"Labler of form {self.form} is not implemented."
                         )
+
                     label_val[
                         np.isnan(label_val)
                     ] = 0  # Set non-present pick probabilities to 0
@@ -766,7 +755,6 @@ def gaussian_pick(onset, length, sigma):
 def triangular_pick(onset, length, sigma):
     r"""
     Create triangular representation of pick in time series.
-    Transferred from gaussian_pick
 
     :param onset: The nearest sample to pick onset
     :type onset: float
@@ -789,7 +777,6 @@ def triangular_pick(onset, length, sigma):
 def box_pick(onset, length, sigma):
     r"""
     Create box representation of pick in time series.
-    Transferred from gaussian_pick
 
     :param onset: The nearest sample to pick onset
     :type onset: float
