@@ -175,14 +175,14 @@ class PickLabeller(SupervisedLabeller, ABC):
 class ProbabilisticLabeller(PickLabeller):
     r"""
     Create supervised labels from picks. The picks in example are represented
-    probabilistically with forms of:
+    probabilistically with shapes of:
     - gaussian:
         \[
             X \sim \mathcal{N}(\mu,\,\sigma^{2})\,.
         \]
         and the noise class is automatically created as \[ \max \left(0, 1 - \sum_{n=1}^{c} x_{j} \right) \].
 
-    - triangular:
+    - triangle:
                 / \
                /   \
               /     \
@@ -203,18 +203,18 @@ class ProbabilisticLabeller(PickLabeller):
 
     All picks with NaN sample are treated as not present.
 
-    :param sigma: Variance of Gaussian (gaussian), half-width of triangular ('triangular')
+    :param sigma: Variance of Gaussian (gaussian), half-width of triangle ('triangle')
                 or box function ('box') label representation in samples, defaults to 10.
     :type sigma: int, optional
     """
 
-    def __init__(self, form="gaussian", sigma=10, **kwargs):
+    def __init__(self, shape="gaussian", sigma=10, **kwargs):
         self.label_method = "probabilistic"
         self.sigma = sigma
-        self.form = form
-        self._labelform_fn_mapper = {
+        self.shape = shape
+        self._labelshape_fn_mapper = {
             "gaussian": gaussian_pick,
-            "triangular": triangular_pick,
+            "triangle": triangle_pick,
             "box": box_pick,
         }
         kwargs["dim"] = kwargs.get("dim", 1)
@@ -255,12 +255,14 @@ class ProbabilisticLabeller(PickLabeller):
             if isinstance(metadata[label_column], (int, np.integer, float)):
                 # Handle single window case
                 onset = metadata[label_column]
-                if self.form in self._labelform_fn_mapper.keys():
-                    label_val = self._labelform_fn_mapper[self.form](
+                if self.shape in self._labelshape_fn_mapper.keys():
+                    label_val = self._labelshape_fn_mapper[self.shape](
                         onset=onset, length=X.shape[width_dim], sigma=self.sigma
                     )
                 else:
-                    raise ValueError(f"Labler of form {self.form} is not implemented.")
+                    raise ValueError(
+                        f"Labeller of shape {self.shape} is not implemented."
+                    )
 
                 label_val[
                     np.isnan(label_val)
@@ -270,13 +272,13 @@ class ProbabilisticLabeller(PickLabeller):
                 # Handle multi-window case
                 for j in range(X.shape[sample_dim]):
                     onset = metadata[label_column][j]
-                    if self.form in self._labelform_fn_mapper.keys():
-                        label_val = self._labelform_fn_mapper[self.form](
+                    if self.shape in self._labelshape_fn_mapper.keys():
+                        label_val = self._labelshape_fn_mapper[self.shape](
                             onset=onset, length=X.shape[width_dim], sigma=self.sigma
                         )
                     else:
                         raise ValueError(
-                            f"Labler of form {self.form} is not implemented."
+                            f"Labeller of shape {self.shape} is not implemented."
                         )
 
                     label_val[
@@ -752,17 +754,17 @@ def gaussian_pick(onset, length, sigma):
     return np.exp(-np.power(x - onset, 2.0) / (2 * np.power(sigma, 2.0)))
 
 
-def triangular_pick(onset, length, sigma):
+def triangle_pick(onset, length, sigma):
     r"""
-    Create triangular representation of pick in time series.
+    Create triangle representation of pick in time series.
 
     :param onset: The nearest sample to pick onset
     :type onset: float
     :param length: The length of the trace time series in samples
     :type length: int
-    :param sigma: The half width of the triangular distribution in samples
+    :param sigma: The half width of the triangle distribution in samples
     :type sigma: float
-    :return y: 1D time series with triangular representation of pick
+    :return y: 1D time series with triangle representation of pick
     :rtype: np.ndarray
     """
     x = np.linspace(1, length, length)
