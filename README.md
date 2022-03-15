@@ -70,9 +70,6 @@ Check out the [contribution guidelines](https://github.com/seisbench/seisbench/b
   In the meantime, if you are having trouble, try downloading through another network/VPN if possible.
   You can also contact your network administrator to allow access to port 2443 on our server.
   Otherwise, reach out to us, and we will work on finding a solution.
-  
-- Pytorch currently does not support python 3.10, making it impossible to install seisbench in python 3.10.
-  We recommend using python 3.7, 3.8 or 3.9, until pytorch is available for python 3.10.
 
 ## References
 Reference publications for SeisBench:
