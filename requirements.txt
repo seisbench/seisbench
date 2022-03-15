@@ -1,8 +1,8 @@
-numpy==1.21
+numpy>=1.21
 pandas>=1.1
 h5py>=3.1
 obspy>=1.2
 tqdm>=4.52
 torch>=1.7.0
 scipy>=1.5
-nest_asyncio==1.5.1
+nest_asyncio>=1.5.3
