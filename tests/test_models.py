@@ -10,6 +10,7 @@ from unittest.mock import patch
 import logging
 import pytest
 import asyncio
+import os
 
 
 def test_weights_docstring():
@@ -1047,3 +1048,81 @@ def test_eqtransformer_annotate_window_post():
     assert np.isnan(blinded[:100]).all()
     assert (blinded[100:900] == 1).all()
     assert np.isnan(blinded[900:]).all()
+
+
+def test_model_local_saving(tmp_path):
+    # Test saving picking model
+    model = seisbench.models.GPD()
+    model.save(tmp_path / "gpd")
+
+    assert (tmp_path / "gpd").exists()
+    assert (tmp_path / "gpd").is_dir()
+    assert sorted(os.listdir(tmp_path / "gpd")) == sorted(["gpd.json", "gpd.pt"])
+
+    # Test saving picking / detection model
+    model = seisbench.models.EQTransformer()
+    model.save(tmp_path / "eqtransformer")
+
+    assert (tmp_path / "eqtransformer").exists()
+    assert (tmp_path / "eqtransformer").is_dir()
+    assert sorted(os.listdir(tmp_path / "eqtransformer")) == sorted(
+        ["eqtransformer.json", "eqtransformer.pt"]
+    )
+
+    # Test detection model
+    model = seisbench.models.CRED()
+    model.save(tmp_path / "cred")
+
+    assert (tmp_path / "cred").exists()
+    assert (tmp_path / "cred").is_dir()
+    assert sorted(os.listdir(tmp_path / "cred")) == sorted(["cred.json", "cred.pt"])
+
+    # Test saving denoising model
+    model = seisbench.models.DeepDenoiser()
+    model.save(tmp_path / "deepdenoiser")
+
+    assert (tmp_path / "deepdenoiser").exists()
+    assert (tmp_path / "deepdenoiser").is_dir()
+    assert sorted(os.listdir(tmp_path / "deepdenoiser")) == sorted(
+        ["deepdenoiser.json", "deepdenoiser.pt"]
+    )
+
+
+def test_model_local_loading(tmp_path):
+    stream = obspy.read()
+
+    # Test loading picking model
+    model_orig = seisbench.models.GPD()
+    model_orig.save(tmp_path / "gpd")
+    model_load = seisbench.models.GPD.load(tmp_path / "gpd")
+    pred_orig = model_orig.annotate(stream, sampling_rate=400)
+    pred_load = model_load.annotate(stream, sampling_rate=400)
+
+    assert pred_orig == pred_load
+
+    # Test loading picking / detection model
+    model_orig = seisbench.models.EQTransformer()
+    model_orig.save(tmp_path / "eqtransformer")
+    model_load = seisbench.models.EQTransformer.load(tmp_path / "eqtransformer")
+    pred_orig = model_orig.annotate(stream, sampling_rate=400)
+    pred_load = model_load.annotate(stream, sampling_rate=400)
+
+    assert pred_orig == pred_load
+
+    # Test loading detection model
+    model_orig = seisbench.models.CRED()
+    model_orig.save(tmp_path / "cred")
+    model_load = seisbench.models.CRED.load(tmp_path / "cred")
+    pred_orig = model_orig.annotate(stream, sampling_rate=400)
+    pred_load = model_load.annotate(stream, sampling_rate=400)
+
+    assert pred_orig == pred_load
+
+    # Test loading saving denoising model
+    model_orig = seisbench.models.DeepDenoiser()
+    model_orig.save(tmp_path / "deepdenoiser")
+    model_load = seisbench.models.DeepDenoiser.load(tmp_path / "deepdenoiser")
+    pred_orig = model_orig.annotate(stream, sampling_rate=400)
+    pred_load = model_load.annotate(stream, sampling_rate=400)
+
+    assert pred_orig == pred_load

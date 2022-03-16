@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from collections import defaultdict
 from queue import PriorityQueue
+import inspect
 import json
 import math
 import numpy as np
@@ -192,6 +193,108 @@ class SeisBenchModel(nn.Module):
 
         return weights
 
+    def save(self, path=None, name=None):
+        """
+        Save a SeisBench model locally.
+
+        SeisBench models are stored inside the directory 'path'. SeisBench models are saved in 2 parts,
+        the model configuration is stored in JSON format [path]/[name.json], and the underlying model weights
+        in PyTorch format [path]/[name].pt.
+
+        The model config should contain the following information, which is automatically created from
+        the model instance state:
+            - "docstring": A string documenting the pipeline. Usually also contains information on the author.
+            - "model_args": Argument dictionary passed to the init function of the pipeline.
+            - "seisbench_requirement": The minimal version of SeisBench required to use the weights file.
+            - "default_args": Default args for the :py:func:`annotate`/:py:func:`classify` functions.
+
+        :param path: Define the output model directory. If none is provided, the path will create a directory
+                     to store the the model in the current working directory, the name of this directory will
+                     be the class name in lowercase, defaults to None
+        :type path: pathlib.Path or None, optional
+        :param name: Define the name of the model. If none is provided, the model name will be automatically
+                     inferred as the class name in lowercase, defaults to None
+        """
+        if not name:
+            name = self.name.lower()
+
+        if not path:
+            path = Path(f"{name}")
+        path.mkdir(parents=True, exist_ok=True)
+
+        model_args = {
+            k: v
+            for k, v in self._argspec.items()
+            if k not in ("__class__", "self", "default_args") and not callable(v)
+        }
+        model_metadata = {
+            "docstring": self.__class__.__doc__,
+            "model_args": model_args,
+            "seisbench-requirements": seisbench.__version__,
+            "default_args": self._argspec["default_args"],
+        }
+        # Save weights
+        torch.save(self.state_dict(), path / f"{name}.pt")
+        # Save model metadata
+        with open(path / f"{name}.json", "w") as json_fp:
+            json.dump(model_metadata, json_fp)
+
+        seisbench.logger.info(f"Saved {name} model at {path.absolute}")
+
+    @classmethod
+    def load(cls, path):
+        """
+        Load a SeisBench model from local path.
+
+        For more information on the SeisBench model format see py:func:`save`.
+
+        :param path: Define the path to the SeisBench model directory.
+        :type path: pathlib.Path
+        """
+        model_files = os.listdir(path)
+
+        if sum([file.endswith("pt") for file in model_files]) > 1:
+            seisbench.logger.warning(
+                f"Strange format of SeisBench model directory detected at {path}. "
+                f"There is more than one .pt file. This will lead to unforseen "
+                f"behaviour during model loading."
+            )
+        if sum([file.endswith("json") for file in model_files]) > 1:
+            seisbench.logger.warning(
+                f"Strange format of SeisBench model directory detected at {path}. "
+                f"There is more than one .json file. This will lead to unforseen "
+                f"behaviour during model loading."
+            )
+
+        for file in model_files:
+            if file.endswith("json"):
+                with open(path / file, "r") as json_file:
+                    weights_metadata = json.load(json_file)
+            elif file.endswith("pt"):
+                model_weights = torch.load(f"{path / file}")
+
+        def _get_args(obj):
+            signature = inspect.signature(obj)
+            args = {k: v._default for k, v in signature.parameters.items()}
+            if "kwargs" in args.keys():
+                del args["kwargs"]
+            return args
+
+        model_args = weights_metadata.get("model_args", {})
+
+        # Overwrite default class args from config model args
+        cls_args = _get_args(cls)
+        cls_args.update({k: model_args[k] for k in cls_args if k in model_args})
+
+        model = cls(**cls_args)
+
+        model._weights_metadata = weights_metadata
+        model._parse_metadata()
+
+        model.load_state_dict(model_weights)
+
+        return model
+
     def _parse_metadata(self):
         # Load docstring
         self._weights_docstring = self._weights_metadata.get("docstring", "")
@@ -339,6 +442,7 @@ class WaveformModel(SeisBenchModel, ABC):
         self._annotate_functions = self._annotate_function_mapping.get(
             output_type, None
         )
+        self._argspec = locals()
 
     def __str__(self):
         return f"Component order:\t{self.component_order}\n{super().__str__()}"
