@@ -193,54 +193,6 @@ class SeisBenchModel(nn.Module):
 
         return weights
 
-    def save(self, path=None, name=None):
-        """
-        Save a SeisBench model locally.
-
-        SeisBench models are stored inside the directory 'path'. SeisBench models are saved in 2 parts,
-        the model configuration is stored in JSON format [path]/[name.json], and the underlying model weights
-        in PyTorch format [path]/[name].pt.
-
-        The model config should contain the following information, which is automatically created from
-        the model instance state:
-            - "docstring": A string documenting the pipeline. Usually also contains information on the author.
-            - "model_args": Argument dictionary passed to the init function of the pipeline.
-            - "seisbench_requirement": The minimal version of SeisBench required to use the weights file.
-            - "default_args": Default args for the :py:func:`annotate`/:py:func:`classify` functions.
-
-        :param path: Define the output model directory. If none is provided, the path will create a directory
-                     to store the the model in the current working directory, the name of this directory will
-                     be the class name in lowercase, defaults to None
-        :type path: pathlib.Path or None, optional
-        :param name: Define the name of the model. If none is provided, the model name will be automatically
-                     inferred as the class name in lowercase, defaults to None
-        """
-        if not name:
-            name = self.name.lower()
-
-        if not path:
-            path = Path(f"{name}")
-        path.mkdir(parents=True, exist_ok=True)
-
-        model_args = {
-            k: v
-            for k, v in self._argspec.items()
-            if k not in ("__class__", "self", "default_args") and not callable(v)
-        }
-        model_metadata = {
-            "docstring": self.__class__.__doc__,
-            "model_args": model_args,
-            "seisbench-requirements": seisbench.__version__,
-            "default_args": self._argspec["default_args"],
-        }
-        # Save weights
-        torch.save(self.state_dict(), path / f"{name}.pt")
-        # Save model metadata
-        with open(path / f"{name}.json", "w") as json_fp:
-            json.dump(model_metadata, json_fp)
-
-        seisbench.logger.info(f"Saved {name} model at {path.absolute}")
-
     @classmethod
     def load(cls, path):
         """
@@ -250,6 +202,8 @@ class SeisBenchModel(nn.Module):
 
         :param path: Define the path to the SeisBench model directory.
         :type path: pathlib.Path
+        :return: Model instance
+        :rtype: SeisBenchModel
         """
         model_files = os.listdir(path)
 
@@ -294,6 +248,57 @@ class SeisBenchModel(nn.Module):
         model.load_state_dict(model_weights)
 
         return model
+
+    def save(self, path=None, name=None):
+        """
+        Save a SeisBench model locally.
+
+        SeisBench models are stored inside the directory 'path'. SeisBench models are saved in 2 parts,
+        the model configuration is stored in JSON format [path]/[name.json], and the underlying model weights
+        in PyTorch format [path]/[name].pt.
+
+        The model config should contain the following information, which is automatically created from
+        the model instance state:
+            - "docstring": A string documenting the pipeline. Usually also contains information on the author.
+            - "model_args": Argument dictionary passed to the init function of the pipeline.
+            - "seisbench_requirement": The minimal version of SeisBench required to use the weights file.
+            - "default_args": Default args for the :py:func:`annotate`/:py:func:`classify` functions.
+
+        Non-serlisable arguments (e.g. functions) cannot be saved to JSON, so are not converted.
+
+        :param path: Define the output model directory. If none is provided, the path will create a directory
+                     to store the the model in the current working directory, the name of this directory will
+                     be the class name in lowercase, defaults to None
+        :type path: pathlib.Path or None, optional
+        :param name: Define the name of the model. If none is provided, the model name will be automatically
+                     inferred as the class name in lowercase, defaults to None
+        :type name: str, optional
+        """
+        if not name:
+            name = self.name.lower()
+
+        if not path:
+            path = Path(f"{name}")
+        path.mkdir(parents=True, exist_ok=True)
+
+        model_args = {
+            k: v
+            for k, v in self._argspec.items()
+            if k not in ("__class__", "self", "default_args") and not callable(v)
+        }
+        model_metadata = {
+            "docstring": self.__class__.__doc__,
+            "model_args": model_args,
+            "seisbench-requirements": seisbench.__version__,
+            "default_args": self._argspec["default_args"],
+        }
+        # Save weights
+        torch.save(self.state_dict(), path / f"{name}.pt")
+        # Save model metadata
+        with open(path / f"{name}.json", "w") as json_fp:
+            json.dump(model_metadata, json_fp)
+
+        seisbench.logger.info(f"Saved {name} model at {path.absolute}")
 
     def _parse_metadata(self):
         # Load docstring
