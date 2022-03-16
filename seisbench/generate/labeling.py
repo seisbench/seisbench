@@ -176,32 +176,35 @@ class ProbabilisticLabeller(PickLabeller):
     r"""
     Create supervised labels from picks. The picks in example are represented
     probabilistically with shapes of:
-    - gaussian:
-        \[
-            X \sim \mathcal{N}(\mu,\,\sigma^{2})\,.
-        \]
-        and the noise class is automatically created as \[ \max \left(0, 1 - \sum_{n=1}^{c} x_{j} \right) \].
 
-    - triangle:
-                / \
-               /   \
-              /     \
-             /       \
-            /         \
-        ___/           \___
-           ----- | -----
-             2*sigma (sigma = half width)
+    *  gaussian:
 
-    - box:
-            ------------
-            |          |
-            |          |
-            |          |
-    ---------          --------
-            ---- | ----
-             2*sigma (sigma = half width)
+        .. math::
+           X \sim \mathcal{N}(\mu,\,\sigma^{2})
+
+    *  triangle::
+
+           #         / \
+           #        /   \
+           #       /     \
+           #      /       \
+           #     /         \
+           # ___/           \___
+           #    ----- | -----
+           #      2*sigma (sigma = half width)
+
+    *  box::
+
+           #        ------------
+           #        |          |
+           #        |          |
+           #        |          |
+           #---------          --------
+           #        ---- | ----
+           #         2*sigma (sigma = half width)
 
     All picks with NaN sample are treated as not present.
+    The noise class is automatically created as :math:`\max \left(0, 1 - \sum_{n=1}^{c} y_{j} \right)`.
 
     :param sigma: Variance of Gaussian (gaussian), half-width of triangle ('triangle')
                 or box function ('box') label representation in samples, defaults to 10.

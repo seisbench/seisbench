@@ -39,16 +39,18 @@ class WaveformDataset:
     :type sampling_rate: int, optional
     :param cache: Defines the behaviour of the waveform cache. Provides three options:
 
-                  - "full": When a trace is queried, the full block containing the trace is loaded into the cache
-                            and stored in memory. This causes the highest memory consumption, but also best
-                            performance when using large parts of the dataset.
-                  - "trace": When a trace is queried, only the trace itself is loaded and stored in memory.
-                             This is particularly useful when only a subset of traces is queried,
-                             but these are queried multiple times. In this case the performance of
-                             this strategy might outperform "full".
-                  - None: When a trace is queried, it is always loaded from disk.
-                          This mode leads to low memory consumption but high IO load.
-                          It is most likely not usable for model training.
+                  *  "full": When a trace is queried, the full block containing the trace is loaded into the cache
+                     and stored in memory. This causes the highest memory consumption, but also best
+                     performance when using large parts of the dataset.
+
+                  *  "trace": When a trace is queried, only the trace itself is loaded and stored in memory.
+                     This is particularly useful when only a subset of traces is queried,
+                     but these are queried multiple times. In this case the performance of
+                     this strategy might outperform "full".
+
+                  *  None: When a trace is queried, it is always loaded from disk.
+                     This mode leads to low memory consumption but high IO load.
+                     It is most likely not usable for model training.
 
                   Note that for datasets without blocks, i.e., each trace in a single array in the hdf5 file,
                   the strategies "full" and "trace" are identical.
@@ -63,11 +65,14 @@ class WaveformDataset:
     :param chunks: Specify particular chunks to load. If None, loads all chunks. Defaults to None.
     :type chunks: list, optional
     :param missing_components: Strategy to deal with missing components. Options are:
-                               - "pad": Fill with zeros.
-                               - "copy": Fill with values from first existing traces.
-                               - "ignore": Order all existing components in the requested order,
-                                           but ignore missing ones. This will raise an error if traces with different
-                                           numbers of components are requested together.
+
+                               *  "pad": Fill with zeros.
+
+                               *  "copy": Fill with values from first existing traces.
+
+                               *  "ignore": Order all existing components in the requested order,
+                                  but ignore missing ones. This will raise an error if traces with different
+                                  numbers of components are requested together.
     :type missing_components: str
     :param kwargs:
     """
