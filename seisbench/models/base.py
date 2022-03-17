@@ -201,10 +201,13 @@ class SeisBenchModel(nn.Module):
         For more information on the SeisBench model format see py:func:`save`.
 
         :param path: Define the path to the SeisBench model directory.
-        :type path: pathlib.Path
+        :type path: pathlib.Path ot str
         :return: Model instance
         :rtype: SeisBenchModel
         """
+        if isinstance(path, str):
+            path = Path(path)
+
         model_files = [file for file in path.iterdir()]
 
         n_pt_files = sum(
@@ -257,7 +260,7 @@ class SeisBenchModel(nn.Module):
 
         SeisBench models are stored inside the directory 'path'. SeisBench models are saved in 2 parts,
         the model configuration is stored in JSON format [path]/[name.json], and the underlying model weights
-        in PyTorch format [path]/[name].pt.
+        in PyTorch format [path]/[name].pt. Where 'name' is the model class name in lowercase.
 
         The model config should contain the following information, which is automatically created from
         the model instance state:
@@ -266,7 +269,7 @@ class SeisBenchModel(nn.Module):
             - "seisbench_requirement": The minimal version of SeisBench required to use the weights file.
             - "default_args": Default args for the :py:func:`annotate`/:py:func:`classify` functions.
 
-        Non-serlisable arguments (e.g. functions) cannot be saved to JSON, so are not converted.
+        Non-serlizable arguments (e.g. functions) cannot be saved to JSON, so are not converted.
 
         :param path: Define the output model directory.
         :type path: pathlib.Path or str
@@ -290,7 +293,6 @@ class SeisBenchModel(nn.Module):
                     seisbench.logger.warning(
                         f"{k} parameter is a non-serilizable object, cannot be saved to JSON config file."
                     )
-
         model_metadata = {
             "docstring": document,
             "model_args": model_args,
