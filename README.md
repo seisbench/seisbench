@@ -76,9 +76,9 @@ Reference publications for SeisBench:
 
 ---
 
-* [SeisBench - A Toolbox for Machine Learning in Seismology](https://arxiv.org/abs/2111.00786)
+* [SeisBench - A Toolbox for Machine Learning in Seismology](https://doi.org/10.1785/0220210324)
 
-  _Reference publication for software (pre-print)._
+  _Reference publication for software._
 
 ---
 
