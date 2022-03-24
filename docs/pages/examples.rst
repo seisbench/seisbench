@@ -103,7 +103,7 @@ Creating a dataset
 .. raw:: html
 
     <embed>
-        <a href="https://colab.research.google.com/github/seisbench/seisbench/blob/additional_example_workflows/examples/03b_creating_a_dataset.ipynb">
+        <a href="https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03b_creating_a_dataset.ipynb">
             <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
         </a>
     </embed>
