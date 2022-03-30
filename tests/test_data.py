@@ -1223,3 +1223,12 @@ def test_sample_without_replacement():
     assert (
         sorted(list(sel_idxs) + list(rem_idxs)) == np.arange(1000).astype(list)
     ).all()
+
+
+def test_waveform_data_write_without_trace_name(tmp_path):
+    # Test that a single trace without a trace name does not crash the writer
+    with seisbench.data.WaveformDataWriter(
+        tmp_path / "metadata.csv", tmp_path / "waveforms.hdf5"
+    ) as writer:
+        trace = {"source_id": "dummyevent"}
+        writer.add_trace(trace, np.zeros((3, 100)))

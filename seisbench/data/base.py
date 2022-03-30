@@ -2095,19 +2095,22 @@ class WaveformDataWriter:
 
         if len(bucket) == 1:
             metadata, waveform = bucket[0]
-            # Use trace name as bucket name
-            trace_name = str(metadata["trace_name"])
-            trace_name = trace_name.replace(
-                "$", "_"
-            )  # As $ will be interpreted as a control sequence to remove padding
+            if "trace_name" in metadata:
+                # Use trace name as bucket name
+                trace_name = str(metadata["trace_name"])
+                trace_name = trace_name.replace(
+                    "$", "_"
+                )  # As $ will be interpreted as a control sequence to remove padding
+            else:
+                # Use the next bucket name
+                trace_name = self._get_bucket_name()
+
             metadata["trace_name"] = trace_name
 
             self._waveform_file["data"].create_dataset(trace_name, data=waveform)
 
         else:
-            bucket_id = self._bucket_counter
-            self._bucket_counter += 1
-            bucket_name = f"bucket{bucket_id}"
+            bucket_name = self._get_bucket_name()
 
             bucket_waveforms, locations = self._pack_arrays([x[1] for x in bucket])
             self._waveform_file["data"].create_dataset(
@@ -2123,6 +2126,17 @@ class WaveformDataWriter:
                     ]  # Keep original trace_name in the metadata
 
                 metadata["trace_name"] = f"{bucket_name}${location}"
+
+    def _get_bucket_name(self):
+        """
+        Get the next available bucket name and increment bucket counter
+
+        :return: bucket name
+        :rtype: str
+        """
+        bucket_id = self._bucket_counter
+        self._bucket_counter += 1
+        return f"bucket{bucket_id}"
 
     @staticmethod
     def _pack_arrays(arrays):
