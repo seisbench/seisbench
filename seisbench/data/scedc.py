@@ -62,7 +62,7 @@ class Ross2018JGRFM(BenchmarkDataset):
             citation=citation, repository_lookup=False, component_order="Z", **kwargs
         )
 
-    def _download_dataset(self, writer, cleanup=False, blocksize=2 ** 14):
+    def _download_dataset(self, writer, cleanup=False, blocksize=2**14):
         """
         Downloads and converts the dataset from the original publication
 
@@ -215,7 +215,7 @@ class Ross2018JGRPick(BenchmarkDataset):
             citation=citation, repository_lookup=False, component_order="Z", **kwargs
         )
 
-    def _download_dataset(self, writer, cleanup=False, blocksize=2 ** 14):
+    def _download_dataset(self, writer, cleanup=False, blocksize=2**14):
         """
         Downloads and converts the dataset from the original publication
 
@@ -360,7 +360,7 @@ class Ross2018GPD(BenchmarkDataset):
         )
         super().__init__(citation=citation, repository_lookup=False, **kwargs)
 
-    def _download_dataset(self, writer, cleanup=False, blocksize=2 ** 14):
+    def _download_dataset(self, writer, cleanup=False, blocksize=2**14):
         """
         Downloads and converts the dataset from the original publication
 
@@ -471,7 +471,7 @@ class Meier2019JGR(BenchmarkDataset):
         )
         super().__init__(citation=citation, repository_lookup=False, **kwargs)
 
-    def _download_dataset(self, writer, cleanup=False, blocksize=2 ** 14):
+    def _download_dataset(self, writer, cleanup=False, blocksize=2**14):
         """
         Downloads and converts the dataset from the original publication
 
