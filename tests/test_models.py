@@ -1,3 +1,5 @@
+import statsmodels
+
 import seisbench
 import seisbench.models
 from seisbench.models.base import ActivationLSTMCell, CustomLSTM
@@ -1047,3 +1049,352 @@ def test_eqtransformer_annotate_window_post():
     assert np.isnan(blinded[:100]).all()
     assert (blinded[100:900] == 1).all()
     assert np.isnan(blinded[900:]).all()
+
+
+def test_get_versions_from_files():
+    # Only latest
+    files = ["original.pt", "original.json"]
+    versions = seisbench.models.EQTransformer._get_versions_from_files(
+        "original", files=files
+    )
+    assert versions == [""]
+
+    # No weights at all
+    files = []
+    versions = seisbench.models.EQTransformer._get_versions_from_files(
+        "something", files=files
+    )
+    assert versions == []
+
+    # No weights for target name
+    files = ["original.pt", "original.json"]
+    versions = seisbench.models.EQTransformer._get_versions_from_files(
+        "something", files=files
+    )
+    assert versions == []
+
+    # Multiple versions
+    files = ["original.pt", "original.json", "original.pt.v1", "original.json.v1"]
+    versions = seisbench.models.EQTransformer._get_versions_from_files(
+        "original", files=files
+    )
+    assert versions == ["", "1"]
+
+    # Multiple versions - mixed names
+    files = [
+        "original.pt",
+        "original.json",
+        "original.pt.v1",
+        "original.json.v1",
+        "something.pt.v1",
+        "something.json.v1",
+    ]
+    versions = seisbench.models.EQTransformer._get_versions_from_files(
+        "original", files=files
+    )
+    assert versions == ["", "1"]
+    versions = seisbench.models.EQTransformer._get_versions_from_files(
+        "something", files=files
+    )
+    assert versions == ["1"]
+
+
+def test_cleanup_local_repository(tmp_path):
+    with patch("seisbench.models.GPD._model_path") as model_path:
+        model_path.return_value = tmp_path
+
+        # Create dummies
+        def create_versions(name, versions, content):
+            for x in versions:
+                for suffix in ["json", "pt"]:
+                    if x == "":
+                        filename = f"{name}.{suffix}"
+                    else:
+                        filename = f"{name}.{suffix}.v{x}"
+                    with open(tmp_path / filename, "w") as f:
+                        f.write(content)
+
+        create_versions("test", ["", "2"], "{}\n")
+        create_versions("original", [""], '{"version": "1.2.3"}\n')
+
+        seisbench.models.GPD._cleanup_local_repository()
+
+        assert sorted([x.name for x in tmp_path.iterdir()]) == [
+            "original.json.v1.2.3",
+            "original.pt.v1.2.3",
+            "test.json.v1",
+            "test.json.v2",
+            "test.pt.v1",
+            "test.pt.v2",
+        ]
+
+
+def test_list_versions(tmp_path):
+    with patch("seisbench.models.GPD._model_path") as model_path:
+        model_path.return_value = tmp_path
+
+        # Create dummies
+        def create_versions(name, versions, content):
+            for x in versions:
+                for suffix in ["json", "pt"]:
+                    if x == "":
+                        filename = f"{name}.{suffix}"
+                    else:
+                        filename = f"{name}.{suffix}.v{x}"
+                    with open(tmp_path / filename, "w") as f:
+                        f.write(content)
+
+        create_versions("test", ["", "2"], "{}\n")
+        assert seisbench.models.GPD.list_versions("test", remote=False) == ["1", "2"]
+
+        with patch("seisbench.util.download_http") as download, patch(
+            "seisbench.util.ls_webdav"
+        ) as ls_webdav:
+
+            def side_effect(remote_metadata_path, metadata_path, progress_bar=False):
+                with open(metadata_path, "w") as f:
+                    f.write('{"version": "3"}\n')
+
+            download.side_effect = side_effect
+            ls_webdav.return_value = ["test.json"]
+
+            assert seisbench.models.GPD.list_versions("test", remote=True) == [
+                "1",
+                "2",
+                "3",
+            ]
+
+        with patch("seisbench.util.ls_webdav") as ls_webdav:
+            ls_webdav.return_value = []
+            (tmp_path / "a").mkdir()
+            model_path.return_value = tmp_path / "a"
+
+            assert seisbench.models.GPD.list_versions("test") == []
+
+
+def test_ensure_weight_files(tmp_path):
+    # Files available
+    tmp_path1 = tmp_path / "1"
+    tmp_path1.mkdir()
+    with open(tmp_path1 / "test.pt.v1", "w"), open(tmp_path1 / "test.json.v1", "w"):
+        pass
+    seisbench.models.GPD._ensure_weight_files(
+        "test", "1", tmp_path1 / "test.pt.v1", tmp_path1 / "test.json.v1", False, False
+    )
+
+    # File available remote with version suffix
+    tmp_path2 = tmp_path / "2"
+    tmp_path2.mkdir()
+
+    with patch("seisbench.util.download_http") as download, patch(
+        "seisbench.util.ls_webdav"
+    ) as ls_webdav:
+
+        def side_effect(remote_path, local_path, progress_bar=False):
+            with open(local_path, "w") as f:
+                f.write('{"version": "3"}\n')
+
+        download.side_effect = side_effect
+        ls_webdav.return_value = ["test.json.v1", "test.pt.v1"]
+
+        seisbench.models.GPD._ensure_weight_files(
+            "test",
+            "1",
+            tmp_path2 / "test.pt.v1",
+            tmp_path2 / "test.json.v1",
+            False,
+            False,
+        )
+
+        assert (tmp_path2 / "test.pt.v1").is_file()
+        assert (tmp_path2 / "test.json.v1").is_file()
+
+    # File available remote without version suffix
+    tmp_path3 = tmp_path / "3"
+    tmp_path3.mkdir()
+
+    with patch("seisbench.util.download_http") as download, patch(
+        "seisbench.util.ls_webdav"
+    ) as ls_webdav:
+
+        def side_effect(remote_path, local_path, progress_bar=False):
+            with open(local_path, "w") as f:
+                f.write('{"version": "1"}\n')
+
+        download.side_effect = side_effect
+        ls_webdav.return_value = ["test.json", "test.pt"]
+
+        seisbench.models.GPD._ensure_weight_files(
+            "test",
+            "1",
+            tmp_path3 / "test.pt.v1",
+            tmp_path3 / "test.json.v1",
+            False,
+            False,
+        )
+
+        assert (tmp_path3 / "test.pt.v1").is_file()
+        assert (tmp_path3 / "test.json.v1").is_file()
+
+    # Version not available in remote - no file without suffix
+    tmp_path4 = tmp_path / "4"
+    tmp_path4.mkdir()
+
+    with patch("seisbench.util.download_http") as download, patch(
+        "seisbench.util.ls_webdav"
+    ) as ls_webdav:
+
+        def side_effect(remote_path, local_path, progress_bar=False):
+            with open(local_path, "w") as f:
+                f.write('{"version": "1"}\n')
+
+        download.side_effect = side_effect
+        ls_webdav.return_value = ["test.json.v3", "test.pt.v3"]
+
+        with pytest.raises(ValueError):
+            seisbench.models.GPD._ensure_weight_files(
+                "test",
+                "1",
+                tmp_path4 / "test.pt.v1",
+                tmp_path4 / "test.json.v1",
+                False,
+                False,
+            )
+
+    # Version not available in remote - file without suffix
+    tmp_path5 = tmp_path / "5"
+    tmp_path5.mkdir()
+
+    with patch("seisbench.util.download_http") as download, patch(
+        "seisbench.util.ls_webdav"
+    ) as ls_webdav:
+
+        def side_effect(remote_path, local_path, progress_bar=False):
+            with open(local_path, "w") as f:
+                f.write('{"version": "2"}\n')
+
+        download.side_effect = side_effect
+        ls_webdav.return_value = ["test.json", "test.pt"]
+
+        with pytest.raises(ValueError):
+            seisbench.models.GPD._ensure_weight_files(
+                "test",
+                "1",
+                tmp_path5 / "test.pt.v1",
+                tmp_path5 / "test.json.v1",
+                False,
+                False,
+            )
+
+
+def test_parse_weight_filename():
+    assert seisbench.models.GPD._parse_weight_filename("test.json") == (
+        "test",
+        "json",
+        None,
+    )
+    assert seisbench.models.GPD._parse_weight_filename("test.json.v1") == (
+        "test",
+        "json",
+        "1",
+    )
+    assert seisbench.models.GPD._parse_weight_filename("test.pt") == (
+        "test",
+        "pt",
+        None,
+    )
+    assert seisbench.models.GPD._parse_weight_filename("test.pt.v1") == (
+        "test",
+        "pt",
+        "1",
+    )
+    assert seisbench.models.GPD._parse_weight_filename("test.jasd") == (
+        None,
+        None,
+        None,
+    )
+
+
+def test_list_pretrained(tmp_path):
+    with patch("seisbench.models.GPD._model_path") as model_path:
+        model_path.return_value = tmp_path
+
+        # Create dummies
+        def create_versions(name, versions, content):
+            for x, c in zip(versions, content):
+                for suffix in ["json", "pt"]:
+                    if x == "":
+                        filename = f"{name}.{suffix}"
+                    else:
+                        filename = f"{name}.{suffix}.v{x}"
+                    with open(tmp_path / filename, "w") as f:
+                        f.write(c)
+
+        create_versions(
+            "test", ["1", "2"], ['{"docstring": "d1"}\n', '{"docstring": "d2"}\n']
+        )
+        create_versions(
+            "bla", ["1", "2"], ['{"docstring": "b1"}\n', '{"docstring": "b2"}\n']
+        )
+
+        assert seisbench.models.GPD.list_pretrained(details=False, remote=False) == [
+            "bla",
+            "test",
+        ]
+        assert seisbench.models.GPD.list_pretrained(details=True, remote=False) == {
+            "bla": "b2",
+            "test": "d2",
+        }
+
+        with patch("seisbench.util.ls_webdav") as ls_webdav:
+            ls_webdav.return_value = ["foo.json", "foo.pt"]
+            assert seisbench.models.GPD.list_pretrained(details=False, remote=True) == [
+                "bla",
+                "foo",
+                "test",
+            ]
+
+            with patch(
+                "seisbench.models.GPD._get_latest_docstring"
+            ) as get_latest_docstring:
+                get_latest_docstring.return_value = "123"
+                assert seisbench.models.GPD.list_pretrained(
+                    details=True, remote=True
+                ) == {"bla": "123", "test": "123", "foo": "123"}
+
+
+def test_get_latest_docstring(tmp_path):
+    with patch("seisbench.models.GPD._model_path") as model_path:
+        model_path.return_value = tmp_path
+
+        # Create dummies
+        def create_versions(name, versions, content):
+            for x, c in zip(versions, content):
+                for suffix in ["json", "pt"]:
+                    if x == "":
+                        filename = f"{name}.{suffix}"
+                    else:
+                        filename = f"{name}.{suffix}.v{x}"
+                    with open(tmp_path / filename, "w") as f:
+                        f.write(c)
+
+        create_versions(
+            "test", ["1", "2"], ['{"docstring": "d1"}\n', '{"docstring": "d2"}\n']
+        )
+
+        assert seisbench.models.GPD._get_latest_docstring("test", remote=False) == "d2"
+
+        with patch("seisbench.util.download_http") as download, patch(
+            "seisbench.util.ls_webdav"
+        ) as ls_webdav:
+
+            def side_effect(remote_path, local_path, progress_bar=False):
+                with open(local_path, "w") as f:
+                    f.write('{"docstring": "d3", "version": "3"}\n')
+
+            download.side_effect = side_effect
+            ls_webdav.return_value = ["test.json", "test.pt"]
+
+            assert (
+                seisbench.models.GPD._get_latest_docstring("test", remote=True) == "d3"
+            )

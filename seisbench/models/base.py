@@ -18,6 +18,7 @@ from obspy.signal.trigger import trigger_onset
 import asyncio
 import nest_asyncio
 from packaging import version
+import tempfile
 
 
 class SeisBenchModel(nn.Module):
@@ -32,6 +33,7 @@ class SeisBenchModel(nn.Module):
         super().__init__()
         self._citation = citation
         self._weights_docstring = None
+        self._weights_version = None
         self._weights_metadata = None
 
     def __str__(self):
@@ -53,6 +55,10 @@ class SeisBenchModel(nn.Module):
     def weights_docstring(self):
         return self._weights_docstring
 
+    @property
+    def weights_version(self):
+        return self._weights_version
+
     @classmethod
     def _model_path(cls):
         return Path(seisbench.cache_root, "models", cls._name_internal().lower())
@@ -62,73 +68,69 @@ class SeisBenchModel(nn.Module):
         return "/".join((seisbench.remote_root, "models", cls._name_internal().lower()))
 
     @classmethod
-    def _pretrained_path(cls, name):
-        weight_path = cls._model_path() / f"{name}.pt"
-        metadata_path = cls._model_path() / f"{name}.json"
+    def _pretrained_path(cls, name, version_str=""):
+        if version_str != "":
+            version_str = ".v" + version_str
+        weight_path = cls._model_path() / f"{name}.pt{version_str}"
+        metadata_path = cls._model_path() / f"{name}.json{version_str}"
 
         return weight_path, metadata_path
 
     @classmethod
-    def from_pretrained(cls, name, force=False, wait_for_file=False):
+    def from_pretrained(
+        cls, name, version_str="latest", update=False, force=False, wait_for_file=False
+    ):
         """
         Load pretrained model with weights.
 
         A pretrained model weights consists of two files. A weights file [name].pt and a [name].json config file.
-        The config file is not mandatory, but strongly recommended. The config file can (and should) contain the
-        following entries, even though all arguments are optional:
+        The config file can (and should) contain the following entries, even though all arguments are optional:
 
         - "docstring": A string documenting the pipeline. Usually also contains information on the author.
         - "model_args": Argument dictionary passed to the init function of the pipeline.
         - "seisbench_requirement": The minimal version of SeisBench required to use the weights file.
         - "default_args": Default args for the :py:func:`annotate`/:py:func:`classify` functions.
           These arguments will supersede any potential constructor settings.
+        - "version": The version string of the model. For **all but the latest version**, version names should
+          furthermore be denoted in the file names, i.e., the files should end with the suffix ".v[VERSION]".
+          If no version is specified in the json, the assumed version string is "1".
+
+        .. warning::
+            Even though the version is set to "latest" by default, this will only use the latest version locally
+            available. Only if no weight is available locally, the remote repository will be queried. This behaviour
+            is implemented for privacy reasons, as it avoids contacting the remote repository for every call of the
+            function. To explicitly update to the latest version from the remote repository, set `update=True`.
 
         :param name: Model name prefix.
         :type name: str
+        :param version_str: Version of the weights to load. Either a version string or "latest". The "latest" model is
+                            the model with the highest version number.
+        :type version_str: str
         :param force: Force execution of download callback, defaults to False
         :type force: bool, optional
+        :param update: If true, downloads potential new weights file and config from the remote repository.
+                       The old files are retained with their version suffix.
+        :type update: bool
         :param wait_for_file: Whether to wait on partially downloaded files, defaults to False
         :type wait_for_file: bool, optional
         :return: Model instance
         :rtype: SeisBenchModel
         """
-        weight_path, metadata_path = cls._pretrained_path(name)
+        cls._cleanup_local_repository()
+        if version_str == "latest":
+            versions = cls.list_versions(name, remote=update)
+            if len(versions) == 0:
+                raise ValueError(f"No version for weight '{name}' available.")
+            version_str = max(versions, key=version.parse)
 
-        def download_weights_callback(weight_path):
-            seisbench.logger.info(f"Weight file {name} not in cache. Downloading...")
-            weight_path.parent.mkdir(exist_ok=True, parents=True)
+        weight_path, metadata_path = cls._pretrained_path(name, version_str)
 
-            remote_weight_path = f"{cls._remote_path()}/{name}.pt"
-            util.download_http(remote_weight_path, weight_path)
-
-        def download_metadata_callback(metadata_path):
-            remote_metadata_path = f"{cls._remote_path()}/{name}.json"
-            try:
-                util.download_http(
-                    remote_metadata_path, metadata_path, progress_bar=False
-                )
-            except ValueError:
-                # A missing metadata file does not lead to a crash
-                pass
-
-        seisbench.util.callback_if_uncached(
-            weight_path,
-            download_weights_callback,
-            force=force,
-            wait_for_file=wait_for_file,
-        )
-        seisbench.util.callback_if_uncached(
-            metadata_path,
-            download_metadata_callback,
-            force=force,
-            wait_for_file=wait_for_file,
+        cls._ensure_weight_files(
+            name, version_str, weight_path, metadata_path, force, wait_for_file
         )
 
-        if metadata_path.is_file():
-            with open(metadata_path, "r") as f:
-                weights_metadata = json.load(f)
-        else:
-            weights_metadata = {}
+        with open(metadata_path, "r") as f:
+            weights_metadata = json.load(f)
 
         model_args = weights_metadata.get("model_args", {})
         model = cls(**model_args)
@@ -141,60 +143,257 @@ class SeisBenchModel(nn.Module):
         return model
 
     @classmethod
-    def list_pretrained(cls, details=False):
+    def _cleanup_local_repository(cls):
+        """
+        Cleans up local weights by moving all files without weight suffix to the correct weight suffix.
+
+        Function required to keep compatibility to caches created with seisbench==0.1.x
+        """
+        model_path = cls._model_path()
+        files = [
+            x.name[:-5] for x in model_path.iterdir() if x.name.endswith(".json")
+        ]  # Files without version tag
+
+        for file in files:
+            metadata_path = model_path / (file + ".json")
+            weight_path = model_path / (file + ".pt")
+
+            with open(metadata_path, "r") as f:
+                weights_metadata = json.load(f)
+
+            file_version = weights_metadata.get("version", "1")
+
+            weight_path_new = weight_path.parent / (
+                weight_path.name + ".v" + file_version
+            )
+            metadata_path_new = metadata_path.parent / (
+                metadata_path.name + ".v" + file_version
+            )
+
+            weight_path.rename(weight_path_new)
+            metadata_path.rename(metadata_path_new)
+
+    @classmethod
+    def _ensure_weight_files(
+        cls, name, version_str, weight_path, metadata_path, force, wait_for_file
+    ):
+        """
+        Checks whether weight files are available and downloads them otherwise
+        """
+
+        def download_callback(files):
+            weight_path, metadata_path = files
+            seisbench.logger.info(
+                f"Weight file {weight_path.name} not in cache. Downloading..."
+            )
+            weight_path.parent.mkdir(exist_ok=True, parents=True)
+
+            remote_metadata_name, remote_weight_name = cls._get_remote_names(
+                name, version_str
+            )
+
+            remote_weight_path = f"{cls._remote_path()}/{remote_weight_name}"
+            remote_metadata_path = f"{cls._remote_path()}/{remote_metadata_name}"
+
+            util.download_http(remote_weight_path, weight_path)
+            util.download_http(remote_metadata_path, metadata_path, progress_bar=False)
+
+        seisbench.util.callback_if_uncached(
+            [weight_path, metadata_path],
+            download_callback,
+            force=force,
+            wait_for_file=wait_for_file,
+        )
+
+    @classmethod
+    def _get_remote_names(cls, name, version_str):
+        """
+        Determines the file names of weight and metadata file on the remote repository. This function is required as
+        the remote version might not have a suffix.
+        """
+        remote_weight_name = f"{name}.pt.v{version_str}"
+        remote_metadata_name = f"{name}.json.v{version_str}"
+        remote_listing = seisbench.util.ls_webdav(cls._remote_path())
+        if remote_metadata_name not in remote_listing:
+            # Version not in repository under version name, check file without version suffix
+            if f"{name}.json" in remote_listing:
+                remote_version = cls._get_version_of_remote_without_suffix(name)
+                if remote_version == version_str:
+                    remote_weight_name = f"{name}.pt"
+                    remote_metadata_name = f"{name}.json"
+                else:
+                    raise ValueError(
+                        f"Version '{version_str}' of weight '{name}' is not available."
+                    )
+            else:
+                raise ValueError(
+                    f"Version '{version_str}' of weight '{name}' is not available."
+                )
+        return remote_metadata_name, remote_weight_name
+
+    @classmethod
+    def list_pretrained(cls, details=False, remote=True):
         """
         Returns list of available pretrained weights and optionally their docstrings.
 
         :param details: If true, instead of a returning only a list, also return their docstrings.
+                        By default, returns the docstring of the "latest" version for each weight.
                         Note that this requires to download the json files for each model in the background
                         and is therefore slower. Defaults to false.
         :type details: bool
+        :param remote: If true, reports both locally available weights and versions in the remote repository.
+                       Otherwise only reports local versions.
+        :type remote: bool
         :return: List of available weights or dict of weights and their docstrings
         :rtype: list or dict
         """
-        remote_path = cls._remote_path()
+        cls._cleanup_local_repository()
 
+        # Idea: If details, copy all "latest" configs to a temp directory
+
+        model_path = cls._model_path()
         weights = [
-            x[:-3] for x in seisbench.util.ls_webdav(remote_path) if x.endswith(".pt")
+            cls._parse_weight_filename(x)[0]
+            for x in model_path.iterdir()
+            if cls._parse_weight_filename(x)[0] is not None
         ]
 
+        if remote:
+            remote_path = cls._remote_path()
+            weights += [
+                cls._parse_weight_filename(x)[0]
+                for x in seisbench.util.ls_webdav(remote_path)
+                if cls._parse_weight_filename(x)[0] is not None
+            ]
+
+        # Unique
+        weights = sorted(list(set(weights)))
+
         if details:
-            detail_weights = {}
+            return {
+                name: cls._get_latest_docstring(name, remote=remote) for name in weights
+            }
+        else:
+            return weights
 
-            for weight in weights:
+    @classmethod
+    def _get_latest_docstring(cls, name, remote):
+        versions = cls.list_versions(name, remote=remote)
+        version_str = max(versions, key=version.parse)
 
-                def download_metadata_callback(metadata_path):
-                    remote_metadata_path = os.path.join(
-                        cls._remote_path(), f"{weight}.json"
-                    )
-                    try:
-                        util.download_http(
-                            remote_metadata_path, metadata_path, progress_bar=False
-                        )
-                    except ValueError:
-                        # A missing metadata file does not lead to a crash
-                        pass
+        _, metadata_path = cls._pretrained_path(name, version_str)
 
-                _, metadata_path = cls._pretrained_path(weight)
-
-                seisbench.util.callback_if_uncached(
-                    metadata_path, download_metadata_callback
+        if metadata_path.is_file():
+            with open(metadata_path, "r") as f:
+                weights_metadata = json.load(f)
+        else:
+            _, remote_metadata_path = cls._get_remote_names(name, version_str)
+            with tempfile.TemporaryDirectory() as tmpdir:
+                metadata_path = Path(tmpdir) / "metadata.json"
+                util.download_http(
+                    remote_metadata_path, metadata_path, progress_bar=False
                 )
+                with open(metadata_path, "r") as f:
+                    weights_metadata = json.load(f)
 
-                if metadata_path.is_file():
-                    with open(metadata_path, "r") as f:
-                        config = json.load(f)
-                    detail_weights[weight] = config.get("docstring", None)
-                else:
-                    detail_weights[weight] = None
+        return weights_metadata.get("docstring", None)
 
-            weights = detail_weights
+    @staticmethod
+    def _parse_weight_filename(filename):
+        """
+        Parses filename into weight name, file type and version string.
+        Returns None, None, None if file can not be parsed.
+        """
+        if isinstance(filename, Path):
+            filename = filename.name
 
-        return weights
+        name = None
+        version_str = None
+
+        for ftype in ["json", "pt"]:
+            p = filename.find(f".{ftype}")
+            if p != -1:
+                name = filename[:p]
+                remainder = filename[p + len(ftype) + 1 :]
+                if len(remainder) > 0:
+                    if remainder[:2] != ".v":
+                        return None, None, None
+                    version_str = remainder[2:]
+                break
+
+        if name is None and version_str is None:
+            ftype = None
+
+        return name, ftype, version_str
+
+    @classmethod
+    def list_versions(cls, name, remote=True):
+        """
+        Returns list of available versions for a given weight name.
+
+        :param name: Name of the queried weight
+        :type name: str
+        :param remote: If true, reports both locally available versions and versions in the remote repository.
+                       Otherwise only reports local versions.
+        :type remote: bool
+        :return: List of available versions
+        :rtype: list[str]
+        """
+        cls._cleanup_local_repository()
+
+        files = [x.name for x in cls._model_path().iterdir()]
+        versions = cls._get_versions_from_files(name, files)
+
+        if remote:
+            remote_path = cls._remote_path()
+            files = seisbench.util.ls_webdav(remote_path)
+            remote_versions = cls._get_versions_from_files(name, files)
+
+            if "" in remote_versions:
+                remote_versions = [x for x in remote_versions if x != ""]
+                # Need to download config file to check version
+                file_version = cls._get_version_of_remote_without_suffix(name)
+                remote_versions.append(file_version)
+
+            versions = list(set(versions + remote_versions))
+
+        return sorted(versions)
+
+    @classmethod
+    def _get_version_of_remote_without_suffix(cls, name):
+        """
+        Gets the version in the remote config without version suffix. Assumes this config exists.
+        """
+        remote_metadata_path = f"{cls._remote_path()}/{name}.json"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            metadata_path = Path(tmpdir) / "metadata.json"
+            util.download_http(remote_metadata_path, metadata_path, progress_bar=False)
+
+            with open(metadata_path, "r") as f:
+                weights_metadata = json.load(f)
+        file_version = weights_metadata.get("version", "1")
+        return file_version
+
+    @staticmethod
+    def _get_versions_from_files(name, files):
+        """
+        Calculates the available versions from a list of files.
+
+        :param name: Name of the queried weight
+        :type name: str
+        :param files: List of files
+        :type files: list[str]
+        :return: List of available versions
+        :rtype: list[str]
+        """
+        configs = [x for x in files if x.startswith(f"{name}.json")]
+        prefix_len = len(f"{name}.json.v")
+        return sorted([config[prefix_len:] for config in configs])
 
     def _parse_metadata(self):
         # Load docstring
         self._weights_docstring = self._weights_metadata.get("docstring", "")
+        self._weights_version = self._weights_metadata.get("version", "1")
 
         # Check version requirement
         seisbench_requirement = self._weights_metadata.get(
@@ -1394,6 +1593,11 @@ class WaveformPipeline(ABC):
 
     To implement a waveform pipeline, this class needs to be subclassed. This class will throw an exception when
     trying to instantiate.
+
+    .. warning::
+        In contrast to :py:class:`SeisBenchModel` this class does not yet feature versioning for weights. By default,
+        all underlying models will use the latest, locally available version. This functionality will eventually be
+        added. Please raise an issue on Github if you require this functionality.
 
     :param components: Dictionary of components contained in the model. This should contain all models used in the
                        pipeline.
