@@ -1,5 +1,3 @@
-import statsmodels
-
 import seisbench
 import seisbench.models
 from seisbench.models.base import ActivationLSTMCell, CustomLSTM
