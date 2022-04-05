@@ -1126,6 +1126,9 @@ def test_cleanup_local_repository(tmp_path):
             "test.pt.v2",
         ]
 
+        model_path.return_value = tmp_path / "not_existent"
+        seisbench.models.GPD._cleanup_local_repository()  # Just checking that this does not crash
+
 
 def test_list_versions(tmp_path):
     with patch("seisbench.models.GPD._model_path") as model_path:
@@ -1150,6 +1153,11 @@ def test_list_versions(tmp_path):
         ) as ls_webdav:
 
             def side_effect(remote_metadata_path, metadata_path, progress_bar=False):
+                # Checks correct url and writes out dummy
+                assert remote_metadata_path.endswith("test.json")
+                assert remote_metadata_path.startswith(
+                    seisbench.models.GPD._remote_path()
+                )
                 with open(metadata_path, "w") as f:
                     f.write('{"version": "3"}\n')
 
@@ -1168,6 +1176,11 @@ def test_list_versions(tmp_path):
             model_path.return_value = tmp_path / "a"
 
             assert seisbench.models.GPD.list_versions("test") == []
+
+            model_path.return_value = tmp_path / "not_existent"
+            assert (
+                seisbench.models.GPD.list_versions("test") == []
+            )  # Just check that this does not crash
 
 
 def test_ensure_weight_files(tmp_path):
@@ -1189,6 +1202,11 @@ def test_ensure_weight_files(tmp_path):
     ) as ls_webdav:
 
         def side_effect(remote_path, local_path, progress_bar=False):
+            # Checks correct url and writes out dummy
+            assert remote_path.endswith("test.json.v1") or remote_path.endswith(
+                "test.pt.v1"
+            )
+            assert remote_path.startswith(seisbench.models.GPD._remote_path())
             with open(local_path, "w") as f:
                 f.write('{"version": "3"}\n')
 
@@ -1216,6 +1234,9 @@ def test_ensure_weight_files(tmp_path):
     ) as ls_webdav:
 
         def side_effect(remote_path, local_path, progress_bar=False):
+            # Checks correct url and writes out dummy
+            assert remote_path.endswith("test.json") or remote_path.endswith("test.pt")
+            assert remote_path.startswith(seisbench.models.GPD._remote_path())
             with open(local_path, "w") as f:
                 f.write('{"version": "1"}\n')
 
@@ -1268,6 +1289,9 @@ def test_ensure_weight_files(tmp_path):
     ) as ls_webdav:
 
         def side_effect(remote_path, local_path, progress_bar=False):
+            # Checks correct url and writes out dummy
+            assert remote_path.endswith("test.json")
+            assert remote_path.startswith(seisbench.models.GPD._remote_path())
             with open(local_path, "w") as f:
                 f.write('{"version": "2"}\n')
 
@@ -1387,6 +1411,9 @@ def test_get_latest_docstring(tmp_path):
         ) as ls_webdav:
 
             def side_effect(remote_path, local_path, progress_bar=False):
+                # Checks correct url and writes out dummy
+                assert remote_path.endswith("test.json")
+                assert remote_path.startswith(seisbench.models.GPD._remote_path())
                 with open(local_path, "w") as f:
                     f.write('{"docstring": "d3", "version": "3"}\n')
 
@@ -1396,3 +1423,35 @@ def test_get_latest_docstring(tmp_path):
             assert (
                 seisbench.models.GPD._get_latest_docstring("test", remote=True) == "d3"
             )
+
+
+@pytest.mark.parametrize(
+    "prefill_cache, update",
+    [(False, False), (False, True), (True, False), (True, True)],
+)
+def test_from_pretrained(tmp_path, prefill_cache, update):
+    with patch("seisbench.models.GPD._model_path") as model_path:
+        model_path.return_value = tmp_path
+
+        if prefill_cache:
+            with open(tmp_path / "test.pt.v1", "wb") as fw, open(
+                tmp_path / "test.json.v1", "w"
+            ) as f:
+                torch.save({}, fw)
+                f.write("{}\n")
+
+        with patch("seisbench.util.ls_webdav") as ls_webdav, patch(
+            "seisbench.models.GPD._ensure_weight_files"
+        ) as ensure_weight_files, patch("seisbench.models.GPD.load_state_dict") as _:
+            ls_webdav.return_value = ["test.json.v2", "test.pt.v2"]
+
+            def write_weights(
+                name, version_str, weight_path, metadata_path, force, wait_for_file
+            ):
+                with open(weight_path, "wb") as fw, open(metadata_path, "w") as f:
+                    torch.save({}, fw)
+                    f.write("{}\n")
+
+            ensure_weight_files.side_effect = write_weights
+
+            seisbench.models.GPD.from_pretrained("test", update=update)

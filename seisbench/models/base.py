@@ -119,6 +119,10 @@ class SeisBenchModel(nn.Module):
         cls._cleanup_local_repository()
         if version_str == "latest":
             versions = cls.list_versions(name, remote=update)
+            # Always query remote versions if cache is empty
+            if len(versions) == 0:
+                versions = cls.list_versions(name, remote=True)
+
             if len(versions) == 0:
                 raise ValueError(f"No version for weight '{name}' available.")
             version_str = max(versions, key=version.parse)
@@ -150,6 +154,10 @@ class SeisBenchModel(nn.Module):
         Function required to keep compatibility to caches created with seisbench==0.1.x
         """
         model_path = cls._model_path()
+        if not model_path.is_dir():
+            # No need to cleanup if model path does not yet exist
+            return
+
         files = [
             x.name[:-5] for x in model_path.iterdir() if x.name.endswith(".json")
         ]  # Files without version tag
@@ -278,6 +286,12 @@ class SeisBenchModel(nn.Module):
 
     @classmethod
     def _get_latest_docstring(cls, name, remote):
+        """
+        Get the latest docstring for a given weight name.
+
+        Assumes that there is at least one version of the weight available locally (remote=False) or
+        locally/remotely (remote=True).
+        """
         versions = cls.list_versions(name, remote=remote)
         version_str = max(versions, key=version.parse)
 
@@ -287,9 +301,10 @@ class SeisBenchModel(nn.Module):
             with open(metadata_path, "r") as f:
                 weights_metadata = json.load(f)
         else:
-            _, remote_metadata_path = cls._get_remote_names(name, version_str)
+            remote_metadata_name, _ = cls._get_remote_names(name, version_str)
+            remote_metadata_path = f"{cls._remote_path()}/{remote_metadata_name}"
             with tempfile.TemporaryDirectory() as tmpdir:
-                metadata_path = Path(tmpdir) / "metadata.json"
+                metadata_path = Path(tmpdir) / f"{name}.json"
                 util.download_http(
                     remote_metadata_path, metadata_path, progress_bar=False
                 )
@@ -341,8 +356,11 @@ class SeisBenchModel(nn.Module):
         """
         cls._cleanup_local_repository()
 
-        files = [x.name for x in cls._model_path().iterdir()]
-        versions = cls._get_versions_from_files(name, files)
+        if cls._model_path().is_dir():
+            files = [x.name for x in cls._model_path().iterdir()]
+            versions = cls._get_versions_from_files(name, files)
+        else:
+            versions = []
 
         if remote:
             remote_path = cls._remote_path()
@@ -362,7 +380,8 @@ class SeisBenchModel(nn.Module):
     @classmethod
     def _get_version_of_remote_without_suffix(cls, name):
         """
-        Gets the version in the remote config without version suffix. Assumes this config exists.
+        Gets the version of the config in the remote repository without a version suffix in the file name.
+        Assumes this config exists.
         """
         remote_metadata_path = f"{cls._remote_path()}/{name}.json"
         with tempfile.TemporaryDirectory() as tmpdir:
