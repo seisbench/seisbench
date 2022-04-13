@@ -126,7 +126,7 @@ class WaveformDataset:
         self.component_order = component_order
         self.missing_components = missing_components
 
-        self._waveform_cache = {}
+        self._waveform_cache = defaultdict(dict)
 
     def __str__(self):
         return f"{self._name} - {len(self)} traces"
@@ -154,7 +154,9 @@ class WaveformDataset:
 
         other = copy.copy(self)
         other._metadata = self._metadata.copy()
-        other._waveform_cache = copy.copy(self._waveform_cache)
+        other._waveform_cache = defaultdict(dict)
+        for key in self._waveform_cache.keys():
+            other._waveform_cache[key] = copy.copy(self._waveform_cache[key])
 
         return other
 
@@ -746,25 +748,32 @@ class WaveformDataset:
 
         :return: None
         """
+        existing_keys = defaultdict(set)
         if self.cache == "full":
             # Extract block names
-            existing_keys = set(
-                self._metadata["trace_name"].apply(lambda x: x.split("$")[0])
-            )
+            block_names = self._metadata["trace_name"].apply(lambda x: x.split("$")[0])
+            chunks = self._metadata["trace_chunk"]
+            for chunk, block in zip(chunks, block_names):
+                existing_keys[chunk].add(block)
         elif self.cache == "trace":
-            existing_keys = set(self._metadata["trace_name"])
-        else:
-            existing_keys = set()
+            trace_names = self._metadata["trace_name"]
+            chunks = self._metadata["trace_chunk"]
+            for chunk, trace in zip(chunks, trace_names):
+                existing_keys[chunk].add(trace)
 
-        delete_keys = []
-        for key in self._waveform_cache.keys():
-            if key not in existing_keys:
-                delete_keys.append(key)
+        delete_count = 0
+        for chunk in self._waveform_cache.keys():
+            delete_keys = []
+            for key in self._waveform_cache[chunk].keys():
+                if key not in existing_keys[chunk]:
+                    delete_keys.append(key)
 
-        for key in delete_keys:
-            del self._waveform_cache[key]
+            for key in delete_keys:
+                del self._waveform_cache[chunk][key]
 
-        seisbench.logger.debug(f"Deleted {len(delete_keys)} entries in cache eviction")
+            delete_count += len(delete_keys)
+
+        seisbench.logger.debug(f"Deleted {delete_count} entries in cache eviction")
 
     def __getitem__(self, item):
         """
@@ -921,9 +930,9 @@ class WaveformDataset:
         """
         trace_name = str(trace_name)
 
-        if trace_name in self._waveform_cache:
+        if trace_name in self._waveform_cache[chunk]:
             # Cache hit on trace level
-            waveform = self._waveform_cache[trace_name]
+            waveform = self._waveform_cache[chunk][trace_name]
 
         else:
             # Cache miss on trace level
@@ -936,9 +945,9 @@ class WaveformDataset:
 
             location = self._parse_location(location)
 
-            if block_name in self._waveform_cache:
+            if block_name in self._waveform_cache[chunk]:
                 # Cache hit on block level
-                waveform = self._waveform_cache[block_name][location]
+                waveform = self._waveform_cache[chunk][block_name][location]
 
             else:
                 # Cache miss on block level - Load from hdf5 file required
@@ -946,12 +955,12 @@ class WaveformDataset:
                 block = g_data[block_name]
                 if self.cache == "full":
                     block = block[()]  # Explicit load from hdf5 file
-                    self._waveform_cache[block_name] = block
+                    self._waveform_cache[chunk][block_name] = block
                     waveform = block[location]
                 else:
                     waveform = block[location]  # Implies the load from hdf5 file
                     if self.cache == "trace":
-                        self._waveform_cache[trace_name] = waveform
+                        self._waveform_cache[chunk][trace_name] = waveform
 
         if target_sampling_rate is not None:
             if np.isnan(source_sampling_rate):

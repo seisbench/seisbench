@@ -83,7 +83,7 @@ def test_preload():
     assert len(dummy._waveform_cache) == 0
 
     dummy.preload_waveforms()
-    assert len(dummy._waveform_cache) == len(dummy)
+    assert len(dummy._waveform_cache[""]) == len(dummy)
 
 
 def test_filter_and_cache_evict():
@@ -91,25 +91,25 @@ def test_filter_and_cache_evict():
     dummy = seisbench.data.DummyDataset(cache="full")
     dummy.preload_waveforms()
     blocks = set(dummy.metadata["trace_name"].apply(lambda x: x.split("$")[0]))
-    assert len(dummy._waveform_cache) == len(blocks)
+    assert len(dummy._waveform_cache[""]) == len(blocks)
 
     mask = np.arange(len(dummy)) < len(dummy) / 2
     dummy.filter(mask)
 
     assert len(dummy) == np.sum(mask)  # Correct metadata length
     blocks = set(dummy.metadata["trace_name"].apply(lambda x: x.split("$")[0]))
-    assert len(dummy._waveform_cache) == len(blocks)  # Correct cache eviction
+    assert len(dummy._waveform_cache[""]) == len(blocks)  # Correct cache eviction
 
     # Trace caching
     dummy = seisbench.data.DummyDataset(cache="trace")
     dummy.preload_waveforms()
-    assert len(dummy._waveform_cache) == len(dummy)
+    assert len(dummy._waveform_cache[""]) == len(dummy)
 
     mask = np.arange(len(dummy)) < len(dummy) / 2
     dummy.filter(mask)
 
     assert len(dummy) == np.sum(mask)  # Correct metadata length
-    assert len(dummy._waveform_cache) == len(dummy)  # Correct cache eviction
+    assert len(dummy._waveform_cache[""]) == len(dummy)  # Correct cache eviction
 
 
 def test_region_filter():
@@ -584,7 +584,7 @@ def test_load_waveform_data_with_sampling_rate():
     # Checks that preloading waveform data works with sampling rate specified
     dummy = seisbench.data.DummyDataset(cache="trace", sampling_rate=20)
     dummy.preload_waveforms()
-    assert len(dummy._waveform_cache) == len(dummy.metadata)
+    assert len(dummy._waveform_cache[""]) == len(dummy.metadata)
 
 
 def test_copy():
@@ -594,12 +594,18 @@ def test_copy():
 
     # Metadata and waveforms are copied by value
     assert dummy1._waveform_cache is not dummy2._waveform_cache
+    for chunk in dummy1._waveform_cache.keys():
+        assert dummy1._waveform_cache[chunk] is not dummy2._waveform_cache[chunk]
     assert dummy1._metadata is not dummy2._metadata
 
     # Cache entries were copied by reference
     assert len(dummy1._waveform_cache) == len(dummy2._waveform_cache)
-    for key in dummy1._waveform_cache.keys():
-        assert dummy1._waveform_cache[key] is dummy2._waveform_cache[key]
+    for chunk in dummy1._waveform_cache.keys():
+        assert len(dummy1._waveform_cache[chunk]) == len(dummy2._waveform_cache[chunk])
+        for key in dummy1._waveform_cache[chunk].keys():
+            assert (
+                dummy1._waveform_cache[chunk][key] is dummy2._waveform_cache[chunk][key]
+            )
 
 
 def test_filter_inplace():
@@ -612,15 +618,15 @@ def test_filter_inplace():
     dummy2 = dummy.filter(mask, inplace=False)
     # dummy was not modified inplace
     assert len(dummy) == org_len
-    assert len(dummy._waveform_cache) == org_len
+    assert len(dummy._waveform_cache[""]) == org_len
     # dummy2 has correct length and had correct cache eviction
     assert len(dummy2) == np.sum(mask)
-    assert len(dummy2._waveform_cache) == np.sum(mask)
+    assert len(dummy2._waveform_cache[""]) == np.sum(mask)
 
     dummy.filter(mask, inplace=True)
     # dummy was modified inplace
     assert len(dummy) == np.sum(mask)
-    assert len(dummy._waveform_cache) == np.sum(mask)
+    assert len(dummy._waveform_cache[""]) == np.sum(mask)
 
 
 def test_splitting():
@@ -1232,3 +1238,24 @@ def test_waveform_data_write_without_trace_name(tmp_path):
     ) as writer:
         trace = {"source_id": "dummyevent"}
         writer.add_trace(trace, np.zeros((3, 100)))
+
+
+def test_chunked_datasets_key_collision(tmp_path):
+    with open(tmp_path / "chunks", "w") as f:
+        f.write("0\n1")
+
+    for i in range(2):
+        metadata_path = tmp_path / f"metadata{i}.csv"
+        waveforms_path = tmp_path / f"waveforms{i}.hdf5"
+        with seisbench.data.WaveformDataWriter(metadata_path, waveforms_path) as writer:
+            writer.data_format = {
+                "dimension_order": "CW",
+                "component_order": "ZNE",
+                "sampling_rate": 100,
+            }
+            writer.add_trace({"trace_name": "fixed_trace_name"}, np.ones((1000, 3)) * i)
+
+    data = seisbench.data.WaveformDataset(tmp_path, cache="full")
+
+    assert (data.get_waveforms(0) == 0).all()
+    assert (data.get_waveforms(1) == 1).all()
