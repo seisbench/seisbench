@@ -25,7 +25,7 @@ else:
         config = _json.load(_fconfig)
 
 # Version number
-__version__ = "0.1.15"
+__version__ = "0.1.16"
 
 logger = _logging.getLogger("seisbench")
 _ch = _logging.StreamHandler()

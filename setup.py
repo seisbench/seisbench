@@ -12,7 +12,7 @@ with open(Path(os.path.dirname(__file__)) / "requirements.txt") as f:
 
 setup(
     name="seisbench",
-    version="0.1.15",
+    version="0.1.16",
     author="Jack Woollam,Jannes Münchmeyer",
     author_email="jack.woollam@kit.edu,munchmej@gfz-potsdam.de",
     description="The seismological machine learning benchmark collection",
