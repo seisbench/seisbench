@@ -9,7 +9,7 @@ import torch
 from unittest.mock import patch
 import logging
 import pytest
-import asyncio
+from collections import defaultdict
 
 
 def test_weights_docstring():
@@ -547,113 +547,77 @@ def test_predictions_to_stream():
     assert stream[5].stats.sampling_rate == 50
 
 
-@pytest.mark.asyncio
-async def test_cut_fragments_point():
+def test_cut_fragments_point():
     dummy = DummyWaveformModel(
         component_order="ZNE", in_samples=1000, sampling_rate=100
     )
     data = [np.ones((3, 10000))]
 
-    queue_in = asyncio.Queue()
-    queue_out = asyncio.Queue()
+    out = [
+        x[0]
+        for x in dummy._cut_fragments_point(
+            0, data[0], None, {"stride": 100, "sampling_rate": 100}
+        )
+    ]
 
-    queue_in.put_nowait((0, data[0], None))
-    queue_in.put_nowait(None)
-    await dummy._cut_fragments_point(
-        queue_in, queue_out, {"stride": 100, "sampling_rate": 100}
-    )
-    out = []
-    while True:
-        try:
-            elem = queue_out.get_nowait()
-            out.append(elem[0])
-        except asyncio.QueueEmpty:
-            break
     assert len(out) == 91
     assert out[0].shape == (3, 1000)
 
 
-@pytest.mark.asyncio
-async def test_reassemble_blocks_point():
+def test_reassemble_blocks_point():
     dummy = DummyWaveformModel(
         component_order="ZNE", in_samples=1000, sampling_rate=100
     )
-    queue_in = asyncio.Queue()
-    queue_out = asyncio.Queue()
 
     trace_stats = obspy.read()[0].stats
 
-    for i in range(100):
-        queue_in.put_nowait(([0], (0, i, 100, trace_stats)))
-    queue_in.put_nowait(None)
-
-    await dummy._reassemble_blocks_point(
-        queue_in, queue_out, {"stride": 100, "sampling_rate": 100}
-    )
     out = []
-    while True:
-        try:
-            elem = queue_out.get_nowait()
-            out.append(elem[0])
-        except asyncio.QueueEmpty:
-            break
+    argdict = {"stride": 100, "sampling_rate": 100}
+    buffer = defaultdict(list)
+    for i in range(100):
+        elem = ([0], (0, i, 100, trace_stats, 0))
+        out_elem = dummy._reassemble_blocks_point(elem, buffer, argdict)
+        if out_elem is not None:
+            out += [out_elem[0]]
+
     assert len(out) == 1
     assert out[0][0] == 1
     assert out[0][2].shape == (100, 1)
 
 
-@pytest.mark.asyncio
-async def test_cut_fragments_array():
+def test_cut_fragments_array():
     dummy = DummyWaveformModel(
         component_order="ZNE", in_samples=1000, sampling_rate=100, pred_sample=(0, 1000)
     )
     data = [np.ones((3, 10001))]
+    argdict = {"overlap": 100, "sampling_rate": 100}
+    elem = (0, data[0], None)
 
-    queue_in = asyncio.Queue()
-    queue_out = asyncio.Queue()
+    out = [x[0] for x in dummy._cut_fragments_array(elem, argdict)]
 
-    queue_in.put_nowait((0, data[0], None))
-    queue_in.put_nowait(None)
-    await dummy._cut_fragments_array(
-        queue_in, queue_out, {"overlap": 100, "sampling_rate": 100}
-    )
-    out = []
-    while True:
-        try:
-            elem = queue_out.get_nowait()
-            out.append(elem[0])
-        except asyncio.QueueEmpty:
-            break
     assert len(out) == 12
     assert out[0].shape == (3, 1000)
 
 
-@pytest.mark.asyncio
-async def test_reassemble_blocks_array():
+def test_reassemble_blocks_array():
     dummy = DummyWaveformModel(
         component_order="ZNE", in_samples=1000, sampling_rate=100, pred_sample=(0, 1000)
     )
-    queue_in = asyncio.Queue()
-    queue_out = asyncio.Queue()
 
     trace_stats = obspy.read()[0].stats
+
+    out = []
+    argdict = {"stride": 100, "sampling_rate": 100}
+    buffer = defaultdict(list)
 
     starts = [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200, 8100, 9000, 9001]
 
     for i in range(12):
-        queue_in.put_nowait((np.ones((1000, 3)), (0, starts[i], 12, trace_stats)))
-    queue_in.put_nowait(None)
+        elem = (np.ones((1000, 3)), (0, starts[i], 12, trace_stats, 0))
+        out_elem = dummy._reassemble_blocks_array(elem, buffer, argdict)
+        if out_elem is not None:
+            out += [out_elem[0]]
 
-    await dummy._reassemble_blocks_array(
-        queue_in, queue_out, {"overlap": 100, "sampling_rate": 100}
-    )
-    out = []
-    while True:
-        try:
-            elem = queue_out.get_nowait()
-            out.append(elem[0])
-        except asyncio.QueueEmpty:
-            break
     assert len(out) == 1
     assert out[0][0] == 100.0
     assert out[0][2].shape == (10001, 3)
@@ -901,7 +865,7 @@ def test_parse_default_args():
 
 def test_default_labels():
     model = seisbench.models.PhaseNet(
-        sampling_rate=200
+        sampling_rate=200, phases=None
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
@@ -912,75 +876,94 @@ def test_default_labels():
     assert model.labels == [0, 1, 2]
 
 
-def test_annotate_cred():
+@pytest.mark.parametrize(
+    "parallelism",
+    [None, 1],
+)
+def test_annotate_cred(parallelism):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.CRED(
         sampling_rate=400
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
-    annotations = model.annotate(stream)
+    annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
-    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+    model.classify(
+        stream, parallelism=parallelism
+    )  # Ensures classify succeeds even though labels are unknown
 
 
-def test_annotate_eqtransformer():
+@pytest.mark.parametrize(
+    "parallelism",
+    [None, 1],
+)
+def test_annotate_eqtransformer(parallelism):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.EQTransformer(
         sampling_rate=400
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
-    annotations = model.annotate(stream)
+    annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
-    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+    model.classify(
+        stream, parallelism=parallelism
+    )  # Ensures classify succeeds even though labels are unknown
 
 
-def test_annotate_gpd():
+@pytest.mark.parametrize(
+    "parallelism",
+    [None, 1],
+)
+def test_annotate_gpd(parallelism):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.GPD(
         sampling_rate=100
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
-    annotations = model.annotate(stream)
+    annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
-    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+    model.classify(
+        stream, parallelism=parallelism
+    )  # Ensures classify succeeds even though labels are unknown
 
 
-def test_annotate_phasenet():
+@pytest.mark.parametrize(
+    "parallelism",
+    [None, 1],
+)
+def test_annotate_phasenet(parallelism):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.PhaseNet(
         sampling_rate=400
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
-    annotations = model.annotate(stream)
+    annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
-    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+    model.classify(
+        stream, parallelism=parallelism
+    )  # Ensures classify succeeds even though labels are unknown
 
 
-def test_annotate_basicphaseae():
+@pytest.mark.parametrize(
+    "parallelism",
+    [None, 1],
+)
+def test_annotate_basicphaseae(parallelism):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.BasicPhaseAE(
         sampling_rate=400
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
-    annotations = model.annotate(stream)
+    annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
-    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
-
-
-def test_annotate_deepdenoiser():
-    # Tests that the annotate/classify functions run without crashes and annotate produces an output
-    model = seisbench.models.DeepDenoiser(
-        sampling_rate=400
-    )  # Higher sampling rate ensures trace is long enough
-    stream = obspy.read()
-
-    annotations = model.annotate(stream)
-    assert len(annotations) > 0
+    model.classify(
+        stream, parallelism=parallelism
+    )  # Ensures classify succeeds even though labels are unknown
 
 
 def test_short_traces(caplog):
@@ -1008,11 +991,15 @@ def test_deep_denoiser():
     seisbench.models.DeepDenoiser()
 
 
-def test_annotate_deep_denoiser():
+@pytest.mark.parametrize(
+    "parallelism",
+    [None, 1],
+)
+def test_annotate_deep_denoiser(parallelism):
     stream = obspy.read()
 
     model = seisbench.models.DeepDenoiser()
-    annotations = model.annotate(stream)
+    annotations = model.annotate(stream, parallelism=parallelism)
 
     assert len(annotations) == 3
     for i in range(3):
@@ -1047,6 +1034,51 @@ def test_eqtransformer_annotate_window_post():
     assert np.isnan(blinded[:100]).all()
     assert (blinded[100:900] == 1).all()
     assert np.isnan(blinded[900:]).all()
+
+
+def test_check_parallelism_annotate(caplog):
+    t0 = UTCDateTime(0)
+    stats = {
+        "network": "SB",
+        "station": "TEST",
+        "channel": "HHZ",
+        "sampling_rate": 100,
+        "starttime": t0,
+    }
+
+    trace0 = obspy.Trace(np.zeros(1000), stats)
+    trace1 = obspy.Trace(np.ones(1000), stats)
+    stream_small = obspy.Stream([trace0, trace1])
+
+    trace0 = obspy.Trace(np.zeros(int(3e7)), stats)
+    trace1 = obspy.Trace(np.zeros(int(3e7)), stats)
+    stream_large = obspy.Stream([trace0, trace1])
+
+    with caplog.at_level(logging.WARNING):
+        seisbench.models.WaveformModel._check_parallelism_annotate(
+            stream_small, parallelism=None
+        )
+    assert "Consider activating parallelisation. " not in caplog.text
+
+    with caplog.at_level(logging.WARNING):
+        seisbench.models.WaveformModel._check_parallelism_annotate(
+            stream_large, parallelism=None
+        )
+    assert "Consider activating parallelisation. " in caplog.text
+
+    caplog.clear()
+
+    with caplog.at_level(logging.WARNING):
+        seisbench.models.WaveformModel._check_parallelism_annotate(
+            stream_large, parallelism=1
+        )
+    assert "Consider using the sequential asyncio implementation. " not in caplog.text
+
+    with caplog.at_level(logging.WARNING):
+        seisbench.models.WaveformModel._check_parallelism_annotate(
+            stream_small, parallelism=1
+        )
+    assert "Consider using the sequential asyncio implementation. " in caplog.text
 
 
 def test_get_versions_from_files():
