@@ -117,3 +117,15 @@ def test_precheck_url(caplog):
         with caplog.at_level(logging.WARNING):
             seisbench.util.precheck_url(seisbench.remote_root, timeout=5)
         assert "status code 400" in caplog.text
+
+
+def test_log_lifecycle(caplog):
+    @seisbench.util.log_lifecycle(logging.DEBUG)
+    def test_func():
+        pass
+
+    with caplog.at_level(logging.DEBUG):
+        test_func()
+
+    assert "Starting test_func" in caplog.text
+    assert "Stopping test_func" in caplog.text

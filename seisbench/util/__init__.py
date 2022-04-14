@@ -13,3 +13,4 @@ from .trace_ops import (
     trace_has_spikes,
     waveform_id_to_network_station_location,
 )
+from .decorators import log_lifecycle
