@@ -1216,6 +1216,53 @@ def test_get_idx_from_trace_name_multi():
     assert dummy.get_idx_from_trace_name(dummy["trace_name"].values[20]) == 20
 
 
+def test_trace_name_to_idx_dict():
+    dummy = seisbench.data.DummyDataset()
+    metadata = pd.DataFrame(
+        [
+            {"trace_name": "a", "trace_chunk": ""},
+            {"trace_name": "b", "trace_chunk": ""},
+            {"trace_name": "b", "trace_chunk": "1"},
+        ]
+    )
+    dummy._metadata = metadata  # Overwrite metadata
+    dummy._build_trace_name_to_idx_dict()
+    assert len(dummy._trace_name_to_idx) == 4
+    assert len(dummy._trace_name_to_idx["name"]) == 2  # 1 collision
+    assert len(dummy._trace_name_to_idx["name_chunk"]) == 3  # 0 collisions
+    assert len(dummy._trace_name_to_idx["name_dataset"]) == 0  # NA
+    assert len(dummy._trace_name_to_idx["name_chunk_dataset"]) == 0  # NA
+
+    # Only test unique answers
+    assert dummy.get_idx_from_trace_name("a") == 0
+    assert dummy.get_idx_from_trace_name("b", "") == 1
+    with pytest.raises(KeyError):
+        dummy.get_idx_from_trace_name("a", "1")
+
+    metadata = pd.DataFrame(
+        [
+            {"trace_name": "a", "trace_chunk": "", "trace_dataset": "0"},
+            {"trace_name": "b", "trace_chunk": "", "trace_dataset": "0"},
+            {"trace_name": "b", "trace_chunk": "1", "trace_dataset": "0"},
+            {"trace_name": "b", "trace_chunk": "1", "trace_dataset": "1"},
+        ]
+    )
+    dummy._metadata = metadata  # Overwrite metadata
+    dummy._build_trace_name_to_idx_dict()
+    assert len(dummy._trace_name_to_idx) == 4
+    assert len(dummy._trace_name_to_idx["name"]) == 2  # 2 collisions
+    assert len(dummy._trace_name_to_idx["name_chunk"]) == 3  # 1 collision
+    assert len(dummy._trace_name_to_idx["name_dataset"]) == 3  # 1 collision
+    assert len(dummy._trace_name_to_idx["name_chunk_dataset"]) == 4  # 0 collision
+
+    # Only test unique answers
+    assert dummy.get_idx_from_trace_name("a") == 0
+    assert dummy.get_idx_from_trace_name("b", dataset="1") == 3
+    assert dummy.get_idx_from_trace_name("b", "1", "0") == 2
+    with pytest.raises(KeyError):
+        dummy.get_idx_from_trace_name("a", "1")
+
+
 def test_sample_without_replacement():
     # Test random sampling without replacement
     np.random.seed(42)
