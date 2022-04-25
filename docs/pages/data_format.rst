@@ -382,8 +382,6 @@ Station parameters
 +--------------------------------+--------------------------------------------+
 | station_location_code          | Instrument location code.                  |
 +--------------------------------+--------------------------------------------+
-| station_channel                | Instrument channel code, e.g., HH, BN, ... |
-+--------------------------------+--------------------------------------------+
 | station_latitude_deg           | Instrument latitude in degrees.            |
 +--------------------------------+--------------------------------------------+
 | station_longitude_deg          | Instrument latitude in degrees.            |
