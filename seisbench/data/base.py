@@ -14,6 +14,7 @@ import scipy.signal
 import copy
 from collections import defaultdict
 from collections.abc import Iterable
+import warnings
 
 
 class WaveformDataset:
@@ -113,10 +114,14 @@ class WaveformDataset:
 
         metadatas = []
         for chunk, metadata_path, _ in zip(*self._chunks_with_paths()):
-            tmp_metadata = pd.read_csv(
-                metadata_path,
-                dtype={"trace_sampling_rate_hz": float, "trace_dt_s": float},
-            )
+            with warnings.catch_warnings():
+                # Catch warning for mixed dtype
+                warnings.filterwarnings("ignore", category=pd.errors.DtypeWarning)
+
+                tmp_metadata = pd.read_csv(
+                    metadata_path,
+                    dtype={"trace_sampling_rate_hz": float, "trace_dt_s": float},
+                )
             tmp_metadata["trace_chunk"] = chunk
             metadatas.append(tmp_metadata)
         self._metadata = pd.concat(metadatas)
