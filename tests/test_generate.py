@@ -1643,3 +1643,17 @@ def test_copy():
     # Check deepcopy ok
     state_dict["X"][0][0, 500] = 2
     assert state_dict["Xc"][0][0, 500] != 2
+
+
+def test_group_generator():
+    data = seisbench.data.DummyDataset()
+
+    with pytest.raises(ValueError):
+        seisbench.generate.GroupGenerator(data)
+
+    data.grouping = "source_magnitude"
+    generator = seisbench.generate.GroupGenerator(data)
+    assert len(generator) == len(data.groups)
+
+    # Check that sample can be retrieved
+    generator[0]
