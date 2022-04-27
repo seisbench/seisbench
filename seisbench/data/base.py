@@ -1094,9 +1094,17 @@ class WaveformDataset:
             metadata.append(trace_meta)
 
         if return_metadata:
-            return waveforms, metadata
+            return waveforms, WaveformDataset._pack_metadata(metadata)
         else:
             return waveforms
+
+    @staticmethod
+    def _pack_metadata(metadata):
+        """
+        Reformats a list of dict into a dict of lists. Assumes identical keys in all dicts!
+        """
+
+        return {key: [m[key] for m in metadata] for key in metadata[0].keys()}
 
     def _verify_grouping_defined(self):
         """
@@ -1839,7 +1847,6 @@ class MultiWaveformDataset:
     get_group_waveforms = WaveformDataset.get_group_waveforms
     get_group_samples = WaveformDataset.get_group_samples
     get_group_size = WaveformDataset.get_group_size
-    get_group_idx_from_params = WaveformDataset.get_group_idx_from_params
     _get_group_internal = WaveformDataset._get_group_internal
 
 

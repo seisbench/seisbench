@@ -1365,12 +1365,12 @@ def test_get_group_sample_waveforms(grouping_test_data):
     idx = data.get_group_idx_from_params("b")
 
     with patch("seisbench.data.WaveformDataset.get_sample") as get_sample:
-        get_sample.return_value = (np.zeros(5), {})
+        get_sample.return_value = (np.zeros(5), {"a": 1})
 
         waveforms, metadata = data.get_group_samples(idx)
-        assert len(waveforms) == len(metadata) == 4
+        assert len(waveforms) == len(metadata["a"]) == 4
+        assert metadata == {"a": [1, 1, 1, 1]}
         assert isinstance(waveforms[0], np.ndarray)
-        assert metadata[0] == {}
 
         waveforms = data.get_group_waveforms(idx)
         assert len(waveforms) == 4
