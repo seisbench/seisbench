@@ -208,41 +208,14 @@ class SeisBenchModel(nn.Module):
         if isinstance(path, str):
             path = Path(path)
 
-        model_files = [file for file in path.iterdir()]
+        path_json = path.with_name(path.stem + ".json")
+        path_pt = path.with_name(path.stem + ".pt")
 
-        n_pt_files = sum(
-            [i for i in map(lambda file: file.suffix == ".pt", model_files)]
-        )
-        n_json_files = sum(
-            [i for i in map(lambda file: file.suffix == ".json", model_files)]
-        )
-
-        if n_pt_files + n_json_files == 0:
-            raise FileNotFoundError(f"No .pt weights or .json config file at {path}")
-        elif n_pt_files == 0:
-            raise FileNotFoundError(f"No .pt weights file at {path}")
-        elif n_json_files == 0:
-            raise FileNotFoundError(f"No .json config file at {path}")
-
-        if n_pt_files > 1:
-            seisbench.logger.warning(
-                f"Strange format of SeisBench model directory detected at {path}. "
-                f"There is more than one .pt file. This will lead to unforseen "
-                f"behaviour during model loading."
-            )
-        if n_json_files > 1:
-            seisbench.logger.warning(
-                f"Strange format of SeisBench model directory detected at {path}. "
-                f"There is more than one .json file. This will lead to unforseen "
-                f"behaviour during model loading."
-            )
-
-        for file in model_files:
-            if file.suffix == ".json":
-                with open(file, "r") as f:
-                    weights_metadata = json.load(f)
-            elif file.suffix == ".pt":
-                model_weights = torch.load(f"{file}")
+        # Load model metadata
+        with open(path_json, "r") as f:
+            weights_metadata = json.load(f)
+        # Load model weights
+        model_weights = torch.load(f"{path_pt}")
 
         model_args = weights_metadata.get("model_args", {})
 
@@ -278,35 +251,97 @@ class SeisBenchModel(nn.Module):
         """
         if isinstance(path, str):
             path = Path(path)
-        path.mkdir(parents=True, exist_ok=True)
 
-        # Check for parameters overwritten in state
-        input_args = self._get_input_args(self.__class__)
-        state_args = self._update_object_args(input_args)
+        path_json = path.with_name(path.stem + ".json")
+        path_pt = path.with_name(path.stem + ".pt")
 
-        model_args = {}
-        for k, v in state_args.items():
-            if k in input_args:
-                if not callable(v):
-                    model_args.update({k: v})
+        def _contains_callable_recursive(dict_obj):
+            """
+            Recursive lookup through dictionary to check wheter any values are callable.
+            """
+            for k, v in dict_obj.items():
+                if callable(v):
+                    return True
+                if isinstance(v, dict):
+                    obj = _contains_callable_recursive(v)
+                    if obj is not None:
+                        return obj
+
+        model_args = self.get_model_args()
+
+        if not model_args:
+            seisbench.logger.warning(
+                "No 'model_args' found. "
+                "Saving any model parameters should be done manually within abstractmethod: `get_model_args`. "
+                "Have you implemented `get_model_args`?. "
+                "If this is the desired behaviour, and you have no parameters for your model, please ignore."
+            )
+
+        parsed_model_args = {}
+        for k, v in model_args.items():
+            if k not in (
+                "__class__",
+                "self",
+                "default_args",
+                "_weights_metadata",
+                "_weights_docstring",
+            ):
+                # Check for non-serlizable types
+                _flagged_callable = False
+                if isinstance(v, set):
+                    # Sets converted
+                    parsed_model_args.update({k: list(v)})
+                    continue
+                if callable(v):
+                    # Callables not stored in JSON
+                    _flagged_callable = True
+                if isinstance(v, dict):
+                    # Check inside nested dicts for callables
+                    if not _contains_callable_recursive(v):
+                        _flagged_callable = True
+
+                if not _flagged_callable:
+                    parsed_model_args.update({k: v})
                 else:
                     seisbench.logger.warning(
                         f"{k} parameter is a non-serilizable object, cannot be saved to JSON config file."
                     )
+
         model_metadata = {
             "docstring": document,
-            "model_args": model_args,
+            "model_args": parsed_model_args,
             "seisbench-requirements": seisbench.__version__,
             "default_args": self.__dict__.get("default_args", ""),
         }
 
         # Save weights
-        torch.save(self.state_dict(), path / f"{self.name.lower()}.pt")
+        torch.save(self.state_dict(), path_pt)
         # Save model metadata
-        with open(path / f"{self.name.lower()}.json", "w") as json_fp:
+        with open(path_json, "w") as json_fp:
             json.dump(model_metadata, json_fp)
 
         seisbench.logger.debug(f"Saved {self.name} model at {path.absolute}")
+
+    def _parse_metadata(self):
+        # Load docstring
+        self._weights_docstring = self._weights_metadata.get("docstring", "")
+
+        # Check version requirement
+        seisbench_requirement = self._weights_metadata.get(
+            "seisbench_requirement", None
+        )
+        if seisbench_requirement is not None:
+            if version.parse(seisbench_requirement) > version.parse(
+                seisbench.__version__
+            ):
+                raise ValueError(
+                    f"Weights require seisbench version at least {seisbench_requirement}, "
+                    f"but the installed version is {seisbench.__version__}."
+                )
+
+        # Parse default args - Config default_args supersede constructor args
+        default_args = self._weights_metadata.get("default_args", {})
+        self.default_args.update(default_args)
 
     def _get_input_args(self, obj):
         signature = inspect.signature(obj)
@@ -319,6 +354,8 @@ class SeisBenchModel(nn.Module):
         """
         Given a set of object arguments, and an instance of the object,
         find the current value of all input arguments in the object instance state.
+        `init_args` are updated inplace with the latest values. 
+        The instance arguments (or all parameters in state) are returned.
         """
         obj_instance_args = self.__dict__
 
@@ -355,26 +392,15 @@ class SeisBenchModel(nn.Module):
                     )
         return obj_instance_args
 
-    def _parse_metadata(self):
-        # Load docstring
-        self._weights_docstring = self._weights_metadata.get("docstring", "")
+    @abstractmethod
+    def get_model_args(self):
+        """
+        Obtain all model parameters for saving.
 
-        # Check version requirement
-        seisbench_requirement = self._weights_metadata.get(
-            "seisbench_requirement", None
-        )
-        if seisbench_requirement is not None:
-            if version.parse(seisbench_requirement) > version.parse(
-                seisbench.__version__
-            ):
-                raise ValueError(
-                    f"Weights require seisbench version at least {seisbench_requirement}, "
-                    f"but the installed version is {seisbench.__version__}."
-                )
-
-        # Parse default args - Config default_args supersede constructor args
-        default_args = self._weights_metadata.get("default_args", {})
-        self.default_args.update(default_args)
+        :return: Dictionary of all parameters for a model to store during saving.
+        :rtype: Dict
+        """
+        return {}
 
 
 class WaveformModel(SeisBenchModel, ABC):
@@ -1536,6 +1562,16 @@ class WaveformModel(SeisBenchModel, ABC):
                 detections.append(detection)
 
         return detections
+
+    def get_model_args(self):
+        args = super().get_model_args()
+        _parameters = self._parameters if self._parameters else {}
+        # Get default parameters
+        init_args = self._get_input_args(self.__class__)
+        # Finds current parameters in state and updates in place
+        state_args = self._update_object_args(init_args)
+
+        return init_args
 
 
 class WaveformPipeline(ABC):
