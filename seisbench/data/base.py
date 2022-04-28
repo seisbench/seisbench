@@ -103,6 +103,10 @@ class WaveformDataset:
 
         self._missing_components = None
 
+        self._trace_identification_warning_issued = (
+            False  # Traced whether warning for trace name was issued already
+        )
+
         self._dimension_order = None  # Target dimension order
         self._dimension_mapping = None  # List for reordering input to target dimensions
         self._component_order = None  # Target component order
@@ -582,15 +586,45 @@ class WaveformDataset:
                     "Keeping original components."
                 )
 
-    def get_idx_from_trace_name(self, trace_name):
+    def get_idx_from_trace_name(self, trace_name, chunk=None, dataset=None):
         """
-        Returns the index of the trace with given trace_name
+        Returns the index of a trace with given trace_name, chunk and dataset.
+        Chunk and dataset parameters are optional, but might be necessary to uniquely identify traces for
+        chunked datasets or for :py:class:`MultiWaveformDataset`.
+        The method will issue a warning *the first time* a non-uniquely identifiable trace is requested.
+        If no matching key is found, a `KeyError` is raised.
 
         :param trace_name: Trace name as in metadata["trace_name"]
+        :type trace_name: str
+        :param chunk: Trace chunk as in metadata["trace_chunk"]. If None this key will be ignored.
+        :type chunk: None
+        :param dataset: Trace dataset as in metadata["trace_dataset"]. Only for :py:class:`MultiWaveformDataset`.
+                        If None this key will be ignored.
+        :type dataset: None
         :return: Index of the sample
         """
-        if trace_name in self._trace_name_to_idx:
-            return self._trace_name_to_idx[trace_name]
+        dict_key = "name"
+        search_key = [trace_name]
+        if chunk is not None:
+            dict_key += "_chunk"
+            search_key.append(chunk)
+        if dataset is not None:
+            dict_key += "_dataset"
+            search_key.append(dataset)
+
+        search_key = tuple(search_key)
+
+        if not self._trace_identification_warning_issued and len(
+            self._trace_name_to_idx[dict_key]
+        ) != len(self.metadata):
+            seisbench.logger.warning(
+                f'Traces can not uniformly be identified using {dict_key.replace("_", ", ")}. '
+                '"get_idx_from_trace_name" will return only one possible matching trace.'
+            )
+            self._trace_identification_warning_issued = True
+
+        if search_key in self._trace_name_to_idx[dict_key]:
+            return self._trace_name_to_idx[dict_key][search_key]
         else:
             raise KeyError("The dataset does not contain the requested trace.")
 
@@ -598,14 +632,38 @@ class WaveformDataset:
         """
         Builds mapping of trace_names to idx.
         """
-        self._trace_name_to_idx = {
-            trace_name: i for i, trace_name in enumerate(self.metadata["trace_name"])
+        self._trace_name_to_idx = {}
+        self._trace_name_to_idx["name"] = {
+            (trace_name,): i for i, trace_name in enumerate(self.metadata["trace_name"])
         }
-        if len(self._trace_name_to_idx) != len(self.metadata):
-            seisbench.logger.warning(
-                "Found non-unique trace names. "
-                "get_idx_from_trace_name will return only one possible matching trace."
+        self._trace_name_to_idx["name_chunk"] = {
+            trace_info: i
+            for i, trace_info in enumerate(
+                zip(self.metadata["trace_name"], self.metadata["trace_chunk"])
             )
+        }
+        if "trace_dataset" in self.metadata.columns:
+            self._trace_name_to_idx["name_dataset"] = {
+                trace_info: i
+                for i, trace_info in enumerate(
+                    zip(self.metadata["trace_name"], self.metadata["trace_dataset"])
+                )
+            }
+            self._trace_name_to_idx["name_chunk_dataset"] = {
+                trace_info: i
+                for i, trace_info in enumerate(
+                    zip(
+                        self.metadata["trace_name"],
+                        self.metadata["trace_chunk"],
+                        self.metadata["trace_dataset"],
+                    )
+                )
+            }
+        else:
+            self._trace_name_to_idx["name_dataset"] = {}
+            self._trace_name_to_idx["name_chunk_dataset"] = {}
+
+        self._trace_identification_warning_issued = False
 
     def preload_waveforms(self, pbar=False):
         """
@@ -1240,6 +1298,16 @@ class MultiWaveformDataset:
 
         self._datasets = [dataset.copy() for dataset in datasets]
         self._metadata = pd.concat(x.metadata for x in datasets)
+
+        # Identify dataset
+        self._metadata["trace_dataset"] = sum(
+            ([dataset.name] * len(dataset) for dataset in self.datasets), []
+        )
+
+        self._trace_identification_warning_issued = (
+            False  # Traced whether warning for trace name was issued already
+        )
+
         self._homogenize_dataformat(datasets)
         self._build_trace_name_to_idx_dict()
 

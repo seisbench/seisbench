@@ -84,14 +84,18 @@ class GenericGenerator(Dataset):
 
 class SteeredGenerator(GenericGenerator):
     """
-    This data generator follows the same principles as the GenericGenerator.
-    However, in contrast to the GenericGenerator it holds a dataframe with additional information for each sample.
+    This data generator follows the same principles as the :py:func:`~GenericGenerator`.
+    However, in contrast to the :py:func:`~GenericGenerator` the generator is controlled by a dataframe with control
+    information. Each row in the control dataframe corresponds to one example output by the generator.
+    The dataframe holds two types of information. First, information identifying the traces, provided using the
+    `trace_name` (required), `trace_chunk` (optional), and `trace_dataset` (optional). See the description of
+    :py:func:`~seisbench.data.base.WaveformDataset.get_idx_from_trace_name` for details.
+    Second, additional information for the augmentations.
     This additional information is stored in `state_dict["_control_"]` as a dict.
-    The generator also loads the trace name from the dataframe as key "trace_name".
     This generator is particularly useful for evaluation, e.g., when extracting predefined windows from a trace.
 
     Note that the "_control_" group will usually not be modified by augmentations.
-    This means, that for example after a window selection, sample positions might be of.
+    This means, that for example after a window selection, sample positions might be off.
     To automatically handle these, you must explicitly put the relevant control information
     into the state_dict metadata of the relevant key.
 
@@ -122,7 +126,12 @@ class SteeredGenerator(GenericGenerator):
 
     def __getitem__(self, idx):
         control = self.metadata.iloc[idx].to_dict()
-        data_idx = self.dataset.get_idx_from_trace_name(control["trace_name"])
+        kwargs = {
+            "trace_name": control["trace_name"],
+            "chunk": control.get("trace_chunk", None),
+            "dataset": control.get("trace_dataset", None),
+        }
+        data_idx = self.dataset.get_idx_from_trace_name(**kwargs)
         state_dict = {"X": self.dataset.get_sample(data_idx), "_control_": control}
 
         # Recursive application of augmentation processing methods
