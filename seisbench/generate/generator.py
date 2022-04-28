@@ -70,15 +70,22 @@ class GenericGenerator(Dataset):
         return self
 
     def __getitem__(self, idx):
-        state_dict = {"X": self.dataset.get_sample(idx)}
+        state_dict = self._populate_state_dict(idx)
 
         # Recursive application of augmentation processing methods
         for func in self._augmentations:
             func(state_dict)
 
+        state_dict = self._clean_state_dict(state_dict)
+
+        return state_dict
+
+    def _populate_state_dict(self, idx):
+        return {"X": self.dataset.get_sample(idx)}
+
+    def _clean_state_dict(self, state_dict):
         # Remove all metadata from the output
         state_dict = {k: v[0] for k, v in state_dict.items()}
-
         return state_dict
 
 
@@ -118,7 +125,7 @@ class SteeredGenerator(GenericGenerator):
     def __len__(self):
         return len(self.metadata)
 
-    def __getitem__(self, idx):
+    def _populate_state_dict(self, idx):
         control = self.metadata.iloc[idx].to_dict()
         kwargs = {
             "trace_name": control["trace_name"],
@@ -126,18 +133,13 @@ class SteeredGenerator(GenericGenerator):
             "dataset": control.get("trace_dataset", None),
         }
         data_idx = self.dataset.get_idx_from_trace_name(**kwargs)
-        state_dict = {"X": self.dataset.get_sample(data_idx), "_control_": control}
 
-        # Recursive application of augmentation processing methods
-        for func in self._augmentations:
-            func(state_dict)
+        return {"X": self.dataset.get_sample(data_idx), "_control_": control}
 
+    def _clean_state_dict(self, state_dict):
         # Remove control information
         del state_dict["_control_"]
-        # Remove all metadata from the output
-        state_dict = {k: v[0] for k, v in state_dict.items()}
-
-        return state_dict
+        super()._clean_state_dict(state_dict)
 
 
 class GroupGenerator(GenericGenerator):
@@ -155,14 +157,5 @@ class GroupGenerator(GenericGenerator):
     def __len__(self):
         return len(self.dataset.groups)
 
-    def __getitem__(self, idx):
-        state_dict = {"X": self.dataset.get_group_samples(idx)}
-
-        # Recursive application of augmentation processing methods
-        for func in self._augmentations:
-            func(state_dict)
-
-        # Remove all metadata from the output
-        state_dict = {k: v[0] for k, v in state_dict.items()}
-
-        return state_dict
+    def _populate_state_dict(self, idx):
+        return {"X": self.dataset.get_group_samples(idx)}
