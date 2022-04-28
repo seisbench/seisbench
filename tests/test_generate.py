@@ -1657,3 +1657,72 @@ def test_group_generator():
 
     # Check that sample can be retrieved
     generator[0]
+
+
+def test_align_groups_on_key_validate_input():
+    x = np.ones((3, 1000))
+
+    align = seisbench.generate.AlignGroupsOnKey("pick", sample_axis=-1)
+    with pytest.raises(ValueError, match="can only be applied to group samples"):
+        align._validate_input(x, {})
+
+    # Small differences in sampling rate are ignored
+    align._validate_input([x, x], {"trace_sampling_rate_hz": [100, 99.999999]})
+    with pytest.raises(ValueError, match="mixed sampling rates"):
+        align._validate_input([x, x], {"trace_sampling_rate_hz": [100, 50]})
+
+    x2 = np.ones((3, 2, 1000))
+    with pytest.raises(ValueError, match="mixed number of input dimensions"):
+        align._validate_input([x, x2], {"trace_sampling_rate_hz": [100, 100]})
+
+    x2 = np.ones((3, 2000))
+    align._validate_input([x, x2], {"trace_sampling_rate_hz": [100, 100]})
+    with pytest.raises(ValueError, match="mixed shapes"):
+        x2 = np.ones((4, 1000))
+        align._validate_input([x, x2], {"trace_sampling_rate_hz": [100, 100]})
+
+    # Define sample axis with positive number
+    align.sample_axis = 1
+    x2 = np.ones((3, 2000))
+    align._validate_input([x, x2], {"trace_sampling_rate_hz": [100, 100]})
+
+
+def test_align_groups_on_key_place_trace_in_array():
+    x = [np.random.rand(3, 1000)]
+    output = np.zeros((2, 3, 2000))
+
+    align = seisbench.generate.AlignGroupsOnKey("pick", sample_axis=-1)
+
+    align._place_trace_in_array(output[0], x[0], 500, 1500)
+    assert np.allclose(output[0, :, 500:1500], x[0])
+
+
+def test_align_groups_on_key():
+    align = seisbench.generate.AlignGroupsOnKey(
+        "trace_p_arrival_sample", sample_axis=-1, fill_value=np.nan, key=("X", "X2")
+    )
+    x = [np.random.rand(4, 1000), np.random.rand(4, 798), np.random.rand(4, 1200)]
+    metadata = {
+        "trace_p_arrival_sample": [500, 100, np.nan],
+        "trace_s_arrival_sample": [510, 250, 700],
+        "trace_sampling_rate_hz": [100, 100, 100],
+    }
+
+    state_dict = {"X": (x, metadata)}
+
+    align(state_dict)
+    x2, metadata2 = state_dict["X2"]
+    assert x2.shape == (2, 4, 1198)
+    assert np.allclose(x2[0, :, 0:1000], x[0])
+    assert np.allclose(x2[1, :, 400:1198], x[1])
+    assert np.allclose(metadata2["trace_p_arrival_sample"], 500)
+    assert np.allclose(metadata2["trace_s_arrival_sample"], [510, 650])
+
+    align.completeness = 0.6
+    align(state_dict)
+    x2, metadata2 = state_dict["X2"]
+    assert x2.shape == (2, 4, 600)
+    assert np.allclose(x2[0, :, 0:600], x[0][:, 400:1000])
+    assert np.allclose(x2[1, :, 0:600], x[1][:, 0:600])
+    assert np.allclose(metadata2["trace_p_arrival_sample"], 100)
+    assert np.allclose(metadata2["trace_s_arrival_sample"], [110, 250])

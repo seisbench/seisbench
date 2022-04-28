@@ -27,4 +27,5 @@ from .windows import (
     WindowAroundSample,
     RandomWindow,
     SteeredWindow,
+    AlignGroupsOnKey,
 )

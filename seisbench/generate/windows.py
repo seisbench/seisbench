@@ -453,3 +453,175 @@ class SteeredWindow(FixedWindow):
 
     def __str__(self):
         return f"SteeredWindow"
+
+
+class AlignGroupsOnKey:
+    """
+    Aligns all waveforms according to a metadata key.
+    After alignment, the metadata key will be at the same sample in all examples.
+    All traces with a nan-value in the alignment key well be dropped.
+
+    .. warning::
+
+        Assumes identical sampling rate and shape (except number of samples) for all traces.
+
+    :param alignment_key: Metadata key to align traces on.
+    :type alignment_key: str
+    :param completeness: Required fraction of traces (between 0 and 1) that need to exist to keep the sample.
+                         Samples at the start and end of the trace will be truncated if not enough input traces have
+                         waveforms available for the samples. This function can be used to avoid sparse output.
+    :type completeness: float
+    :param fill_value: Value used in the output for samples without input data.
+    :type fill_value: float
+    :param sample_axis: sample axis in the input
+    :type sample_axis: int
+    :param key: The keys for reading from and writing to the state dict.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
+    """
+
+    def __init__(
+        self, alignment_key, completeness=0.0, fill_value=0, sample_axis=-1, key="X"
+    ):
+        self.alignment_key = alignment_key
+        self.completeness = completeness
+        self.fill_value = fill_value
+        self.sample_axis = sample_axis
+        if isinstance(key, str):
+            self.key = (key, key)
+        else:
+            self.key = key
+
+    def __call__(self, state_dict):
+        x, metadata = state_dict[self.key[0]]
+
+        if self.key[0] != self.key[1]:
+            # Ensure metadata is not modified inplace unless input and output key are anyhow identical
+            metadata = copy.deepcopy(metadata)
+
+        self._validate_input(x, metadata)
+        metadata, output = self._align_traces(metadata, x)
+        output = self._truncate_incomplete(metadata, output)
+        output[np.isnan(output)] = self.fill_value
+
+        state_dict[self.key[1]] = output, metadata
+
+    def _truncate_incomplete(self, metadata, output):
+        axis = self.sample_axis
+        if axis < 0:
+            axis += output.ndim  # Sample axis automatically accounted for
+        else:
+            axis += 1  # Account for sample axis
+
+        mean_axis = list(range(0, output.ndim))
+        del mean_axis[axis]
+
+        completeness_over_time = np.mean(
+            ~np.isnan(output), axis=tuple(mean_axis), keepdims=False
+        )
+        mask = completeness_over_time >= self.completeness
+
+        ind = np.where(mask)[0]
+        for _ in range(axis):
+            ind = np.expand_dims(ind, 0)
+        for _ in range(axis + 1, output.ndim):
+            ind = np.expand_dims(ind, -1)
+
+        output = np.take_along_axis(output, ind, axis)
+
+        first_complete_sample = np.argmax(completeness_over_time > self.completeness)
+        for i in range(output.shape[0]):
+            self._shift_metadata_keys(i, metadata, -first_complete_sample)
+
+        return output
+
+    def _align_traces(self, metadata, x):
+        offset = np.array(metadata[self.alignment_key])
+        mask = ~np.isnan(offset)
+        offset = offset.astype(int)
+
+        samples = np.array([elem.shape[self.sample_axis] for elem in x])
+        samples_before = np.max(offset[mask])
+        samples_after = np.max((samples - offset)[mask])
+
+        output_shape = list(x[0].shape)
+        output_shape[self.sample_axis] = samples_before + samples_after
+        output_shape = tuple([np.sum(mask)] + output_shape)
+        output = np.ones_like(x[0], shape=output_shape) * np.nan
+
+        for out_idx, in_idx in enumerate(np.where(mask)[0]):
+            p0 = samples_before - offset[in_idx]
+            p1 = p0 + samples[in_idx]
+
+            self._place_trace_in_array(output[out_idx], x[in_idx], p0, p1)
+            self._shift_metadata_keys(in_idx, metadata, p0)
+
+        metadata = {key: np.array(val)[mask] for key, val in metadata.items()}
+
+        return metadata, output
+
+    @staticmethod
+    def _shift_metadata_keys(in_idx, metadata, p0):
+        for key in metadata.keys():
+            if key.endswith("_sample"):
+                try:
+                    metadata[key][in_idx] += p0
+                except TypeError:
+                    seisbench.logger.info(
+                        f"Failed to do window adjustment for column {key} "
+                        f"due to type error. "
+                    )
+
+    def _place_trace_in_array(self, output, x, p0, p1):
+        """
+        Places data x in the output array at positions p0 to p1 along self.sample_axis
+        """
+        axis = self.sample_axis
+        if axis < 0:
+            axis += x.ndim
+        ind = np.arange(p0, p1, dtype=int)
+        for _ in range(axis):
+            ind = np.expand_dims(ind, 0)
+        for _ in range(axis + 1, x.ndim):
+            ind = np.expand_dims(ind, -1)
+        np.put_along_axis(output, ind, x, axis)
+
+    def _validate_input(self, x, metadata):
+        if not isinstance(x, list):
+            raise ValueError("AlignGroupsOnKey can only be applied to group samples.")
+
+        sampling_rates = metadata["trace_sampling_rate_hz"]
+        if not np.allclose(sampling_rates, sampling_rates[0]):
+            raise ValueError(
+                "Found mixed sampling rates in AlignGroupsOnKey. "
+                "AlignGroupsOnKey requires consistent sampling rates."
+            )
+
+        ndims = [elem.ndim for elem in x]
+        if any(ndim != ndims[0] for ndim in ndims):
+            raise ValueError(
+                "Found mixed number of input dimensions in AlignGroupsOnKey. "
+                "The number of dimensions must agree for inputs."
+            )
+
+        shapes = [elem.shape for elem in x]
+        for i in range(ndims[0]):
+            if i == self.sample_axis or i == ndims[0] + self.sample_axis:
+                continue
+            else:
+                if any(shape[i] != shapes[0][i] for shape in shapes):
+                    raise ValueError(
+                        "Found mixed shapes in inputs to AlignGroupsOnKey. "
+                        "Shapes (except sample axis) must agree between all inputs."
+                    )
+
+    def __str__(self):
+        return (
+            f"AlignGroupsOnKey (alignment_key={self.alignment_key}, "
+            f"completeness={self.completeness}, "
+            f"fill_value={self.fill_value}, "
+            f"sample_axis={self.sample_axis}, "
+            f"key={self.key})"
+        )
