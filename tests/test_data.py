@@ -1227,6 +1227,7 @@ def test_trace_name_to_idx_dict():
     )
     dummy._metadata = metadata  # Overwrite metadata
     dummy._build_trace_name_to_idx_dict()
+    assert not dummy._trace_identification_warning_issued
     assert len(dummy._trace_name_to_idx) == 4
     assert len(dummy._trace_name_to_idx["name"]) == 2  # 1 collision
     assert len(dummy._trace_name_to_idx["name_chunk"]) == 3  # 0 collisions

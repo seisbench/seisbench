@@ -613,8 +613,8 @@ class WaveformDataset:
             self._trace_name_to_idx[dict_key]
         ) != len(self.metadata):
             seisbench.logger.warning(
-                f"Traces can not uniformly be identified using {dict_key.replace('_', ', ')}. "
-                "get_idx_from_trace_name will return only one possible matching trace."
+                f'Traces can not uniformly be identified using {dict_key.replace("_", ", ")}. '
+                '"get_idx_from_trace_name" will return only one possible matching trace.'
             )
             self._trace_identification_warning_issued = True
 
