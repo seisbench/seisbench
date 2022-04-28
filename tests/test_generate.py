@@ -26,6 +26,7 @@ import scipy.signal
 import logging
 import pytest
 from unittest.mock import patch, MagicMock
+from obspy import UTCDateTime
 
 
 def test_normalize():
@@ -1726,3 +1727,24 @@ def test_align_groups_on_key():
     assert np.allclose(x2[1, :, 0:600], x[1][:, 0:600])
     assert np.allclose(metadata2["trace_p_arrival_sample"], 100)
     assert np.allclose(metadata2["trace_s_arrival_sample"], [110, 250])
+
+
+def test_utc_offsets():
+    offsets = seisbench.generate.UTCOffsets(key=("X", "X2"))
+    t0 = UTCDateTime()
+
+    x = [np.random.rand(4, 1000), np.random.rand(4, 798), np.random.rand(4, 1200)]
+    metadata = {
+        "trace_start_time": [str(t0), str(t0 + 1), str(t0 + 0.5)],
+        "trace_sampling_rate_hz": [100, 50, 10],
+    }
+
+    state_dict = {"X": (x, metadata)}
+    offsets(state_dict)
+    assert np.allclose(state_dict["X2"][1]["trace_offset_sample"], [0, 50, 5])
+
+    state_dict = {"X": (x[0], metadata)}
+    with pytest.raises(
+        ValueError, match="UTCOffsets can only be applied to group samples"
+    ):
+        offsets(state_dict)

@@ -2,6 +2,7 @@ import seisbench
 
 import copy
 import numpy as np
+from obspy import UTCDateTime
 
 
 class FixedWindow:
@@ -461,6 +462,9 @@ class AlignGroupsOnKey:
     After alignment, the metadata key will be at the same sample in all examples.
     All traces with a nan-value in the alignment key well be dropped.
 
+    To align traces according to wall time, you have to write the sample offset into the metadata first.
+    This can be done using the :py:class:`~UTCOffsets` augmentation.
+
     .. warning::
 
         Assumes identical sampling rate and shape (except number of samples) for all traces.
@@ -625,3 +629,56 @@ class AlignGroupsOnKey:
             f"sample_axis={self.sample_axis}, "
             f"key={self.key})"
         )
+
+
+class UTCOffsets:
+    """
+    Write the offset in samples between the different traces into the metadata.
+    The offset of the trace with the earliest start time is set to 0.
+    In combination with :py:class:`~AlignGroupsOnKey`, this can be used to align traces based on wall time.
+
+    :param time_key: Metadata key to read the start times from.
+    :type time_key: str
+    :param offset_key: Metadata key to write offset samples to.
+    :type offset_key: str
+    :param key: The keys for reading from and writing to the state dict.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
+    """
+
+    def __init__(
+        self, time_key="trace_start_time", offset_key="trace_offset_sample", key="X"
+    ):
+        self.time_key = time_key
+        self.offset_key = offset_key
+        if isinstance(key, str):
+            self.key = (key, key)
+        else:
+            self.key = key
+
+    def __call__(self, state_dict):
+        x, metadata = state_dict[self.key[0]]
+
+        if not isinstance(x, list):
+            raise ValueError("UTCOffsets can only be applied to group samples.")
+
+        if self.key[0] != self.key[1]:
+            # Ensure metadata is not modified inplace unless input and output key are anyhow identical
+            metadata = copy.deepcopy(metadata)
+
+        times = [UTCDateTime(t) for t in metadata[self.time_key]]
+        min_time = min(times)
+
+        offsets = [
+            (t - min_time) * sampling_rate
+            for t, sampling_rate in zip(times, metadata["trace_sampling_rate_hz"])
+        ]
+
+        metadata[self.offset_key] = np.array(offsets)
+
+        state_dict[self.key[1]] = x, metadata
+
+    def __str__(self):
+        return f"UTCOffsets (time_key={self.time_key}, offset_key={self.offset_key}, key={self.key})"
