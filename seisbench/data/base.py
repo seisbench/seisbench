@@ -776,6 +776,7 @@ class WaveformDataset:
             self._metadata = self._metadata[mask]
             self._evict_cache()
             self._build_trace_name_to_idx_dict()
+            self.grouping = self.grouping  # Recalculate grouping
         else:
             other = self.copy()
             other.filter(mask, inplace=True)
@@ -1775,6 +1776,7 @@ class MultiWaveformDataset:
             # Calculate new metadata
             self._metadata = pd.concat(x.metadata for x in self.datasets)
             self._build_trace_name_to_idx_dict()
+            self.grouping = self.grouping  # Rebuild groups
 
         else:
             return MultiWaveformDataset(

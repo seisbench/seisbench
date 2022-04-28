@@ -1332,11 +1332,41 @@ def grouping_test_data():
 
     data._metadata = pd.DataFrame(
         [
-            {"event": "a", "station": "A", "part": 0},
-            {"event": "b", "station": "A", "part": 0},
-            {"event": "b", "station": "B", "part": 0},
-            {"event": "b", "station": "C", "part": 0},
-            {"event": "b", "station": "C", "part": 1},
+            {
+                "event": "a",
+                "station": "A",
+                "part": 0,
+                "trace_name": "a1",
+                "trace_chunk": "",
+            },
+            {
+                "event": "b",
+                "station": "A",
+                "part": 0,
+                "trace_name": "b1",
+                "trace_chunk": "",
+            },
+            {
+                "event": "b",
+                "station": "B",
+                "part": 0,
+                "trace_name": "b2",
+                "trace_chunk": "",
+            },
+            {
+                "event": "b",
+                "station": "C",
+                "part": 0,
+                "trace_name": "b3",
+                "trace_chunk": "",
+            },
+            {
+                "event": "b",
+                "station": "C",
+                "part": 1,
+                "trace_name": "b4",
+                "trace_chunk": "",
+            },
         ]
     )
     return data
@@ -1388,3 +1418,12 @@ def test_multiwaveformdataset_grouping():
     data.get_group_waveforms(0)
     data.get_group_samples(0)
     data.get_group_idx_from_params(data.metadata.iloc[0]["source_magnitude"])
+
+
+def test_grouping_filter(grouping_test_data):
+    data = grouping_test_data
+
+    data.grouping = "event"
+    mask = data.metadata["event"] == "b"
+    data.filter(mask, inplace=True)
+    assert len(data.groups) == 1
