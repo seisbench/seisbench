@@ -200,7 +200,7 @@ class SeisBenchModel(nn.Module):
 
         For more information on the SeisBench model format see py:func:`save`.
 
-        :param path: Define the path to the SeisBench model directory.
+        :param path: Define the path to the SeisBench model.
         :type path: pathlib.Path ot str
         :return: Model instance
         :rtype: SeisBenchModel
@@ -227,27 +227,28 @@ class SeisBenchModel(nn.Module):
 
         return model
 
-    def save(self, path, document=""):
+    def save(self, path, weights_docstring=""):
         """
         Save a SeisBench model locally.
 
         SeisBench models are stored inside the directory 'path'. SeisBench models are saved in 2 parts,
-        the model configuration is stored in JSON format [path]/[name.json], and the underlying model weights
-        in PyTorch format [path]/[name].pt. Where 'name' is the model class name in lowercase.
+        the model configuration is stored in JSON format [path][.json], and the underlying model weights
+        in PyTorch format [path][.pt]. Where 'path' is the output path to store. The suffixes are appended
+        to the path parameter automatically.
 
         The model config should contain the following information, which is automatically created from
         the model instance state:
-            - "docstring": A string documenting the pipeline. Usually also contains information on the author.
+            - "weights_docstring": A string documenting the pipeline. Usually also contains information on the author.
             - "model_args": Argument dictionary passed to the init function of the pipeline.
             - "seisbench_requirement": The minimal version of SeisBench required to use the weights file.
             - "default_args": Default args for the :py:func:`annotate`/:py:func:`classify` functions.
 
-        Non-serlizable arguments (e.g. functions) cannot be saved to JSON, so are not converted.
+        Non-serializable arguments (e.g. functions) cannot be saved to JSON, so are not converted.
 
-        :param path: Define the output model directory.
+        :param path: Define the path to the output model.
         :type path: pathlib.Path or str
-        :param document: Documentation for the model weights (training details, author etc.)
-        :type document: str, default to ''
+        :param weights_docstring: Documentation for the model weights (training details, author etc.)
+        :type weights_docstring: str, default to ''
         """
         if isinstance(path, str):
             path = Path(path)
@@ -308,7 +309,7 @@ class SeisBenchModel(nn.Module):
                     )
 
         model_metadata = {
-            "docstring": document,
+            "docstring": weights_docstring,
             "model_args": parsed_model_args,
             "seisbench-requirements": seisbench.__version__,
             "default_args": self.__dict__.get("default_args", ""),
@@ -349,48 +350,6 @@ class SeisBenchModel(nn.Module):
         if "kwargs" in args.keys():
             del args["kwargs"]
         return args
-
-    def _update_object_args(self, init_args):
-        """
-        Given a set of object arguments, and an instance of the object,
-        find the current value of all input arguments in the object instance state.
-        `init_args` are updated inplace with the latest values. 
-        The instance arguments (or all parameters in state) are returned.
-        """
-        obj_instance_args = self.__dict__
-
-        for arg in init_args.keys():
-            # Find if variable has been converted into state (e.g. self.a = a or self._a = a)
-            match, match_private = [
-                i
-                for i in map(
-                    lambda val: val in obj_instance_args.keys(), [arg, f"_{arg}"]
-                )
-            ]
-
-            if match_private:
-                init_args.update({arg: obj_instance_args[f"_{arg}"]})
-            elif match:
-                # Always use non-private attr in the case of both matches
-                init_args.update({arg: obj_instance_args[arg]})
-            else:
-                seisbench.logger.warning(
-                    f"Could not detect '{arg}' parameter in {self.__class__.__name__} instance state."
-                )
-                if init_args[arg] == inspect._empty:
-                    raise ValueError(
-                        f"Can't find '{arg}' parameter. {self.__class__.__name__} input parameter '{arg}' has not been detected in "
-                        f"instance state. Any parameters declared during object construction "
-                        f"must have instance attributes which either use the name, or a private version of the "
-                        f"the same name. For example: Given an input parameter 'a' to the object, checks are performed "
-                        f"for the instance attributes 'a', and '_a'. If the parameter has been converted to something else e.g. "
-                        f"'self.abc = a' this cannot be detected for updating and saving."
-                    )
-                else:
-                    seisbench.logger.warning(
-                        f"Saving '{arg}' as default parameter '{init_args[arg]}'."
-                    )
-        return obj_instance_args
 
     @abstractmethod
     def get_model_args(self):
@@ -1564,14 +1523,18 @@ class WaveformModel(SeisBenchModel, ABC):
         return detections
 
     def get_model_args(self):
-        args = super().get_model_args()
-        _parameters = self._parameters if self._parameters else {}
-        # Get default parameters
-        init_args = self._get_input_args(self.__class__)
-        # Finds current parameters in state and updates in place
-        state_args = self._update_object_args(init_args)
-
-        return init_args
+        return {
+            "sampling_rate": self.sampling_rate,
+            "output_type": self.output_type,
+            "component_order": self.component_order,
+            "default_args": self.default_args,
+            "in_samples": self.in_samples,
+            "pred_sample": self.pred_sample,
+            "labels": self.labels,
+            "filter_args": self.filter_args,
+            "filter_kwargs": self.filter_kwargs,
+            "grouping": self._grouping,
+        }
 
 
 class WaveformPipeline(ABC):

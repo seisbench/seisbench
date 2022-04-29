@@ -123,3 +123,30 @@ class GPD(WaveformModel):
             )
 
         return sorted(picks)
+
+    def get_model_args(self):
+        model_args = super().get_model_args()
+        model_args = {
+            k: model_args[k]
+            for k in model_args.keys()
+            if k
+            not in (
+                "citation",
+                "output_type",
+                "in_samples",
+                "pred_sample",
+                "labels",
+                "sampling_rate",
+                "default_args",
+            )
+        }
+
+        model_args["sampling_rate"] = self.sampling_rate
+        model_args["in_channels"] = self.in_channels
+        model_args["classes"] = self.classes
+        model_args["phases"] = self._phases
+        model_args["eps"] = self.eps
+        model_args["sampling_rate"] = self.sampling_rate
+        model_args["pred_sample"] = self.pred_sample
+        model_args["original_compatible"] = self.original_compatible
+        return model_args
