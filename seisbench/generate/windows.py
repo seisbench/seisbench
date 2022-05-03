@@ -1,3 +1,5 @@
+import warnings
+
 import seisbench
 
 import copy
@@ -250,11 +252,13 @@ class WindowAroundSample(FixedWindow):
 
     def __call__(self, state_dict, windowlen=None):
         _, metadata = state_dict[self.key[0]]
-        cand = [
-            metadata[key]
-            for key in self.metadata_keys
-            if key in metadata and not np.isnan(metadata[key])
-        ]
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "Mean of empty slice")
+            cand = [
+                np.nanmean(metadata[key])
+                for key in self.metadata_keys
+                if key in metadata and not np.isnan(np.nanmean(metadata[key]))
+            ]
 
         if len(cand) == 0:
             cand = [self.samples_before]

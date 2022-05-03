@@ -1,3 +1,5 @@
+import warnings
+
 import seisbench.generate
 import seisbench.generate.labeling
 from seisbench.generate import (
@@ -488,6 +490,34 @@ def test_window_around_sample():
     state_dict["X"][1]["trace_s_arrival_sample"] = np.nan
     window(state_dict)
     assert (state_dict["X"][0] == base_state_dict["X"][0][:, :200]).all()
+
+
+def test_window_around_sample_grouping():
+    base_state_dict = {
+        "X": (
+            10 * np.random.rand(2, 3, 1000),
+            {
+                "trace_p_arrival_sample": [300, 340],
+                "trace_s_arrival_sample": [np.nan, np.nan],
+            },
+        )
+    }
+
+    window = WindowAroundSample(
+        "trace_p_arrival_sample", samples_before=100, windowlen=200
+    )
+    state_dict = copy.deepcopy(base_state_dict)
+    window(state_dict)
+    assert np.allclose(state_dict["X"][0], base_state_dict["X"][0][:, :, 220:420])
+
+    # All entries NaN - no warnings are issued
+    window = WindowAroundSample(
+        "trace_s_arrival_sample", samples_before=100, windowlen=200
+    )
+    state_dict = copy.deepcopy(base_state_dict)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", "Mean of empty slice")
+        window(state_dict)
 
 
 def test_random_window():
