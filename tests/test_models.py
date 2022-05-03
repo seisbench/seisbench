@@ -10,7 +10,6 @@ from unittest.mock import patch
 import logging
 import pytest
 import asyncio
-import os
 import inspect
 
 
