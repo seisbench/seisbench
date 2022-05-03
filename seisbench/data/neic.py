@@ -26,7 +26,7 @@ class NEIC(BenchmarkDataset):
         )
         super().__init__(citation=citation, repository_lookup=True, **kwargs)
 
-    def _download_dataset(self, writer, cleanup=True, blocksize=2 ** 14):
+    def _download_dataset(self, writer, cleanup=True, blocksize=2**14):
         """
         Downloads and converts the dataset from the original publication
 

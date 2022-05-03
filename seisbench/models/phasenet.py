@@ -7,7 +7,7 @@ import numpy as np
 
 class PhaseNet(WaveformModel):
     def __init__(
-        self, in_channels=3, classes=3, phases=None, sampling_rate=100, **kwargs
+        self, in_channels=3, classes=3, phases="NPS", sampling_rate=100, **kwargs
     ):
         citation = (
             "Zhu, W., & Beroza, G. C. (2019). "

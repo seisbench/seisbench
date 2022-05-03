@@ -1,5 +1,9 @@
-![image](docs/_static/seisbench_logo_subtitle.svg)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/seisbench/seisbench/main/docs/_static/seisbench_logo_subtitle_outlined.svg" />
+</p>
+
 ---
+
 # Contributing to SeisBench
 
 SeisBench is an open-source project and encourages community engagement.

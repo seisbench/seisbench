@@ -32,11 +32,12 @@ be based of community feedback.
    Please cite any work in which SeisBench was used:
    
       Woollam, J., Münchmeyer, J., Tilmann, F., Rietbrock, A., Lange, D., Bornstein, T., Diehl, T., Giuchi, C., Haslinger, F., 
-      Jozinović, D., Michelini, A., Saul, J., & Soto, H. (2021).
-      SeisBench - A Toolbox for Machine Learning in Seismology. 
-      https://arxiv.org/abs/2111.00786,
-      (pre-print)
+      Jozinović, D., Michelini, A., Saul, J., & Soto, H. (2022). SeisBench - A Toolbox for Machine Learning in Seismology. in *Seismological Research Letters*
+      https://doi.org/10.1785/0220210324
 
+
+      The pre-print is also available for those who don't have access:
+      https://arxiv.org/abs/2111.00786,
 
 .. toctree::
    :maxdepth: 2

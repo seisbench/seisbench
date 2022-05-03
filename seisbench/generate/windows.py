@@ -10,6 +10,7 @@ class FixedWindow:
     In addition, the windower rewrites all metadata ending in "_sample" to point to the correct sample after window
     selection. Window start and length can be set either at initialization or separately in each call.
     The later is primarily intended for more complicated windowers inheriting from FixedWindow.
+
     :param p0: Start position of the trace. If p0 is negative, this will be treated as identifying
                a sample before the start of the trace. This is in contrast to standard list indexing
                with negative indices in Python, which counts items from the end of the list. Negative
@@ -19,14 +20,17 @@ class FixedWindow:
     :type windowlen: None or int
     :param strategy: Strategy to mitigate insufficient data. Options are:
 
-        - "fail": Raises a ValueError
-        - "pad": Adds zero padding to the window
-        - "move": Moves the start to the closest possible position to achieve sufficient trace length.
-          The resulting trace will be aligned to the input trace on one of the ends,
-          depending if parts before (left aligned) or after the trace (right aligned) were requested.
-          Will fail if total trace length is shorter than requested window length.
-        - "variable": Returns shorter length window, resulting in possibly varying window size.
-          Might return empty window if requested window is completely outside target range.
+                     *  "fail": Raises a ValueError
+
+                     *  "pad": Adds zero padding to the window
+
+                     *  "move": Moves the start to the closest possible position to achieve sufficient trace length.
+                        The resulting trace will be aligned to the input trace on one of the ends,
+                        depending if parts before (left aligned) or after the trace (right aligned) were requested.
+                        Will fail if total trace length is shorter than requested window length.
+
+                     *  "variable": Returns shorter length window, resulting in possibly varying window size.
+                        Might return empty window if requested window is completely outside target range.
 
     :type strategy: str
     :param axis: Axis along which the window selection should be performed

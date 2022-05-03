@@ -54,7 +54,7 @@ Use the in-built generator functionality in SeisBench to enhance your ML process
 .. _applied_stream_picking:
 
 Deploy ML pickers
--------------------
+-----------------
 .. raw:: html
 
     <embed>
@@ -65,8 +65,11 @@ Deploy ML pickers
 
 Rapidly deploy ML models integrated in SeisBench to seismic streams. 
 
+
+.. _using_deep_denoiser:
+
 Using DeepDenoiser
-__________________________________
+------------------
 .. raw:: html
 
     <embed>
@@ -78,6 +81,8 @@ __________________________________
 Denoising seismic waveform streams with DeepDenoiser in SeisBench.
 
 
+.. _training_phasenet:
+
 Training ML models on seismic data
 ----------------------------------
 .. raw:: html
@@ -88,7 +93,22 @@ Training ML models on seismic data
         </a>
     </embed>
 
-Get started with training deep learning routines (PhaseNet) on a benchmark seismic dataset in SeisBench. 
+Get started with training deep learning routines (PhaseNet) on a benchmark seismic dataset in SeisBench.
+
+
+.. _creating_a_dataset:
+
+Creating a dataset
+------------------
+.. raw:: html
+
+    <embed>
+        <a href="https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03b_creating_a_dataset.ipynb">
+            <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+        </a>
+    </embed>
+
+Learn how to create a dataset in SeisBench, using build-in functions and the obspy FDSN client as data source.
 
 
 

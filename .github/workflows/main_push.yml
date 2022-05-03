@@ -19,7 +19,7 @@ jobs:
       
       - name: Black Style Check
         run: |
-          pip install git+https://github.com/psf/black@20.8b1
+          pip install git+https://github.com/psf/black@22.3.0
           python -m black . --check
 
   run_tests:

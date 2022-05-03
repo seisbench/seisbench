@@ -9,8 +9,8 @@ import torch
 from unittest.mock import patch
 import logging
 import pytest
-import asyncio
 import inspect
+from collections import defaultdict
 
 
 def get_input_args(obj):
@@ -556,113 +556,77 @@ def test_predictions_to_stream():
     assert stream[5].stats.sampling_rate == 50
 
 
-@pytest.mark.asyncio
-async def test_cut_fragments_point():
+def test_cut_fragments_point():
     dummy = DummyWaveformModel(
         component_order="ZNE", in_samples=1000, sampling_rate=100
     )
     data = [np.ones((3, 10000))]
 
-    queue_in = asyncio.Queue()
-    queue_out = asyncio.Queue()
+    out = [
+        x[0]
+        for x in dummy._cut_fragments_point(
+            0, data[0], None, {"stride": 100, "sampling_rate": 100}
+        )
+    ]
 
-    queue_in.put_nowait((0, data[0], None))
-    queue_in.put_nowait(None)
-    await dummy._cut_fragments_point(
-        queue_in, queue_out, {"stride": 100, "sampling_rate": 100}
-    )
-    out = []
-    while True:
-        try:
-            elem = queue_out.get_nowait()
-            out.append(elem[0])
-        except asyncio.QueueEmpty:
-            break
     assert len(out) == 91
     assert out[0].shape == (3, 1000)
 
 
-@pytest.mark.asyncio
-async def test_reassemble_blocks_point():
+def test_reassemble_blocks_point():
     dummy = DummyWaveformModel(
         component_order="ZNE", in_samples=1000, sampling_rate=100
     )
-    queue_in = asyncio.Queue()
-    queue_out = asyncio.Queue()
 
     trace_stats = obspy.read()[0].stats
 
-    for i in range(100):
-        queue_in.put_nowait(([0], (0, i, 100, trace_stats)))
-    queue_in.put_nowait(None)
-
-    await dummy._reassemble_blocks_point(
-        queue_in, queue_out, {"stride": 100, "sampling_rate": 100}
-    )
     out = []
-    while True:
-        try:
-            elem = queue_out.get_nowait()
-            out.append(elem[0])
-        except asyncio.QueueEmpty:
-            break
+    argdict = {"stride": 100, "sampling_rate": 100}
+    buffer = defaultdict(list)
+    for i in range(100):
+        elem = ([0], (0, i, 100, trace_stats, 0))
+        out_elem = dummy._reassemble_blocks_point(elem, buffer, argdict)
+        if out_elem is not None:
+            out += [out_elem[0]]
+
     assert len(out) == 1
     assert out[0][0] == 1
     assert out[0][2].shape == (100, 1)
 
 
-@pytest.mark.asyncio
-async def test_cut_fragments_array():
+def test_cut_fragments_array():
     dummy = DummyWaveformModel(
         component_order="ZNE", in_samples=1000, sampling_rate=100, pred_sample=(0, 1000)
     )
     data = [np.ones((3, 10001))]
+    argdict = {"overlap": 100, "sampling_rate": 100}
+    elem = (0, data[0], None)
 
-    queue_in = asyncio.Queue()
-    queue_out = asyncio.Queue()
+    out = [x[0] for x in dummy._cut_fragments_array(elem, argdict)]
 
-    queue_in.put_nowait((0, data[0], None))
-    queue_in.put_nowait(None)
-    await dummy._cut_fragments_array(
-        queue_in, queue_out, {"overlap": 100, "sampling_rate": 100}
-    )
-    out = []
-    while True:
-        try:
-            elem = queue_out.get_nowait()
-            out.append(elem[0])
-        except asyncio.QueueEmpty:
-            break
     assert len(out) == 12
     assert out[0].shape == (3, 1000)
 
 
-@pytest.mark.asyncio
-async def test_reassemble_blocks_array():
+def test_reassemble_blocks_array():
     dummy = DummyWaveformModel(
         component_order="ZNE", in_samples=1000, sampling_rate=100, pred_sample=(0, 1000)
     )
-    queue_in = asyncio.Queue()
-    queue_out = asyncio.Queue()
 
     trace_stats = obspy.read()[0].stats
+
+    out = []
+    argdict = {"stride": 100, "sampling_rate": 100}
+    buffer = defaultdict(list)
 
     starts = [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200, 8100, 9000, 9001]
 
     for i in range(12):
-        queue_in.put_nowait((np.ones((1000, 3)), (0, starts[i], 12, trace_stats)))
-    queue_in.put_nowait(None)
+        elem = (np.ones((1000, 3)), (0, starts[i], 12, trace_stats, 0))
+        out_elem = dummy._reassemble_blocks_array(elem, buffer, argdict)
+        if out_elem is not None:
+            out += [out_elem[0]]
 
-    await dummy._reassemble_blocks_array(
-        queue_in, queue_out, {"overlap": 100, "sampling_rate": 100}
-    )
-    out = []
-    while True:
-        try:
-            elem = queue_out.get_nowait()
-            out.append(elem[0])
-        except asyncio.QueueEmpty:
-            break
     assert len(out) == 1
     assert out[0][0] == 100.0
     assert out[0][2].shape == (10001, 3)
@@ -910,7 +874,7 @@ def test_parse_default_args():
 
 def test_default_labels():
     model = seisbench.models.PhaseNet(
-        sampling_rate=200
+        sampling_rate=200, phases=None
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
@@ -921,75 +885,94 @@ def test_default_labels():
     assert model.labels == [0, 1, 2]
 
 
-def test_annotate_cred():
+@pytest.mark.parametrize(
+    "parallelism",
+    [None, 1],
+)
+def test_annotate_cred(parallelism):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.CRED(
         sampling_rate=400
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
-    annotations = model.annotate(stream)
+    annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
-    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+    model.classify(
+        stream, parallelism=parallelism
+    )  # Ensures classify succeeds even though labels are unknown
 
 
-def test_annotate_eqtransformer():
+@pytest.mark.parametrize(
+    "parallelism",
+    [None, 1],
+)
+def test_annotate_eqtransformer(parallelism):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.EQTransformer(
         sampling_rate=400
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
-    annotations = model.annotate(stream)
+    annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
-    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+    model.classify(
+        stream, parallelism=parallelism
+    )  # Ensures classify succeeds even though labels are unknown
 
 
-def test_annotate_gpd():
+@pytest.mark.parametrize(
+    "parallelism",
+    [None, 1],
+)
+def test_annotate_gpd(parallelism):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.GPD(
         sampling_rate=100
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
-    annotations = model.annotate(stream)
+    annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
-    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+    model.classify(
+        stream, parallelism=parallelism
+    )  # Ensures classify succeeds even though labels are unknown
 
 
-def test_annotate_phasenet():
+@pytest.mark.parametrize(
+    "parallelism",
+    [None, 1],
+)
+def test_annotate_phasenet(parallelism):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.PhaseNet(
         sampling_rate=400
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
-    annotations = model.annotate(stream)
+    annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
-    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+    model.classify(
+        stream, parallelism=parallelism
+    )  # Ensures classify succeeds even though labels are unknown
 
 
-def test_annotate_basicphaseae():
+@pytest.mark.parametrize(
+    "parallelism",
+    [None, 1],
+)
+def test_annotate_basicphaseae(parallelism):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.BasicPhaseAE(
         sampling_rate=400
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
-    annotations = model.annotate(stream)
+    annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
-    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
-
-
-def test_annotate_deepdenoiser():
-    # Tests that the annotate/classify functions run without crashes and annotate produces an output
-    model = seisbench.models.DeepDenoiser(
-        sampling_rate=400
-    )  # Higher sampling rate ensures trace is long enough
-    stream = obspy.read()
-
-    annotations = model.annotate(stream)
-    assert len(annotations) > 0
+    model.classify(
+        stream, parallelism=parallelism
+    )  # Ensures classify succeeds even though labels are unknown
 
 
 def test_short_traces(caplog):
@@ -1017,11 +1000,15 @@ def test_deep_denoiser():
     seisbench.models.DeepDenoiser()
 
 
-def test_annotate_deep_denoiser():
+@pytest.mark.parametrize(
+    "parallelism",
+    [None, 1],
+)
+def test_annotate_deep_denoiser(parallelism):
     stream = obspy.read()
 
     model = seisbench.models.DeepDenoiser()
-    annotations = model.annotate(stream)
+    annotations = model.annotate(stream, parallelism=parallelism)
 
     assert len(annotations) == 3
     for i in range(3):
@@ -1237,3 +1224,456 @@ def test_save_load_model_updated_after_construction_inheritence_compatible(tmp_p
     model_loaded = model_orig.load(tmp_path / "gpd_changed")
 
     assert model_orig.component_order == model_loaded.component_order
+
+
+def test_check_parallelism_annotate(caplog):
+    t0 = UTCDateTime(0)
+    stats = {
+        "network": "SB",
+        "station": "TEST",
+        "channel": "HHZ",
+        "sampling_rate": 100,
+        "starttime": t0,
+    }
+
+    trace0 = obspy.Trace(np.zeros(1000), stats)
+    trace1 = obspy.Trace(np.ones(1000), stats)
+    stream_small = obspy.Stream([trace0, trace1])
+
+    trace0 = obspy.Trace(np.zeros(int(3e7)), stats)
+    trace1 = obspy.Trace(np.zeros(int(3e7)), stats)
+    stream_large = obspy.Stream([trace0, trace1])
+
+    with caplog.at_level(logging.WARNING):
+        seisbench.models.WaveformModel._check_parallelism_annotate(
+            stream_small, parallelism=None
+        )
+    assert "Consider activating parallelisation. " not in caplog.text
+
+    with caplog.at_level(logging.WARNING):
+        seisbench.models.WaveformModel._check_parallelism_annotate(
+            stream_large, parallelism=None
+        )
+    assert "Consider activating parallelisation. " in caplog.text
+
+    caplog.clear()
+
+    with caplog.at_level(logging.WARNING):
+        seisbench.models.WaveformModel._check_parallelism_annotate(
+            stream_large, parallelism=1
+        )
+    assert "Consider using the sequential asyncio implementation. " not in caplog.text
+
+    with caplog.at_level(logging.WARNING):
+        seisbench.models.WaveformModel._check_parallelism_annotate(
+            stream_small, parallelism=1
+        )
+    assert "Consider using the sequential asyncio implementation. " in caplog.text
+
+
+def test_get_versions_from_files():
+    # Only latest
+    files = ["original.pt", "original.json"]
+    versions = seisbench.models.EQTransformer._get_versions_from_files(
+        "original", files=files
+    )
+    assert versions == [""]
+
+    # No weights at all
+    files = []
+    versions = seisbench.models.EQTransformer._get_versions_from_files(
+        "something", files=files
+    )
+    assert versions == []
+
+    # No weights for target name
+    files = ["original.pt", "original.json"]
+    versions = seisbench.models.EQTransformer._get_versions_from_files(
+        "something", files=files
+    )
+    assert versions == []
+
+    # Multiple versions
+    files = ["original.pt", "original.json", "original.pt.v1", "original.json.v1"]
+    versions = seisbench.models.EQTransformer._get_versions_from_files(
+        "original", files=files
+    )
+    assert versions == ["", "1"]
+
+    # Multiple versions - mixed names
+    files = [
+        "original.pt",
+        "original.json",
+        "original.pt.v1",
+        "original.json.v1",
+        "something.pt.v1",
+        "something.json.v1",
+    ]
+    versions = seisbench.models.EQTransformer._get_versions_from_files(
+        "original", files=files
+    )
+    assert versions == ["", "1"]
+    versions = seisbench.models.EQTransformer._get_versions_from_files(
+        "something", files=files
+    )
+    assert versions == ["1"]
+
+
+def test_cleanup_local_repository(tmp_path):
+    with patch("seisbench.models.GPD._model_path") as model_path:
+        model_path.return_value = tmp_path
+
+        # Create dummies
+        def create_versions(name, versions, content):
+            for x in versions:
+                for suffix in ["json", "pt"]:
+                    if x == "":
+                        filename = f"{name}.{suffix}"
+                    else:
+                        filename = f"{name}.{suffix}.v{x}"
+                    with open(tmp_path / filename, "w") as f:
+                        f.write(content)
+
+        create_versions("test", ["", "2"], "{}\n")
+        create_versions("original", [""], '{"version": "1.2.3"}\n')
+
+        seisbench.models.GPD._cleanup_local_repository()
+
+        assert sorted([x.name for x in tmp_path.iterdir()]) == [
+            "original.json.v1.2.3",
+            "original.pt.v1.2.3",
+            "test.json.v1",
+            "test.json.v2",
+            "test.pt.v1",
+            "test.pt.v2",
+        ]
+
+        model_path.return_value = tmp_path / "not_existent"
+        seisbench.models.GPD._cleanup_local_repository()  # Just checking that this does not crash
+
+
+def test_list_versions(tmp_path):
+    with patch("seisbench.models.GPD._model_path") as model_path:
+        model_path.return_value = tmp_path
+
+        # Create dummies
+        def create_versions(name, versions, content):
+            for x in versions:
+                for suffix in ["json", "pt"]:
+                    if x == "":
+                        filename = f"{name}.{suffix}"
+                    else:
+                        filename = f"{name}.{suffix}.v{x}"
+                    with open(tmp_path / filename, "w") as f:
+                        f.write(content)
+
+        create_versions("test", ["", "2"], "{}\n")
+        assert seisbench.models.GPD.list_versions("test", remote=False) == ["1", "2"]
+
+        with patch("seisbench.util.download_http") as download, patch(
+            "seisbench.util.ls_webdav"
+        ) as ls_webdav:
+
+            def side_effect(remote_metadata_path, metadata_path, progress_bar=False):
+                # Checks correct url and writes out dummy
+                assert remote_metadata_path.endswith("test.json")
+                assert remote_metadata_path.startswith(
+                    seisbench.models.GPD._remote_path()
+                )
+                with open(metadata_path, "w") as f:
+                    f.write('{"version": "3"}\n')
+
+            download.side_effect = side_effect
+            ls_webdav.return_value = ["test.json"]
+
+            assert seisbench.models.GPD.list_versions("test", remote=True) == [
+                "1",
+                "2",
+                "3",
+            ]
+
+        with patch("seisbench.util.ls_webdav") as ls_webdav:
+            ls_webdav.return_value = []
+            (tmp_path / "a").mkdir()
+            model_path.return_value = tmp_path / "a"
+
+            assert seisbench.models.GPD.list_versions("test") == []
+
+            model_path.return_value = tmp_path / "not_existent"
+            assert (
+                seisbench.models.GPD.list_versions("test") == []
+            )  # Just check that this does not crash
+
+
+def test_ensure_weight_files(tmp_path):
+    # Files available
+    tmp_path1 = tmp_path / "1"
+    tmp_path1.mkdir()
+    with open(tmp_path1 / "test.pt.v1", "w"), open(tmp_path1 / "test.json.v1", "w"):
+        pass
+    seisbench.models.GPD._ensure_weight_files(
+        "test", "1", tmp_path1 / "test.pt.v1", tmp_path1 / "test.json.v1", False, False
+    )
+
+    # File available remote with version suffix
+    tmp_path2 = tmp_path / "2"
+    tmp_path2.mkdir()
+
+    with patch("seisbench.util.download_http") as download, patch(
+        "seisbench.util.ls_webdav"
+    ) as ls_webdav:
+
+        def side_effect(remote_path, local_path, progress_bar=False):
+            # Checks correct url and writes out dummy
+            assert remote_path.endswith("test.json.v1") or remote_path.endswith(
+                "test.pt.v1"
+            )
+            assert remote_path.startswith(seisbench.models.GPD._remote_path())
+            with open(local_path, "w") as f:
+                f.write('{"version": "3"}\n')
+
+        download.side_effect = side_effect
+        ls_webdav.return_value = ["test.json.v1", "test.pt.v1"]
+
+        seisbench.models.GPD._ensure_weight_files(
+            "test",
+            "1",
+            tmp_path2 / "test.pt.v1",
+            tmp_path2 / "test.json.v1",
+            False,
+            False,
+        )
+
+        assert (tmp_path2 / "test.pt.v1").is_file()
+        assert (tmp_path2 / "test.json.v1").is_file()
+
+    # File available remote without version suffix
+    tmp_path3 = tmp_path / "3"
+    tmp_path3.mkdir()
+
+    with patch("seisbench.util.download_http") as download, patch(
+        "seisbench.util.ls_webdav"
+    ) as ls_webdav:
+
+        def side_effect(remote_path, local_path, progress_bar=False):
+            # Checks correct url and writes out dummy
+            assert remote_path.endswith("test.json") or remote_path.endswith("test.pt")
+            assert remote_path.startswith(seisbench.models.GPD._remote_path())
+            with open(local_path, "w") as f:
+                f.write('{"version": "1"}\n')
+
+        download.side_effect = side_effect
+        ls_webdav.return_value = ["test.json", "test.pt"]
+
+        seisbench.models.GPD._ensure_weight_files(
+            "test",
+            "1",
+            tmp_path3 / "test.pt.v1",
+            tmp_path3 / "test.json.v1",
+            False,
+            False,
+        )
+
+        assert (tmp_path3 / "test.pt.v1").is_file()
+        assert (tmp_path3 / "test.json.v1").is_file()
+
+    # Version not available in remote - no file without suffix
+    tmp_path4 = tmp_path / "4"
+    tmp_path4.mkdir()
+
+    with patch("seisbench.util.download_http") as download, patch(
+        "seisbench.util.ls_webdav"
+    ) as ls_webdav:
+
+        def side_effect(remote_path, local_path, progress_bar=False):
+            with open(local_path, "w") as f:
+                f.write('{"version": "1"}\n')
+
+        download.side_effect = side_effect
+        ls_webdav.return_value = ["test.json.v3", "test.pt.v3"]
+
+        with pytest.raises(ValueError):
+            seisbench.models.GPD._ensure_weight_files(
+                "test",
+                "1",
+                tmp_path4 / "test.pt.v1",
+                tmp_path4 / "test.json.v1",
+                False,
+                False,
+            )
+
+    # Version not available in remote - file without suffix
+    tmp_path5 = tmp_path / "5"
+    tmp_path5.mkdir()
+
+    with patch("seisbench.util.download_http") as download, patch(
+        "seisbench.util.ls_webdav"
+    ) as ls_webdav:
+
+        def side_effect(remote_path, local_path, progress_bar=False):
+            # Checks correct url and writes out dummy
+            assert remote_path.endswith("test.json")
+            assert remote_path.startswith(seisbench.models.GPD._remote_path())
+            with open(local_path, "w") as f:
+                f.write('{"version": "2"}\n')
+
+        download.side_effect = side_effect
+        ls_webdav.return_value = ["test.json", "test.pt"]
+
+        with pytest.raises(ValueError):
+            seisbench.models.GPD._ensure_weight_files(
+                "test",
+                "1",
+                tmp_path5 / "test.pt.v1",
+                tmp_path5 / "test.json.v1",
+                False,
+                False,
+            )
+
+
+def test_parse_weight_filename():
+    assert seisbench.models.GPD._parse_weight_filename("test.json") == (
+        "test",
+        "json",
+        None,
+    )
+    assert seisbench.models.GPD._parse_weight_filename("test.json.v1") == (
+        "test",
+        "json",
+        "1",
+    )
+    assert seisbench.models.GPD._parse_weight_filename("test.pt") == (
+        "test",
+        "pt",
+        None,
+    )
+    assert seisbench.models.GPD._parse_weight_filename("test.pt.v1") == (
+        "test",
+        "pt",
+        "1",
+    )
+    assert seisbench.models.GPD._parse_weight_filename("test.jasd") == (
+        None,
+        None,
+        None,
+    )
+
+
+def test_list_pretrained(tmp_path):
+    with patch("seisbench.models.GPD._model_path") as model_path:
+        model_path.return_value = tmp_path
+
+        # Create dummies
+        def create_versions(name, versions, content):
+            for x, c in zip(versions, content):
+                for suffix in ["json", "pt"]:
+                    if x == "":
+                        filename = f"{name}.{suffix}"
+                    else:
+                        filename = f"{name}.{suffix}.v{x}"
+                    with open(tmp_path / filename, "w") as f:
+                        f.write(c)
+
+        create_versions(
+            "test", ["1", "2"], ['{"docstring": "d1"}\n', '{"docstring": "d2"}\n']
+        )
+        create_versions(
+            "bla", ["1", "2"], ['{"docstring": "b1"}\n', '{"docstring": "b2"}\n']
+        )
+
+        assert seisbench.models.GPD.list_pretrained(details=False, remote=False) == [
+            "bla",
+            "test",
+        ]
+        assert seisbench.models.GPD.list_pretrained(details=True, remote=False) == {
+            "bla": "b2",
+            "test": "d2",
+        }
+
+        with patch("seisbench.util.ls_webdav") as ls_webdav:
+            ls_webdav.return_value = ["foo.json", "foo.pt"]
+            assert seisbench.models.GPD.list_pretrained(details=False, remote=True) == [
+                "bla",
+                "foo",
+                "test",
+            ]
+
+            with patch(
+                "seisbench.models.GPD._get_latest_docstring"
+            ) as get_latest_docstring:
+                get_latest_docstring.return_value = "123"
+                assert seisbench.models.GPD.list_pretrained(
+                    details=True, remote=True
+                ) == {"bla": "123", "test": "123", "foo": "123"}
+
+
+def test_get_latest_docstring(tmp_path):
+    with patch("seisbench.models.GPD._model_path") as model_path:
+        model_path.return_value = tmp_path
+
+        # Create dummies
+        def create_versions(name, versions, content):
+            for x, c in zip(versions, content):
+                for suffix in ["json", "pt"]:
+                    if x == "":
+                        filename = f"{name}.{suffix}"
+                    else:
+                        filename = f"{name}.{suffix}.v{x}"
+                    with open(tmp_path / filename, "w") as f:
+                        f.write(c)
+
+        create_versions(
+            "test", ["1", "2"], ['{"docstring": "d1"}\n', '{"docstring": "d2"}\n']
+        )
+
+        assert seisbench.models.GPD._get_latest_docstring("test", remote=False) == "d2"
+
+        with patch("seisbench.util.download_http") as download, patch(
+            "seisbench.util.ls_webdav"
+        ) as ls_webdav:
+
+            def side_effect(remote_path, local_path, progress_bar=False):
+                # Checks correct url and writes out dummy
+                assert remote_path.endswith("test.json")
+                assert remote_path.startswith(seisbench.models.GPD._remote_path())
+                with open(local_path, "w") as f:
+                    f.write('{"docstring": "d3", "version": "3"}\n')
+
+            download.side_effect = side_effect
+            ls_webdav.return_value = ["test.json", "test.pt"]
+
+            assert (
+                seisbench.models.GPD._get_latest_docstring("test", remote=True) == "d3"
+            )
+
+
+@pytest.mark.parametrize(
+    "prefill_cache, update",
+    [(False, False), (False, True), (True, False), (True, True)],
+)
+def test_from_pretrained(tmp_path, prefill_cache, update):
+    with patch("seisbench.models.GPD._model_path") as model_path:
+        model_path.return_value = tmp_path
+
+        if prefill_cache:
+            with open(tmp_path / "test.pt.v1", "wb") as fw, open(
+                tmp_path / "test.json.v1", "w"
+            ) as f:
+                torch.save({}, fw)
+                f.write("{}\n")
+
+        with patch("seisbench.util.ls_webdav") as ls_webdav, patch(
+            "seisbench.models.GPD._ensure_weight_files"
+        ) as ensure_weight_files, patch("seisbench.models.GPD.load_state_dict") as _:
+            ls_webdav.return_value = ["test.json.v2", "test.pt.v2"]
+
+            def write_weights(
+                name, version_str, weight_path, metadata_path, force, wait_for_file
+            ):
+                with open(weight_path, "wb") as fw, open(metadata_path, "w") as f:
+                    torch.save({}, fw)
+                    f.write("{}\n")
+
+            ensure_weight_files.side_effect = write_weights
+
+            seisbench.models.GPD.from_pretrained("test", update=update)

@@ -83,7 +83,7 @@ def test_preload():
     assert len(dummy._waveform_cache) == 0
 
     dummy.preload_waveforms()
-    assert len(dummy._waveform_cache) == len(dummy)
+    assert len(dummy._waveform_cache[""]) == len(dummy)
 
 
 def test_filter_and_cache_evict():
@@ -91,25 +91,25 @@ def test_filter_and_cache_evict():
     dummy = seisbench.data.DummyDataset(cache="full")
     dummy.preload_waveforms()
     blocks = set(dummy.metadata["trace_name"].apply(lambda x: x.split("$")[0]))
-    assert len(dummy._waveform_cache) == len(blocks)
+    assert len(dummy._waveform_cache[""]) == len(blocks)
 
     mask = np.arange(len(dummy)) < len(dummy) / 2
     dummy.filter(mask)
 
     assert len(dummy) == np.sum(mask)  # Correct metadata length
     blocks = set(dummy.metadata["trace_name"].apply(lambda x: x.split("$")[0]))
-    assert len(dummy._waveform_cache) == len(blocks)  # Correct cache eviction
+    assert len(dummy._waveform_cache[""]) == len(blocks)  # Correct cache eviction
 
     # Trace caching
     dummy = seisbench.data.DummyDataset(cache="trace")
     dummy.preload_waveforms()
-    assert len(dummy._waveform_cache) == len(dummy)
+    assert len(dummy._waveform_cache[""]) == len(dummy)
 
     mask = np.arange(len(dummy)) < len(dummy) / 2
     dummy.filter(mask)
 
     assert len(dummy) == np.sum(mask)  # Correct metadata length
-    assert len(dummy._waveform_cache) == len(dummy)  # Correct cache eviction
+    assert len(dummy._waveform_cache[""]) == len(dummy)  # Correct cache eviction
 
 
 def test_region_filter():
@@ -584,7 +584,7 @@ def test_load_waveform_data_with_sampling_rate():
     # Checks that preloading waveform data works with sampling rate specified
     dummy = seisbench.data.DummyDataset(cache="trace", sampling_rate=20)
     dummy.preload_waveforms()
-    assert len(dummy._waveform_cache) == len(dummy.metadata)
+    assert len(dummy._waveform_cache[""]) == len(dummy.metadata)
 
 
 def test_copy():
@@ -594,12 +594,18 @@ def test_copy():
 
     # Metadata and waveforms are copied by value
     assert dummy1._waveform_cache is not dummy2._waveform_cache
+    for chunk in dummy1._waveform_cache.keys():
+        assert dummy1._waveform_cache[chunk] is not dummy2._waveform_cache[chunk]
     assert dummy1._metadata is not dummy2._metadata
 
     # Cache entries were copied by reference
     assert len(dummy1._waveform_cache) == len(dummy2._waveform_cache)
-    for key in dummy1._waveform_cache.keys():
-        assert dummy1._waveform_cache[key] is dummy2._waveform_cache[key]
+    for chunk in dummy1._waveform_cache.keys():
+        assert len(dummy1._waveform_cache[chunk]) == len(dummy2._waveform_cache[chunk])
+        for key in dummy1._waveform_cache[chunk].keys():
+            assert (
+                dummy1._waveform_cache[chunk][key] is dummy2._waveform_cache[chunk][key]
+            )
 
 
 def test_filter_inplace():
@@ -612,15 +618,15 @@ def test_filter_inplace():
     dummy2 = dummy.filter(mask, inplace=False)
     # dummy was not modified inplace
     assert len(dummy) == org_len
-    assert len(dummy._waveform_cache) == org_len
+    assert len(dummy._waveform_cache[""]) == org_len
     # dummy2 has correct length and had correct cache eviction
     assert len(dummy2) == np.sum(mask)
-    assert len(dummy2._waveform_cache) == np.sum(mask)
+    assert len(dummy2._waveform_cache[""]) == np.sum(mask)
 
     dummy.filter(mask, inplace=True)
     # dummy was modified inplace
     assert len(dummy) == np.sum(mask)
-    assert len(dummy._waveform_cache) == np.sum(mask)
+    assert len(dummy._waveform_cache[""]) == np.sum(mask)
 
 
 def test_splitting():
@@ -676,7 +682,7 @@ def test_geometric_bucketer():
     assert "1" == bucketer.get_bucket({}, np.ones((3, 101)))
 
     # Later bucket
-    assert "10" == bucketer.get_bucket({}, np.ones((3, int(100 * 1.2 ** 9 + 1))))
+    assert "10" == bucketer.get_bucket({}, np.ones((3, int(100 * 1.2**9 + 1))))
 
     # Ignores split
     assert "0" == bucketer.get_bucket({"split": "train"}, np.ones((3, 99)))
@@ -694,7 +700,7 @@ def test_geometric_bucketer():
 
     # Later bucket
     assert "test10" == bucketer.get_bucket(
-        {"split": "test"}, np.ones((3, int(100 * 1.2 ** 9 + 1)))
+        {"split": "test"}, np.ones((3, int(100 * 1.2**9 + 1)))
     )
 
     # Ignores missing split
@@ -712,7 +718,7 @@ def test_geometric_bucketer():
     assert "(1)_1" == bucketer.get_bucket({}, np.ones((1, 101)))
 
     # Later bucket
-    assert "(3)_10" == bucketer.get_bucket({}, np.ones((3, int(100 * 1.2 ** 9 + 1))))
+    assert "(3)_10" == bucketer.get_bucket({}, np.ones((3, int(100 * 1.2**9 + 1))))
 
     # Ignores split
     assert "(3)_0" == bucketer.get_bucket({"split": "train"}, np.ones((3, 99)))
@@ -1210,6 +1216,54 @@ def test_get_idx_from_trace_name_multi():
     assert dummy.get_idx_from_trace_name(dummy["trace_name"].values[20]) == 20
 
 
+def test_trace_name_to_idx_dict():
+    dummy = seisbench.data.DummyDataset()
+    metadata = pd.DataFrame(
+        [
+            {"trace_name": "a", "trace_chunk": ""},
+            {"trace_name": "b", "trace_chunk": ""},
+            {"trace_name": "b", "trace_chunk": "1"},
+        ]
+    )
+    dummy._metadata = metadata  # Overwrite metadata
+    dummy._build_trace_name_to_idx_dict()
+    assert not dummy._trace_identification_warning_issued
+    assert len(dummy._trace_name_to_idx) == 4
+    assert len(dummy._trace_name_to_idx["name"]) == 2  # 1 collision
+    assert len(dummy._trace_name_to_idx["name_chunk"]) == 3  # 0 collisions
+    assert len(dummy._trace_name_to_idx["name_dataset"]) == 0  # NA
+    assert len(dummy._trace_name_to_idx["name_chunk_dataset"]) == 0  # NA
+
+    # Only test unique answers
+    assert dummy.get_idx_from_trace_name("a") == 0
+    assert dummy.get_idx_from_trace_name("b", "") == 1
+    with pytest.raises(KeyError):
+        dummy.get_idx_from_trace_name("a", "1")
+
+    metadata = pd.DataFrame(
+        [
+            {"trace_name": "a", "trace_chunk": "", "trace_dataset": "0"},
+            {"trace_name": "b", "trace_chunk": "", "trace_dataset": "0"},
+            {"trace_name": "b", "trace_chunk": "1", "trace_dataset": "0"},
+            {"trace_name": "b", "trace_chunk": "1", "trace_dataset": "1"},
+        ]
+    )
+    dummy._metadata = metadata  # Overwrite metadata
+    dummy._build_trace_name_to_idx_dict()
+    assert len(dummy._trace_name_to_idx) == 4
+    assert len(dummy._trace_name_to_idx["name"]) == 2  # 2 collisions
+    assert len(dummy._trace_name_to_idx["name_chunk"]) == 3  # 1 collision
+    assert len(dummy._trace_name_to_idx["name_dataset"]) == 3  # 1 collision
+    assert len(dummy._trace_name_to_idx["name_chunk_dataset"]) == 4  # 0 collision
+
+    # Only test unique answers
+    assert dummy.get_idx_from_trace_name("a") == 0
+    assert dummy.get_idx_from_trace_name("b", dataset="1") == 3
+    assert dummy.get_idx_from_trace_name("b", "1", "0") == 2
+    with pytest.raises(KeyError):
+        dummy.get_idx_from_trace_name("a", "1")
+
+
 def test_sample_without_replacement():
     # Test random sampling without replacement
     np.random.seed(42)
@@ -1223,3 +1277,33 @@ def test_sample_without_replacement():
     assert (
         sorted(list(sel_idxs) + list(rem_idxs)) == np.arange(1000).astype(list)
     ).all()
+
+
+def test_waveform_data_write_without_trace_name(tmp_path):
+    # Test that a single trace without a trace name does not crash the writer
+    with seisbench.data.WaveformDataWriter(
+        tmp_path / "metadata.csv", tmp_path / "waveforms.hdf5"
+    ) as writer:
+        trace = {"source_id": "dummyevent"}
+        writer.add_trace(trace, np.zeros((3, 100)))
+
+
+def test_chunked_datasets_key_collision(tmp_path):
+    with open(tmp_path / "chunks", "w") as f:
+        f.write("0\n1")
+
+    for i in range(2):
+        metadata_path = tmp_path / f"metadata{i}.csv"
+        waveforms_path = tmp_path / f"waveforms{i}.hdf5"
+        with seisbench.data.WaveformDataWriter(metadata_path, waveforms_path) as writer:
+            writer.data_format = {
+                "dimension_order": "CW",
+                "component_order": "ZNE",
+                "sampling_rate": 100,
+            }
+            writer.add_trace({"trace_name": "fixed_trace_name"}, np.ones((1000, 3)) * i)
+
+    data = seisbench.data.WaveformDataset(tmp_path, cache="full")
+
+    assert (data.get_waveforms(0) == 0).all()
+    assert (data.get_waveforms(1) == 1).all()

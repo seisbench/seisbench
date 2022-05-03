@@ -1491,6 +1491,35 @@ def test_steered_generator():
         generator[0]
 
 
+@pytest.mark.parametrize("case", [0, 1, 2, 3])
+def test_steered_generator_keys(case):
+    if case == 0:
+        metadata = pd.DataFrame([{"trace_name": "a"}])
+        target = {"trace_name": "a", "chunk": None, "dataset": None}
+    elif case == 1:
+        metadata = pd.DataFrame([{"trace_name": "a", "trace_chunk": "1"}])
+        target = {"trace_name": "a", "chunk": "1", "dataset": None}
+    elif case == 2:
+        metadata = pd.DataFrame([{"trace_name": "a", "trace_dataset": "d"}])
+        target = {"trace_name": "a", "chunk": None, "dataset": "d"}
+    else:
+        metadata = pd.DataFrame(
+            [{"trace_name": "a", "trace_chunk": "1", "trace_dataset": "d"}]
+        )
+        target = {"trace_name": "a", "chunk": "1", "dataset": "d"}
+
+    data = DummyDataset()
+
+    generator = seisbench.generate.SteeredGenerator(data, metadata)
+
+    with patch(
+        "seisbench.data.base.WaveformDataset.get_idx_from_trace_name"
+    ) as get_idx:
+        get_idx.return_value = 0
+        generator[0]
+        get_idx.assert_called_once_with(**target)
+
+
 def test_steered_window():
     np.random.seed(42)
     base_state_dict = {"X": (np.random.rand(3, 1000), {})}

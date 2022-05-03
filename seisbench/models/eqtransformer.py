@@ -226,6 +226,12 @@ class EQTransformer(WaveformModel):
         # Add a demean and an amplitude normalization step to the preprocessing
         window = window - np.mean(window, axis=-1, keepdims=True)
         window = window / (np.std(window) + 1e-10)
+
+        # Cosine taper (very short, i.e., only six samples on each side)
+        tap = 0.5 * (1 + np.cos(np.linspace(np.pi, 2 * np.pi, 6)))
+        window[:, :6] *= tap
+        window[:, -6:] *= tap[::-1]
+
         return window
 
     @property

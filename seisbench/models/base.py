@@ -1,5 +1,6 @@
 import seisbench
 import seisbench.util as util
+from seisbench.util import log_lifecycle
 
 from abc import abstractmethod, ABC
 from pathlib import Path
@@ -19,6 +20,52 @@ from obspy.signal.trigger import trigger_onset
 import asyncio
 import nest_asyncio
 from packaging import version
+import torch.multiprocessing as torchmp
+import logging
+
+
+@log_lifecycle(logging.DEBUG)
+def _watchdog(queue_watchdog, tasks):
+    """
+    Watchdog that terminates jobs once jobs in level before have been terminated.
+
+    :param queue_watchdog: Signal queue for watchdog
+    :param tasks: List of tasks.
+                  Each tasks consist of a 4-tuple: `key`, `target_queue`, `n_inputs`, `n_outputs`
+                  `key` is the key to track on the watchdog.
+                  `target_queue` is the queue to send `None` values to once condition is met.
+                  Can also be a list of queues. In this case, `n_outputs` stop commands are sent to each queue.
+                  `n_input` is the number of times `key` needs to be received before, i.e., the number of jobs that will
+                  send `key`.
+                  `n_outputs` is the number of `None` value to send to `target_queue`, i.e., the number of dependent
+                  jobs to terminate.
+    :return: None
+    """
+    task_counter = {
+        key: n_inputs for key, _, n_inputs, _ in tasks
+    }  # Count down how often a job existed
+    on_complete = {
+        key: (target_queue, n_outputs) for key, target_queue, _, n_outputs in tasks
+    }  # Action once condition is met
+
+    while True:
+        elem = queue_watchdog.get()
+        if elem is None:
+            break
+
+        task_counter[elem] -= 1
+        if task_counter[elem] == 0:
+            target_queues, n_outputs = on_complete[elem]
+            if not isinstance(target_queues, list):
+                target_queues = [target_queues]
+
+            for target_queue in target_queues:
+                target_queue.join()  # Makes sure everything in this queue is actually processed
+                for _ in range(n_outputs):
+                    target_queue.put(None)
+
+
+import tempfile
 
 
 class SeisBenchModel(nn.Module):
@@ -33,6 +80,7 @@ class SeisBenchModel(nn.Module):
         super().__init__()
         self._citation = citation
         self._weights_docstring = None
+        self._weights_version = None
         self._weights_metadata = None
 
     def __str__(self):
@@ -54,6 +102,10 @@ class SeisBenchModel(nn.Module):
     def weights_docstring(self):
         return self._weights_docstring
 
+    @property
+    def weights_version(self):
+        return self._weights_version
+
     @classmethod
     def _model_path(cls):
         return Path(seisbench.cache_root, "models", cls._name_internal().lower())
@@ -63,73 +115,73 @@ class SeisBenchModel(nn.Module):
         return "/".join((seisbench.remote_root, "models", cls._name_internal().lower()))
 
     @classmethod
-    def _pretrained_path(cls, name):
-        weight_path = cls._model_path() / f"{name}.pt"
-        metadata_path = cls._model_path() / f"{name}.json"
+    def _pretrained_path(cls, name, version_str=""):
+        if version_str != "":
+            version_str = ".v" + version_str
+        weight_path = cls._model_path() / f"{name}.pt{version_str}"
+        metadata_path = cls._model_path() / f"{name}.json{version_str}"
 
         return weight_path, metadata_path
 
     @classmethod
-    def from_pretrained(cls, name, force=False, wait_for_file=False):
+    def from_pretrained(
+        cls, name, version_str="latest", update=False, force=False, wait_for_file=False
+    ):
         """
         Load pretrained model with weights.
 
         A pretrained model weights consists of two files. A weights file [name].pt and a [name].json config file.
-        The config file is not mandatory, but strongly recommended. The config file can (and should) contain the
-        following entries, even though all arguments are optional:
+        The config file can (and should) contain the following entries, even though all arguments are optional:
 
         - "docstring": A string documenting the pipeline. Usually also contains information on the author.
         - "model_args": Argument dictionary passed to the init function of the pipeline.
         - "seisbench_requirement": The minimal version of SeisBench required to use the weights file.
         - "default_args": Default args for the :py:func:`annotate`/:py:func:`classify` functions.
           These arguments will supersede any potential constructor settings.
+        - "version": The version string of the model. For **all but the latest version**, version names should
+          furthermore be denoted in the file names, i.e., the files should end with the suffix ".v[VERSION]".
+          If no version is specified in the json, the assumed version string is "1".
+
+        .. warning::
+            Even though the version is set to "latest" by default, this will only use the latest version locally
+            available. Only if no weight is available locally, the remote repository will be queried. This behaviour
+            is implemented for privacy reasons, as it avoids contacting the remote repository for every call of the
+            function. To explicitly update to the latest version from the remote repository, set `update=True`.
 
         :param name: Model name prefix.
         :type name: str
+        :param version_str: Version of the weights to load. Either a version string or "latest". The "latest" model is
+                            the model with the highest version number.
+        :type version_str: str
         :param force: Force execution of download callback, defaults to False
         :type force: bool, optional
+        :param update: If true, downloads potential new weights file and config from the remote repository.
+                       The old files are retained with their version suffix.
+        :type update: bool
         :param wait_for_file: Whether to wait on partially downloaded files, defaults to False
         :type wait_for_file: bool, optional
         :return: Model instance
         :rtype: SeisBenchModel
         """
-        weight_path, metadata_path = cls._pretrained_path(name)
+        cls._cleanup_local_repository()
+        if version_str == "latest":
+            versions = cls.list_versions(name, remote=update)
+            # Always query remote versions if cache is empty
+            if len(versions) == 0:
+                versions = cls.list_versions(name, remote=True)
 
-        def download_weights_callback(weight_path):
-            seisbench.logger.info(f"Weight file {name} not in cache. Downloading...")
-            weight_path.parent.mkdir(exist_ok=True, parents=True)
+            if len(versions) == 0:
+                raise ValueError(f"No version for weight '{name}' available.")
+            version_str = max(versions, key=version.parse)
 
-            remote_weight_path = f"{cls._remote_path()}/{name}.pt"
-            util.download_http(remote_weight_path, weight_path)
+        weight_path, metadata_path = cls._pretrained_path(name, version_str)
 
-        def download_metadata_callback(metadata_path):
-            remote_metadata_path = f"{cls._remote_path()}/{name}.json"
-            try:
-                util.download_http(
-                    remote_metadata_path, metadata_path, progress_bar=False
-                )
-            except ValueError:
-                # A missing metadata file does not lead to a crash
-                pass
-
-        seisbench.util.callback_if_uncached(
-            weight_path,
-            download_weights_callback,
-            force=force,
-            wait_for_file=wait_for_file,
-        )
-        seisbench.util.callback_if_uncached(
-            metadata_path,
-            download_metadata_callback,
-            force=force,
-            wait_for_file=wait_for_file,
+        cls._ensure_weight_files(
+            name, version_str, weight_path, metadata_path, force, wait_for_file
         )
 
-        if metadata_path.is_file():
-            with open(metadata_path, "r") as f:
-                weights_metadata = json.load(f)
-        else:
-            weights_metadata = {}
+        with open(metadata_path, "r") as f:
+            weights_metadata = json.load(f)
 
         model_args = weights_metadata.get("model_args", {})
         model = cls(**model_args)
@@ -142,56 +194,267 @@ class SeisBenchModel(nn.Module):
         return model
 
     @classmethod
-    def list_pretrained(cls, details=False):
+    def _cleanup_local_repository(cls):
+        """
+        Cleans up local weights by moving all files without weight suffix to the correct weight suffix.
+
+        Function required to keep compatibility to caches created with seisbench==0.1.x
+        """
+        model_path = cls._model_path()
+        if not model_path.is_dir():
+            # No need to cleanup if model path does not yet exist
+            return
+
+        files = [
+            x.name[:-5] for x in model_path.iterdir() if x.name.endswith(".json")
+        ]  # Files without version tag
+
+        for file in files:
+            metadata_path = model_path / (file + ".json")
+            weight_path = model_path / (file + ".pt")
+
+            with open(metadata_path, "r") as f:
+                weights_metadata = json.load(f)
+
+            file_version = weights_metadata.get("version", "1")
+
+            weight_path_new = weight_path.parent / (
+                weight_path.name + ".v" + file_version
+            )
+            metadata_path_new = metadata_path.parent / (
+                metadata_path.name + ".v" + file_version
+            )
+
+            weight_path.rename(weight_path_new)
+            metadata_path.rename(metadata_path_new)
+
+    @classmethod
+    def _ensure_weight_files(
+        cls, name, version_str, weight_path, metadata_path, force, wait_for_file
+    ):
+        """
+        Checks whether weight files are available and downloads them otherwise
+        """
+
+        def download_callback(files):
+            weight_path, metadata_path = files
+            seisbench.logger.info(
+                f"Weight file {weight_path.name} not in cache. Downloading..."
+            )
+            weight_path.parent.mkdir(exist_ok=True, parents=True)
+
+            remote_metadata_name, remote_weight_name = cls._get_remote_names(
+                name, version_str
+            )
+
+            remote_weight_path = f"{cls._remote_path()}/{remote_weight_name}"
+            remote_metadata_path = f"{cls._remote_path()}/{remote_metadata_name}"
+
+            util.download_http(remote_weight_path, weight_path)
+            util.download_http(remote_metadata_path, metadata_path, progress_bar=False)
+
+        seisbench.util.callback_if_uncached(
+            [weight_path, metadata_path],
+            download_callback,
+            force=force,
+            wait_for_file=wait_for_file,
+        )
+
+    @classmethod
+    def _get_remote_names(cls, name, version_str):
+        """
+        Determines the file names of weight and metadata file on the remote repository. This function is required as
+        the remote version might not have a suffix.
+        """
+        remote_weight_name = f"{name}.pt.v{version_str}"
+        remote_metadata_name = f"{name}.json.v{version_str}"
+        remote_listing = seisbench.util.ls_webdav(cls._remote_path())
+        if remote_metadata_name not in remote_listing:
+            # Version not in repository under version name, check file without version suffix
+            if f"{name}.json" in remote_listing:
+                remote_version = cls._get_version_of_remote_without_suffix(name)
+                if remote_version == version_str:
+                    remote_weight_name = f"{name}.pt"
+                    remote_metadata_name = f"{name}.json"
+                else:
+                    raise ValueError(
+                        f"Version '{version_str}' of weight '{name}' is not available."
+                    )
+            else:
+                raise ValueError(
+                    f"Version '{version_str}' of weight '{name}' is not available."
+                )
+        return remote_metadata_name, remote_weight_name
+
+    @classmethod
+    def list_pretrained(cls, details=False, remote=True):
         """
         Returns list of available pretrained weights and optionally their docstrings.
 
         :param details: If true, instead of a returning only a list, also return their docstrings.
+                        By default, returns the docstring of the "latest" version for each weight.
                         Note that this requires to download the json files for each model in the background
                         and is therefore slower. Defaults to false.
         :type details: bool
+        :param remote: If true, reports both locally available weights and versions in the remote repository.
+                       Otherwise only reports local versions.
+        :type remote: bool
         :return: List of available weights or dict of weights and their docstrings
         :rtype: list or dict
         """
-        remote_path = cls._remote_path()
+        cls._cleanup_local_repository()
 
+        # Idea: If details, copy all "latest" configs to a temp directory
+
+        model_path = cls._model_path()
         weights = [
-            x[:-3] for x in seisbench.util.ls_webdav(remote_path) if x.endswith(".pt")
+            cls._parse_weight_filename(x)[0]
+            for x in model_path.iterdir()
+            if cls._parse_weight_filename(x)[0] is not None
         ]
 
+        if remote:
+            remote_path = cls._remote_path()
+            weights += [
+                cls._parse_weight_filename(x)[0]
+                for x in seisbench.util.ls_webdav(remote_path)
+                if cls._parse_weight_filename(x)[0] is not None
+            ]
+
+        # Unique
+        weights = sorted(list(set(weights)))
+
         if details:
-            detail_weights = {}
+            return {
+                name: cls._get_latest_docstring(name, remote=remote) for name in weights
+            }
+        else:
+            return weights
 
-            for weight in weights:
+    @classmethod
+    def _get_latest_docstring(cls, name, remote):
+        """
+        Get the latest docstring for a given weight name.
 
-                def download_metadata_callback(metadata_path):
-                    remote_metadata_path = os.path.join(
-                        cls._remote_path(), f"{weight}.json"
-                    )
-                    try:
-                        util.download_http(
-                            remote_metadata_path, metadata_path, progress_bar=False
-                        )
-                    except ValueError:
-                        # A missing metadata file does not lead to a crash
-                        pass
+        Assumes that there is at least one version of the weight available locally (remote=False) or
+        locally/remotely (remote=True).
+        """
+        versions = cls.list_versions(name, remote=remote)
+        version_str = max(versions, key=version.parse)
 
-                _, metadata_path = cls._pretrained_path(weight)
+        _, metadata_path = cls._pretrained_path(name, version_str)
 
-                seisbench.util.callback_if_uncached(
-                    metadata_path, download_metadata_callback
+        if metadata_path.is_file():
+            with open(metadata_path, "r") as f:
+                weights_metadata = json.load(f)
+        else:
+            remote_metadata_name, _ = cls._get_remote_names(name, version_str)
+            remote_metadata_path = f"{cls._remote_path()}/{remote_metadata_name}"
+            with tempfile.TemporaryDirectory() as tmpdir:
+                metadata_path = Path(tmpdir) / f"{name}.json"
+                util.download_http(
+                    remote_metadata_path, metadata_path, progress_bar=False
                 )
+                with open(metadata_path, "r") as f:
+                    weights_metadata = json.load(f)
 
-                if metadata_path.is_file():
-                    with open(metadata_path, "r") as f:
-                        config = json.load(f)
-                    detail_weights[weight] = config.get("docstring", None)
-                else:
-                    detail_weights[weight] = None
+        return weights_metadata.get("docstring", None)
 
-            weights = detail_weights
+    @staticmethod
+    def _parse_weight_filename(filename):
+        """
+        Parses filename into weight name, file type and version string.
+        Returns None, None, None if file can not be parsed.
+        """
+        if isinstance(filename, Path):
+            filename = filename.name
 
-        return weights
+        name = None
+        version_str = None
+
+        for ftype in ["json", "pt"]:
+            p = filename.find(f".{ftype}")
+            if p != -1:
+                name = filename[:p]
+                remainder = filename[p + len(ftype) + 1 :]
+                if len(remainder) > 0:
+                    if remainder[:2] != ".v":
+                        return None, None, None
+                    version_str = remainder[2:]
+                break
+
+        if name is None and version_str is None:
+            ftype = None
+
+        return name, ftype, version_str
+
+    @classmethod
+    def list_versions(cls, name, remote=True):
+        """
+        Returns list of available versions for a given weight name.
+
+        :param name: Name of the queried weight
+        :type name: str
+        :param remote: If true, reports both locally available versions and versions in the remote repository.
+                       Otherwise only reports local versions.
+        :type remote: bool
+        :return: List of available versions
+        :rtype: list[str]
+        """
+        cls._cleanup_local_repository()
+
+        if cls._model_path().is_dir():
+            files = [x.name for x in cls._model_path().iterdir()]
+            versions = cls._get_versions_from_files(name, files)
+        else:
+            versions = []
+
+        if remote:
+            remote_path = cls._remote_path()
+            files = seisbench.util.ls_webdav(remote_path)
+            remote_versions = cls._get_versions_from_files(name, files)
+
+            if "" in remote_versions:
+                remote_versions = [x for x in remote_versions if x != ""]
+                # Need to download config file to check version
+                file_version = cls._get_version_of_remote_without_suffix(name)
+                remote_versions.append(file_version)
+
+            versions = list(set(versions + remote_versions))
+
+        return sorted(versions)
+
+    @classmethod
+    def _get_version_of_remote_without_suffix(cls, name):
+        """
+        Gets the version of the config in the remote repository without a version suffix in the file name.
+        Assumes this config exists.
+        """
+        remote_metadata_path = f"{cls._remote_path()}/{name}.json"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            metadata_path = Path(tmpdir) / "metadata.json"
+            util.download_http(remote_metadata_path, metadata_path, progress_bar=False)
+
+            with open(metadata_path, "r") as f:
+                weights_metadata = json.load(f)
+        file_version = weights_metadata.get("version", "1")
+        return file_version
+
+    @staticmethod
+    def _get_versions_from_files(name, files):
+        """
+        Calculates the available versions from a list of files.
+
+        :param name: Name of the queried weight
+        :type name: str
+        :param files: List of files
+        :type files: list[str]
+        :return: List of available versions
+        :rtype: list[str]
+        """
+        configs = [x for x in files if x.startswith(f"{name}.json")]
+        prefix_len = len(f"{name}.json.v")
+        return sorted([config[prefix_len:] for config in configs])
 
     @classmethod
     def load(cls, path):
@@ -326,6 +589,7 @@ class SeisBenchModel(nn.Module):
     def _parse_metadata(self):
         # Load docstring
         self._weights_docstring = self._weights_metadata.get("docstring", "")
+        self._weights_version = self._weights_metadata.get("version", "1")
 
         # Check version requirement
         seisbench_requirement = self._weights_metadata.get(
@@ -473,8 +737,20 @@ class WaveformModel(SeisBenchModel, ABC):
         self.labels = labels
 
         self._annotate_function_mapping = {
-            "point": (self._cut_fragments_point, self._reassemble_blocks_point),
-            "array": (self._cut_fragments_array, self._reassemble_blocks_array),
+            "point": (
+                (self._async_cut_fragments_point, self._async_reassemble_blocks_point),
+                (
+                    self._process_cut_fragments_point,
+                    self._process_reassemble_blocks_point,
+                ),
+            ),
+            "array": (
+                (self._async_cut_fragments_array, self._async_reassemble_blocks_array),
+                (
+                    self._process_cut_fragments_array,
+                    self._process_reassemble_blocks_array,
+                ),
+            ),
         }
 
         self._annotate_functions = self._annotate_function_mapping.get(
@@ -493,7 +769,12 @@ class WaveformModel(SeisBenchModel, ABC):
         return self._component_order
 
     def annotate(
-        self, stream, strict=True, flexible_horizontal_components=True, **kwargs
+        self,
+        stream,
+        strict=True,
+        flexible_horizontal_components=True,
+        parallelism=None,
+        **kwargs,
     ):
         """
         Annotates an obspy stream using the model based on the configuration of the WaveformModel superclass.
@@ -509,6 +790,31 @@ class WaveformModel(SeisBenchModel, ABC):
 
         Please see the respective documentation for details on their functionality, inputs and outputs.
 
+        .. warning::
+            Internally, there are two implementations of the annotate function, one using `asyncio` and one using
+            `multiprocessing`. Depending on the hardware, the model, and the input data, one of the options might be
+            more suited. In general, the `asyncio` implementation is sequential, but has nearly no overhead. In contrast,
+            the `multiprocessing` implementation has considerable overhead for starting the jobs, but runs the
+            computations in a parallelised manner. As a rule of thumb, `asyncio` will be the better choice for small
+            inputs, while `multiprocessing` is the better option for large inputs. See the parameter `parallelism`
+            below for details how to choose the method.
+
+        .. warning::
+            Even though the `asyncio` implementation itself is not parallel, this does not guarantee that only a single
+            CPU core will be used, as the underlying libraries (pytorch, numpy, scipy, ...) might be parallelised.
+            If you need to limit the parallelism of these libraries, check their documentation, e.g.,
+            `here <https://pytorch.org/docs/stable/notes/cpu_threading_torchscript_inference.html#tuning-the-number-of-threads>`_
+            or
+            `here <https://stackoverflow.com/questions/30791550/limit-number-of-threads-in-numpy>`_.
+            Bear in mind that a lower number of threads might occasionally improve runtime performance, as it limits
+            overheads, e.g.,
+            `here <https://github.com/pytorch/pytorch/issues/3146>`_.
+
+        .. warning::
+            `multiprocessing` performance varies depending on the employed start method. For details, check the
+            documentation `here <https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods>`_.
+
+
         :param stream: Obspy stream to annotate
         :type stream: obspy.core.Stream
         :param strict: If true, only annotate if recordings for all components are available,
@@ -518,34 +824,74 @@ class WaveformModel(SeisBenchModel, ABC):
                                                This is usually acceptable for rotationally invariant models,
                                                e.g., most picking models.
         :type flexible_horizontal_components: bool
+        :param parallelism: If None, uses the `asyncio` implementation. Otherwise, defines the redundancy for each
+                            subjob, i.e., parallelism=2 would start each subjob twice. See the warning above for a
+                            discussion on parallelism for annotate.
+        :type parallelism: None, int
         :param kwargs:
         :return: Obspy stream of annotations
         """
-        nest_asyncio.apply()
-        call = self._annotate_async(
-            stream, strict, flexible_horizontal_components, **kwargs
+        # nest_asyncio.apply()
+        if parallelism == 0:
+            parallelism = None
+
+        self._check_parallelism_annotate(stream, parallelism)
+
+        if parallelism is None:
+            nest_asyncio.apply()
+            call = self._annotate_async(
+                stream, strict, flexible_horizontal_components, **kwargs
+            )
+            return asyncio.run(call)
+        else:
+            return self._annotate_processes(
+                stream,
+                strict,
+                flexible_horizontal_components,
+                parallelism=parallelism,
+                **kwargs,
+            )
+
+    @staticmethod
+    def _check_parallelism_annotate(stream, parallelism, thresholds=(5e5, 5e7)):
+        """
+        Checks whether the chosen parallelism looks reasonable and prints a warning otherwise.
+
+        :param stream: Data stream
+        :type stream: obspy.Stream
+        :param parallelism: parallelism indicator
+        :type parallelism: None, int
+        :return: None
+        """
+        total_samples = 0
+        for trace in stream:
+            total_samples += len(trace.data)
+
+        detail_str = (
+            "For details, see "
+            "http://docs.seisbench.org/en/stable/pages/documentation/"
+            "models.html#seisbench.models.base.WaveformModel.annotate"
         )
-        return asyncio.run(call)
+
+        if total_samples > thresholds[1] and parallelism is None:
+            seisbench.logger.warning(
+                "You are processing a large stream with the sequential asyncio implementation. "
+                "Consider activating parallelisation. " + detail_str
+            )
+        if total_samples < thresholds[0] and parallelism is not None:
+            seisbench.logger.warning(
+                "You are processing a small stream with the parallel implementation. "
+                "Consider using the sequential asyncio implementation. " + detail_str
+            )
 
     async def _annotate_async(
         self, stream, strict=True, flexible_horizontal_components=True, **kwargs
     ):
         """
-        Wrapper for the annotate function that can be called using asyncio.run.
+        `annotate` implementation based on asyncio
         Parameters as for :py:func:`annotate`.
-
-        :param stream:
-        :param strict:
-        :param flexible_horizontal_components:
-        :param kwargs:
-        :return:
         """
-        if self._annotate_functions is None:
-            raise NotImplementedError(
-                "This model has no annotate function implemented."
-            )
-
-        cut_fragments, reassemble_blocks = self._annotate_functions
+        cut_fragments, reassemble_blocks = self._get_annotate_functions()[0]
 
         # Kwargs overwrite default args
         argdict = self.default_args.copy()
@@ -589,10 +935,8 @@ class WaveformModel(SeisBenchModel, ABC):
         queue_pred_blocks = asyncio.Queue()  # Queue for blocks of predictions
         queue_results = asyncio.Queue()  # Results streams
 
-        # TODO: Enable multiprocessing by starting multiple workers for some tasks
-        #       Also requires to send multiple None values to the queues for stopping
         process_streams_to_arrays = asyncio.create_task(
-            self._process_streams_to_arrays(
+            self._async_streams_to_arrays(
                 queue_groups, queue_raw_blocks, strict, flexible_horizontal_components
             )
         )
@@ -600,15 +944,15 @@ class WaveformModel(SeisBenchModel, ABC):
             cut_fragments(queue_raw_blocks, queue_raw_fragments, argdict)
         )
         process_annotate_window_pre = asyncio.create_task(
-            self._process_annotate_window_pre(
+            self._async_annotate_window_pre(
                 queue_raw_fragments, queue_preprocessed_fragments, argdict
             )
         )
         process_predict = asyncio.create_task(
-            self._process_predict(queue_preprocessed_fragments, queue_raw_pred, argdict)
+            self._async_predict(queue_preprocessed_fragments, queue_raw_pred, argdict)
         )
         process_annotate_window_post = asyncio.create_task(
-            self._process_annotate_window_post(
+            self._async_annotate_window_post(
                 queue_raw_pred, queue_postprocessed_pred, argdict
             )
         )
@@ -616,7 +960,7 @@ class WaveformModel(SeisBenchModel, ABC):
             reassemble_blocks(queue_postprocessed_pred, queue_pred_blocks, argdict)
         )
         process_predictions_to_streams = asyncio.create_task(
-            self._process_predictions_to_streams(queue_pred_blocks, queue_results)
+            self._async_predictions_to_streams(queue_pred_blocks, queue_results)
         )
 
         for group in groups:
@@ -645,12 +989,224 @@ class WaveformModel(SeisBenchModel, ABC):
 
         return output
 
-    async def _process_streams_to_arrays(
+    def _get_annotate_functions(self):
+        if self._annotate_functions is None:
+            raise NotImplementedError(
+                "This model has no annotate function implemented."
+            )
+        cut_fragments, reassemble_blocks = self._annotate_functions
+        return cut_fragments, reassemble_blocks
+
+    def _annotate_processes(
+        self,
+        stream,
+        strict=True,
+        flexible_horizontal_components=True,
+        parallelism=1,
+        **kwargs,
+    ):
+        """
+        `annotate` implementation based on processes
+        Parameters as for :py:func:`annotate`.
+        """
+        cut_fragments, reassemble_blocks = self._get_annotate_functions()[1]
+
+        # Kwargs overwrite default args
+        argdict = self.default_args.copy()
+        argdict.update(kwargs)
+
+        stream = stream.copy()
+        stream.merge(-1)
+
+        output = obspy.Stream()
+        if len(stream) == 0:
+            return output
+
+        # Preprocess stream, e.g., filter/resample
+        self.annotate_stream_pre(stream, argdict)
+
+        # Validate stream
+        self.annotate_stream_validate(stream, argdict)
+
+        # Group stream
+        groups = self.group_stream(stream)
+
+        # Sampling rate of the data. Equal to self.sampling_rate is this is not None
+        argdict["sampling_rate"] = groups[0][0].stats.sampling_rate
+
+        # Store state and move model to CPU - required to avoid cuda initialization in all threads
+        argdict["device"] = self.device
+        self.cpu()
+
+        # Queues for multiprocessing
+        batch_size = argdict.get("batch_size", 64)
+
+        queue_groups = torchmp.JoinableQueue()  # Waveform groups
+        queue_raw_blocks = (
+            torchmp.JoinableQueue()
+        )  # Waveforms as blocks of arrays and their metadata
+        queue_raw_fragments = torchmp.JoinableQueue(
+            4 * batch_size
+        )  # Raw waveform fragments with the correct input size
+        queue_preprocessed_fragments = torchmp.JoinableQueue(
+            4 * batch_size
+        )  # Preprocessed input fragments
+        queue_raw_pred = (
+            torchmp.JoinableQueue()
+        )  # Queue for raw (but unbatched) predictions
+        queues_postprocessed_pred = [
+            torchmp.JoinableQueue() for _ in range(parallelism)
+        ]  # Queue for raw (but unbatched) predictions
+        queue_pred_blocks = torchmp.JoinableQueue()  # Queue for blocks of predictions
+        queue_results = torchmp.JoinableQueue()  # Results streams
+
+        # Setup and start watchdog process
+        queue_watchdog = torchmp.Queue()
+        watchdog_tasks = [
+            ("main", queue_groups, 1, 1),  # terminates process_streams_to_arrays
+            (
+                "streams_to_arrays",
+                queue_raw_blocks,
+                1,
+                parallelism,
+            ),  # terminates cut_processes
+            (
+                "cut",
+                queue_raw_fragments,
+                parallelism,
+                parallelism,
+            ),  # terminates pre_processes
+            (
+                "annotate_window_pre",
+                queue_preprocessed_fragments,
+                parallelism,
+                1,
+            ),  # terminate process_predict
+            ("predict", queue_raw_pred, 1, parallelism),  # terminate post_processes
+            (
+                "annotate_window_post",
+                queues_postprocessed_pred,
+                parallelism,
+                1,
+            ),  # terminates reassemble
+            (
+                "reassemble",
+                queue_pred_blocks,
+                parallelism,
+                1,
+            ),  # terminates predictions_to_stream
+            ("predictions_to_stream", queue_results, 1, 1),  # Indicates job completion
+        ]
+        process_watchdog = torchmp.Process(
+            target=_watchdog, args=(queue_watchdog, watchdog_tasks)
+        )
+
+        process_streams_to_arrays = torchmp.Process(
+            target=self._process_streams_to_arrays,
+            args=(
+                queue_watchdog,
+                queue_groups,
+                queue_raw_blocks,
+                strict,
+                flexible_horizontal_components,
+            ),
+        )
+        cut_processes = []
+        pre_processes = []
+        post_processes = []
+        reassemble_processes = []
+        for i in range(parallelism):
+            cut_processes += [
+                torchmp.Process(
+                    target=cut_fragments,
+                    args=(
+                        queue_watchdog,
+                        queue_raw_blocks,
+                        queue_raw_fragments,
+                        argdict,
+                    ),
+                )
+            ]
+            pre_processes += [
+                torchmp.Process(
+                    target=self._process_annotate_window_pre,
+                    args=(
+                        queue_watchdog,
+                        queue_raw_fragments,
+                        queue_preprocessed_fragments,
+                        argdict,
+                    ),
+                )
+            ]
+            post_processes += [
+                torchmp.Process(
+                    target=self._process_annotate_window_post,
+                    args=(
+                        queue_watchdog,
+                        queue_raw_pred,
+                        queues_postprocessed_pred,
+                        argdict,
+                    ),
+                )
+            ]
+            reassemble_processes += [
+                torchmp.Process(
+                    target=reassemble_blocks,
+                    args=(
+                        queue_watchdog,
+                        queues_postprocessed_pred[i],
+                        queue_pred_blocks,
+                        argdict,
+                    ),
+                )
+            ]
+        process_predictions_to_streams = torchmp.Process(
+            target=self._process_predictions_to_streams,
+            args=(queue_watchdog, queue_pred_blocks, queue_results),
+        )
+
+        process_streams_to_arrays.start()
+        for proc in (
+            cut_processes + pre_processes + post_processes + reassemble_processes
+        ):
+            proc.start()
+        process_predictions_to_streams.start()
+
+        for group in groups:
+            queue_groups.put(group)
+
+        process_watchdog.start()
+        queue_watchdog.put("main")
+
+        self._process_predict(
+            queue_watchdog, queue_preprocessed_fragments, queue_raw_pred, argdict
+        )
+
+        while True:
+            elem = queue_results.get()
+            queue_results.task_done()
+            if elem is None:
+                break
+
+            output += elem
+
+        process_streams_to_arrays.join()
+        for proc in (
+            cut_processes + pre_processes + post_processes + reassemble_processes
+        ):
+            proc.join()
+        process_predictions_to_streams.join()
+
+        queue_watchdog.put(None)
+        process_watchdog.join()
+
+        return output
+
+    async def _async_streams_to_arrays(
         self, queue_in, queue_out, strict, flexible_horizontal_components
     ):
         """
         Wrapper around :py:func:`stream_to_arrays`, adding the functionality to read from and write to queues.
-
         :param queue_in: Input queue
         :param queue_out: Output queue
         :param strict: See :py:func:`stream_to_arrays`
@@ -668,194 +1224,9 @@ class WaveformModel(SeisBenchModel, ABC):
                 await queue_out.put((t0, block, group[0].stats))
             group = await queue_in.get()
 
-    async def _cut_fragments_point(self, queue_in, queue_out, argdict):
-        """
-        Cuts numpy arrays into fragments for point prediction models.
-
-        :param queue_in: Input queue
-        :param queue_out: Output queue
-        :param argdict: Dictionary of arguments
-        :return: None
-        """
-        stride = argdict.get("stride", 1)
-
-        elem = await queue_in.get()
-        while elem is not None:
-            t0, block, trace_stats = elem
-
-            starts = np.arange(0, block.shape[1] - self.in_samples + 1, stride)
-            if len(starts) == 0:
-                seisbench.logger.warning(
-                    "Parts of the input stream consist of fragments shorter than the number "
-                    "of input samples. Output might be empty."
-                )
-                elem = await queue_in.get()
-                continue
-
-            # Generate windows and preprocess
-            for s in starts:
-                window = block[:, s : s + self.in_samples]
-                # The combination of trace_stats and t0 is a unique identifier
-                # s can be used to reassemble the block, len(starts) allows to identify if the block is complete yet
-                metadata = (t0, s, len(starts), trace_stats)
-                await queue_out.put((window, metadata))
-
-            elem = await queue_in.get()
-
-    async def _reassemble_blocks_point(self, queue_in, queue_out, argdict):
-        """
-        Reassembles point predictions into numpy arrays.
-
-        :param queue_in: Input queue
-        :param queue_out: Output queue
-        :param argdict: Dictionary of arguments
-        :return: None
-        """
-        stride = argdict.get("stride", 1)
-        buffer = defaultdict(list)  # Buffers predictions until a block is complete
-
-        elem = await queue_in.get()
-        while elem is not None:
-            window, metadata = elem
-            t0, s, len_starts, trace_stats = metadata
-            key = f"{t0}_{trace_stats.network}.{trace_stats.station}.{trace_stats.station}.{trace_stats.channel[:-1]}"
-
-            buffer[key].append(elem)
-            if len(buffer[key]) == len_starts:
-                preds = [(s, window) for window, (_, s, _, _) in buffer[key]]
-                preds = sorted(preds)  # Sort by start
-                preds = [window for s, window in preds]
-                preds = np.stack(preds, axis=0)
-                if preds.ndim == 1:
-                    preds = preds.reshape(-1, 1)
-                pred_time = t0 + self.pred_sample / argdict["sampling_rate"]
-                pred_rate = argdict["sampling_rate"] / stride
-
-                await queue_out.put(((pred_rate, pred_time, preds), trace_stats))
-
-                del buffer[key]
-
-            elem = await queue_in.get()
-
-    async def _cut_fragments_array(self, queue_in, queue_out, argdict):
-        """
-        Cuts numpy arrays into fragments for array prediction models.
-
-        :param queue_in: Input queue
-        :param queue_out: Output queue
-        :param argdict: Dictionary of arguments
-        :return: None
-        """
-        overlap = argdict.get("overlap", 0)
-
-        elem = await queue_in.get()
-        while elem is not None:
-            t0, block, trace_stats = elem
-
-            if self._grouping == "channel":
-                # Add fake channel dimension
-                block = block.reshape((-1,) + block.shape)
-
-            starts = np.arange(
-                0, block.shape[1] - self.in_samples + 1, self.in_samples - overlap
-            )
-            if len(starts) == 0:
-                seisbench.logger.warning(
-                    "Parts of the input stream consist of fragments shorter than the number "
-                    "of input samples. Output might be empty."
-                )
-                elem = await queue_in.get()
-                continue
-
-            # Add one more trace to the end
-            if starts[-1] + self.in_samples < block.shape[1]:
-                starts = np.concatenate([starts, [block.shape[1] - self.in_samples]])
-
-            # Generate windows and preprocess
-            for s in starts:
-                window = block[:, s : s + self.in_samples]
-                if self._grouping == "channel":
-                    # Remove fake channel dimension
-                    window = window[0]
-                # The combination of trace_stats and t0 is a unique identifier
-                # s can be used to reassemble the block, len(starts) allows to identify if the block is complete yet
-                metadata = (t0, s, len(starts), trace_stats)
-                await queue_out.put((window, metadata))
-
-            elem = await queue_in.get()
-
-    async def _reassemble_blocks_array(self, queue_in, queue_out, argdict):
-        """
-        Reassembles array predictions into numpy arrays.
-
-        :param queue_in: Input queue
-        :param queue_out: Output queue
-        :param argdict: Dictionary of arguments
-        :return: None
-        """
-        overlap = argdict.get("overlap", 0)
-        buffer = defaultdict(list)  # Buffers predictions until a block is complete
-
-        elem = await queue_in.get()
-        while elem is not None:
-            window, metadata = elem
-            t0, s, len_starts, trace_stats = metadata
-            key = f"{t0}_{trace_stats.network}.{trace_stats.station}.{trace_stats.station}.{trace_stats.channel[:-1]}"
-
-            buffer[key].append(elem)
-            if len(buffer[key]) == len_starts:
-                preds = [(s, window) for window, (_, s, _, _) in buffer[key]]
-                preds = sorted(preds)  # Sort by start
-                starts = [s for s, window in preds]
-                preds = [window for s, window in preds]
-                preds = np.stack(preds, axis=0)
-
-                # Number of prediction samples per input sample
-                prediction_sample_factor = preds[0].shape[0] / (
-                    self.pred_sample[1] - self.pred_sample[0]
-                )
-
-                # Maximum number of predictions covering a point
-                coverage = int(
-                    np.ceil(self.in_samples / (self.in_samples - overlap) + 1)
-                )
-
-                pred_length = int(
-                    np.ceil(
-                        (np.max(starts) + self.in_samples) * prediction_sample_factor
-                    )
-                )
-                pred_merge = (
-                    np.zeros_like(
-                        preds[0], shape=(pred_length, preds[0].shape[1], coverage)
-                    )
-                    * np.nan
-                )
-                for i, (pred, start) in enumerate(zip(preds, starts)):
-                    pred_start = int(start * prediction_sample_factor)
-                    pred_merge[
-                        pred_start : pred_start + pred.shape[0], :, i % coverage
-                    ] = pred
-
-                with warnings.catch_warnings():
-                    warnings.filterwarnings(
-                        action="ignore", message="Mean of empty slice"
-                    )
-                    preds = np.nanmean(pred_merge, axis=-1)
-
-                pred_time = t0 + self.pred_sample[0] / argdict["sampling_rate"]
-                pred_rate = argdict["sampling_rate"] * prediction_sample_factor
-
-                await queue_out.put(((pred_rate, pred_time, preds), trace_stats))
-
-                del buffer[key]
-
-            elem = await queue_in.get()
-
-    async def _process_annotate_window_pre(self, queue_in, queue_out, argdict):
+    async def _async_annotate_window_pre(self, queue_in, queue_out, argdict):
         """
         Wrapper with queue IO functionality around :py:func:`annotate_window_pre`
-
         :param queue_in: Input queue
         :param queue_out: Output queue
         :param argdict: Dictionary of arguments
@@ -872,10 +1243,9 @@ class WaveformModel(SeisBenchModel, ABC):
                 await queue_out.put((preprocessed, None, metadata))
             elem = await queue_in.get()
 
-    async def _process_predict(self, queue_in, queue_out, argdict):
+    async def _async_predict(self, queue_in, queue_out, argdict):
         """
         Prediction function, gathering predictions until a batch is full and handing them to :py:func:`_predict_buffer`.
-
         :param queue_in: Input queue
         :param queue_out: Output queue
         :param argdict: Dictionary of arguments
@@ -899,6 +1269,440 @@ class WaveformModel(SeisBenchModel, ABC):
                 break
 
             elem = await queue_in.get()
+
+    async def _async_annotate_window_post(self, queue_in, queue_out, argdict):
+        """
+        Wrapper with queue IO functionality around :py:func:`annotate_window_post`
+        :param queue_in: Input queue
+        :param queue_out: Output queue
+        :param argdict: Dictionary of arguments
+        :return: None
+        """
+        elem = await queue_in.get()
+        while elem is not None:
+            window, piggyback, metadata = elem
+            await queue_out.put(
+                (
+                    self.annotate_window_post(window, piggyback, argdict=argdict),
+                    metadata,
+                )
+            )
+            elem = await queue_in.get()
+
+    async def _async_predictions_to_streams(self, queue_in, queue_out):
+        """
+        Wrapper with queue IO functionality around :py:func:`_predictions_to_stream`
+        :param queue_in: Input queue
+        :param queue_out: Output queue
+        :return: None
+        """
+        elem = await queue_in.get()
+        while elem is not None:
+            (pred_rate, pred_time, preds), trace_stats = elem
+            await queue_out.put(
+                self._predictions_to_stream(pred_rate, pred_time, preds, trace_stats)
+            )
+            elem = await queue_in.get()
+
+    @log_lifecycle(logging.DEBUG)
+    def _process_streams_to_arrays(
+        self,
+        queue_watchdog,
+        queue_in,
+        queue_out,
+        strict,
+        flexible_horizontal_components,
+    ):
+        """
+        Wrapper around :py:func:`stream_to_arrays`, adding the functionality to read from and write to queues.
+
+        :param queue_watchdog: Signal queue for watchdog
+        :param queue_in: Input queue
+        :param queue_out: Output queue
+        :param strict: See :py:func:`stream_to_arrays`
+        :param flexible_horizontal_components: See :py:func:`stream_to_arrays`
+        :return: None
+        """
+        while True:
+            group = queue_in.get()
+            queue_in.task_done()
+
+            if group is None:
+                break
+
+            times, data = self.stream_to_arrays(
+                group,
+                strict=strict,
+                flexible_horizontal_components=flexible_horizontal_components,
+            )
+            for t0, block in zip(times, data):
+                queue_out.put((t0, block, group[0].stats))
+
+        queue_watchdog.put("streams_to_arrays")
+
+    @log_lifecycle(logging.DEBUG)
+    def _process_cut_fragments_point(
+        self, queue_watchdog, queue_in, queue_out, argdict
+    ):
+        """
+        Wrapper with queue IO functionality around :py:func:`_cut_fragments_point`
+        """
+        while True:
+            elem = queue_in.get()
+            queue_in.task_done()
+            if elem is None:
+                break
+
+            t0, block, trace_stats = elem
+            for output_elem in self._cut_fragments_point(
+                t0, block, trace_stats, argdict
+            ):
+                queue_out.put(output_elem)
+
+        queue_watchdog.put("cut")
+
+    async def _async_cut_fragments_point(self, queue_in, queue_out, argdict):
+        """
+        Wrapper with queue IO functionality around :py:func:`_cut_fragments_point`
+        """
+        elem = await queue_in.get()
+        while elem is not None:
+            t0, block, trace_stats = elem
+
+            for output_elem in self._cut_fragments_point(
+                t0, block, trace_stats, argdict
+            ):
+                await queue_out.put(output_elem)
+
+            elem = await queue_in.get()
+
+    def _cut_fragments_point(self, t0, block, trace_stats, argdict):
+        """
+        Cuts numpy arrays into fragments for point prediction models.
+
+        :param t0:
+        :param block:
+        :param trace_stats:
+        :param argdict:
+        :return:
+        """
+        stride = argdict.get("stride", 1)
+        starts = np.arange(0, block.shape[1] - self.in_samples + 1, stride)
+        if len(starts) == 0:
+            seisbench.logger.warning(
+                "Parts of the input stream consist of fragments shorter than the number "
+                "of input samples. Output might be empty."
+            )
+            return
+
+        bucket_id = np.random.randint(1000000)
+
+        # Generate windows and preprocess
+        for s in starts:
+            window = block[:, s : s + self.in_samples]
+            # The combination of trace_stats and t0 is a unique identifier
+            # s can be used to reassemble the block, len(starts) allows to identify if the block is complete yet
+            metadata = (t0, s, len(starts), trace_stats, bucket_id)
+            yield window, metadata
+
+    @log_lifecycle(logging.DEBUG)
+    def _process_reassemble_blocks_point(
+        self, queue_watchdog, queue_in, queue_out, argdict
+    ):
+        """
+        Wrapper with queue IO functionality around :py:func:`_reassemble_blocks_point`
+        """
+        buffer = defaultdict(list)  # Buffers predictions until a block is complete
+
+        while True:
+            elem = queue_in.get()
+            queue_in.task_done()
+            if elem is None:
+                break
+
+            output = self._reassemble_blocks_point(elem, buffer, argdict)
+            if output is not None:
+                queue_out.put(output)
+
+        queue_watchdog.put("reassemble")
+
+    async def _async_reassemble_blocks_point(self, queue_in, queue_out, argdict):
+        """
+        Wrapper with queue IO functionality around :py:func:`_reassemble_blocks_point`
+        """
+        buffer = defaultdict(list)  # Buffers predictions until a block is complete
+
+        elem = await queue_in.get()
+        while elem is not None:
+            output = self._reassemble_blocks_point(elem, buffer, argdict)
+            if output is not None:
+                await queue_out.put(output)
+
+            elem = await queue_in.get()
+
+    def _reassemble_blocks_point(self, elem, buffer, argdict):
+        """
+        Reassembles point predictions into numpy arrays. Returns None except if a buffer was processed.
+        """
+        stride = argdict.get("stride", 1)
+
+        window, metadata = elem
+        t0, s, len_starts, trace_stats, bucket_id = metadata
+        key = f"{t0}_{trace_stats.network}.{trace_stats.station}.{trace_stats.station}.{trace_stats.channel[:-1]}"
+
+        output = None
+
+        buffer[key].append(elem)
+        if len(buffer[key]) == len_starts:
+            preds = [(s, window) for window, (_, s, _, _, _) in buffer[key]]
+            preds = sorted(
+                preds, key=lambda x: x[0]
+            )  # Sort by start (overwrite keys to make sure window is never used as key)
+            preds = [window for s, window in preds]
+            preds = np.stack(preds, axis=0)
+            if preds.ndim == 1:
+                preds = preds.reshape(-1, 1)
+            pred_time = t0 + self.pred_sample / argdict["sampling_rate"]
+            pred_rate = argdict["sampling_rate"] / stride
+
+            output = ((pred_rate, pred_time, preds), trace_stats)
+
+            del buffer[key]
+
+        return output
+
+    @log_lifecycle(logging.DEBUG)
+    def _process_cut_fragments_array(
+        self, queue_watchdog, queue_in, queue_out, argdict
+    ):
+        """
+        Wrapper with queue IO functionality around :py:func:`_cut_fragments_array`
+        """
+        while True:
+            elem = queue_in.get()
+            queue_in.task_done()
+            if elem is None:
+                break
+
+            for output_elem in self._cut_fragments_array(elem, argdict):
+                queue_out.put(output_elem)
+
+        queue_watchdog.put("cut")
+
+    async def _async_cut_fragments_array(self, queue_in, queue_out, argdict):
+        """
+        Wrapper with queue IO functionality around :py:func:`_cut_fragments_array`
+        """
+        while True:
+            elem = await queue_in.get()
+            if elem is None:
+                break
+
+            for output_elem in self._cut_fragments_array(elem, argdict):
+                await queue_out.put(output_elem)
+
+    def _cut_fragments_array(self, elem, argdict):
+        """
+        Cuts numpy arrays into fragments for array prediction models.
+        """
+        overlap = argdict.get("overlap", 0)
+
+        t0, block, trace_stats = elem
+
+        bucket_id = np.random.randint(int(1e9))
+
+        if self._grouping == "channel":
+            # Add fake channel dimension
+            block = block.reshape((-1,) + block.shape)
+
+        starts = np.arange(
+            0, block.shape[1] - self.in_samples + 1, self.in_samples - overlap
+        )
+        if len(starts) == 0:
+            seisbench.logger.warning(
+                "Parts of the input stream consist of fragments shorter than the number "
+                "of input samples. Output might be empty."
+            )
+            return
+
+        # Add one more trace to the end
+        if starts[-1] + self.in_samples < block.shape[1]:
+            starts = np.concatenate([starts, [block.shape[1] - self.in_samples]])
+
+        # Generate windows and preprocess
+        for s in starts:
+            window = block[:, s : s + self.in_samples]
+            if self._grouping == "channel":
+                # Remove fake channel dimension
+                window = window[0]
+            # The combination of trace_stats and t0 is a unique identifier
+            # s can be used to reassemble the block, len(starts) allows to identify if the block is complete yet
+            metadata = (t0, s, len(starts), trace_stats, bucket_id)
+            yield window, metadata
+
+    @log_lifecycle(logging.DEBUG)
+    def _process_reassemble_blocks_array(
+        self, queue_watchdog, queue_in, queue_out, argdict
+    ):
+        """
+        Wrapper with queue IO functionality around :py:func:`_reassemble_blocks_array`
+        """
+        buffer = defaultdict(list)  # Buffers predictions until a block is complete
+
+        while True:
+            elem = queue_in.get()
+            queue_in.task_done()
+            if elem is None:
+                break
+
+            output_elem = self._reassemble_blocks_array(elem, buffer, argdict)
+            if output_elem is not None:
+                queue_out.put(output_elem)
+
+        queue_watchdog.put("reassemble")
+
+    async def _async_reassemble_blocks_array(self, queue_in, queue_out, argdict):
+        """
+        Wrapper with queue IO functionality around :py:func:`_reassemble_blocks_array`
+        """
+        buffer = defaultdict(list)  # Buffers predictions until a block is complete
+
+        while True:
+            elem = await queue_in.get()
+            if elem is None:
+                break
+
+            output_elem = self._reassemble_blocks_array(elem, buffer, argdict)
+            if output_elem is not None:
+                await queue_out.put(output_elem)
+
+    def _reassemble_blocks_array(self, elem, buffer, argdict):
+        """
+        Reassembles array predictions into numpy arrays.
+        """
+        overlap = argdict.get("overlap", 0)
+        window, metadata = elem
+        t0, s, len_starts, trace_stats, bucket_id = metadata
+        key = f"{t0}_{trace_stats.network}.{trace_stats.station}.{trace_stats.station}.{trace_stats.channel[:-1]}"
+        buffer[key].append(elem)
+
+        output = None
+
+        if len(buffer[key]) == len_starts:
+            preds = [(s, window) for window, (_, s, _, _, _) in buffer[key]]
+            preds = sorted(
+                preds, key=lambda x: x[0]
+            )  # Sort by start (overwrite keys to make sure window is never used as key)
+            starts = [s for s, window in preds]
+            preds = [window for s, window in preds]
+            preds = np.stack(preds, axis=0)
+
+            # Number of prediction samples per input sample
+            prediction_sample_factor = preds[0].shape[0] / (
+                self.pred_sample[1] - self.pred_sample[0]
+            )
+
+            # Maximum number of predictions covering a point
+            coverage = int(np.ceil(self.in_samples / (self.in_samples - overlap) + 1))
+
+            pred_length = int(
+                np.ceil((np.max(starts) + self.in_samples) * prediction_sample_factor)
+            )
+            pred_merge = (
+                np.zeros_like(
+                    preds[0], shape=(pred_length, preds[0].shape[1], coverage)
+                )
+                * np.nan
+            )
+            for i, (pred, start) in enumerate(zip(preds, starts)):
+                pred_start = int(start * prediction_sample_factor)
+                pred_merge[
+                    pred_start : pred_start + pred.shape[0], :, i % coverage
+                ] = pred
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings(action="ignore", message="Mean of empty slice")
+                preds = np.nanmean(pred_merge, axis=-1)
+
+            pred_time = t0 + self.pred_sample[0] / argdict["sampling_rate"]
+            pred_rate = argdict["sampling_rate"] * prediction_sample_factor
+
+            output = ((pred_rate, pred_time, preds), trace_stats)
+
+            del buffer[key]
+
+        return output
+
+    @log_lifecycle(logging.DEBUG)
+    def _process_annotate_window_pre(
+        self, queue_watchdog, queue_in, queue_out, argdict
+    ):
+        """
+        Wrapper with queue IO functionality around :py:func:`annotate_window_pre`
+
+        :param queue_watchdog: Signal queue for watchdog
+        :param queue_in: Input queue
+        :param queue_out: Output queue
+        :param argdict: Dictionary of arguments
+        :return: None
+        """
+        while True:
+            elem = queue_in.get()
+            queue_in.task_done()
+            if elem is None:
+                break
+
+            window, metadata = elem
+            preprocessed = self.annotate_window_pre(window, argdict)
+            if isinstance(preprocessed, tuple):  # Contains piggyback information
+                assert len(preprocessed) == 2
+                queue_out.put(preprocessed + (metadata,))
+            else:  # No piggyback information, add none as piggyback
+                queue_out.put((preprocessed, None, metadata))
+
+        queue_watchdog.put("annotate_window_pre")
+
+    @log_lifecycle(logging.DEBUG)
+    def _process_predict(self, queue_watchdog, queue_in, queue_out, argdict):
+        """
+        Prediction function, gathering predictions until a batch is full and handing them to :py:func:`_predict_buffer`.
+
+        :param queue_watchdog: Signal queue for watchdog
+        :param queue_in: Input queue
+        :param queue_out: Output queue
+        :param argdict: Dictionary of arguments
+        :return: None
+        """
+        # Only move the model of the correct process to GPU to avoid CUDA initialization in all processes.
+        # This would cost both runtime and GPU memory.
+        device = argdict.get("device", self.device)
+        if device != self.device:
+            self.to(device)
+
+        buffer = []
+        batch_size = argdict.get("batch_size", 64)
+
+        while True:
+            elem = queue_in.get()
+            queue_in.task_done()
+            if elem is None:
+                break
+
+            buffer.append(elem)
+
+            if len(buffer) == batch_size:
+                pred = self._predict_buffer([window for window, _, _ in buffer])
+                for pred_window, (_, piggyback, metadata) in zip(pred, buffer):
+                    queue_out.put((pred_window, piggyback, metadata))
+                buffer = []
+
+        if len(buffer) > 0:
+            pred = self._predict_buffer([window for window, _, _ in buffer])
+            for pred_window, (_, piggyback, metadata) in zip(pred, buffer):
+                queue_out.put((pred_window, piggyback, metadata))
+            buffer = []
+
+        queue_watchdog.put("predict")
 
     def _predict_buffer(self, buffer):
         """
@@ -924,41 +1728,61 @@ class WaveformModel(SeisBenchModel, ABC):
         reshaped_preds = [pred for pred in self._recursive_slice_pred(preds)]
         return reshaped_preds
 
-    async def _process_annotate_window_post(self, queue_in, queue_out, argdict):
+    @log_lifecycle(logging.DEBUG)
+    def _process_annotate_window_post(
+        self, queue_watchdog, queue_in, queues_out, argdict
+    ):
         """
         Wrapper with queue IO functionality around :py:func:`annotate_window_post`
 
+        :param queue_watchdog: Signal queue for watchdog
         :param queue_in: Input queue
         :param queue_out: Output queue
         :param argdict: Dictionary of arguments
         :return: None
         """
-        elem = await queue_in.get()
-        while elem is not None:
+        while True:
+            elem = queue_in.get()
+            queue_in.task_done()
+            if elem is None:
+                break
+
             window, piggyback, metadata = elem
-            await queue_out.put(
+
+            t0, s, len_starts, trace_stats, bucket_id = metadata
+            idx = bucket_id % len(queues_out)
+
+            queues_out[idx].put(
                 (
                     self.annotate_window_post(window, piggyback, argdict=argdict),
                     metadata,
                 )
             )
-            elem = await queue_in.get()
 
-    async def _process_predictions_to_streams(self, queue_in, queue_out):
+        queue_watchdog.put("annotate_window_post")
+
+    @log_lifecycle(logging.DEBUG)
+    def _process_predictions_to_streams(self, queue_watchdog, queue_in, queue_out):
         """
         Wrapper with queue IO functionality around :py:func:`_predictions_to_stream`
 
+        :param queue_watchdog: Signal queue for watchdog
         :param queue_in: Input queue
         :param queue_out: Output queue
         :return: None
         """
-        elem = await queue_in.get()
-        while elem is not None:
+        while True:
+            elem = queue_in.get()
+            queue_in.task_done()
+            if elem is None:
+                break
+
             (pred_rate, pred_time, preds), trace_stats = elem
-            await queue_out.put(
+            queue_out.put(
                 self._predictions_to_stream(pred_rate, pred_time, preds, trace_stats)
             )
-            elem = await queue_in.get()
+
+        queue_watchdog.put("predictions_to_stream")
 
     def _predictions_to_stream(self, pred_rate, pred_time, pred, trace_stats):
         """
@@ -1554,6 +2378,11 @@ class WaveformPipeline(ABC):
 
     To implement a waveform pipeline, this class needs to be subclassed. This class will throw an exception when
     trying to instantiate.
+
+    .. warning::
+        In contrast to :py:class:`SeisBenchModel` this class does not yet feature versioning for weights. By default,
+        all underlying models will use the latest, locally available version. This functionality will eventually be
+        added. Please raise an issue on Github if you require this functionality.
 
     :param components: Dictionary of components contained in the model. This should contain all models used in the
                        pipeline.

@@ -14,6 +14,7 @@ import scipy.signal
 import copy
 from collections import defaultdict
 from collections.abc import Iterable
+import warnings
 
 
 class WaveformDataset:
@@ -39,16 +40,18 @@ class WaveformDataset:
     :type sampling_rate: int, optional
     :param cache: Defines the behaviour of the waveform cache. Provides three options:
 
-                  - "full": When a trace is queried, the full block containing the trace is loaded into the cache
-                            and stored in memory. This causes the highest memory consumption, but also best
-                            performance when using large parts of the dataset.
-                  - "trace": When a trace is queried, only the trace itself is loaded and stored in memory.
-                             This is particularly useful when only a subset of traces is queried,
-                             but these are queried multiple times. In this case the performance of
-                             this strategy might outperform "full".
-                  - None: When a trace is queried, it is always loaded from disk.
-                          This mode leads to low memory consumption but high IO load.
-                          It is most likely not usable for model training.
+                  *  "full": When a trace is queried, the full block containing the trace is loaded into the cache
+                     and stored in memory. This causes the highest memory consumption, but also best
+                     performance when using large parts of the dataset.
+
+                  *  "trace": When a trace is queried, only the trace itself is loaded and stored in memory.
+                     This is particularly useful when only a subset of traces is queried,
+                     but these are queried multiple times. In this case the performance of
+                     this strategy might outperform "full".
+
+                  *  None: When a trace is queried, it is always loaded from disk.
+                     This mode leads to low memory consumption but high IO load.
+                     It is most likely not usable for model training.
 
                   Note that for datasets without blocks, i.e., each trace in a single array in the hdf5 file,
                   the strategies "full" and "trace" are identical.
@@ -63,11 +66,14 @@ class WaveformDataset:
     :param chunks: Specify particular chunks to load. If None, loads all chunks. Defaults to None.
     :type chunks: list, optional
     :param missing_components: Strategy to deal with missing components. Options are:
-                               - "pad": Fill with zeros.
-                               - "copy": Fill with values from first existing traces.
-                               - "ignore": Order all existing components in the requested order,
-                                           but ignore missing ones. This will raise an error if traces with different
-                                           numbers of components are requested together.
+
+                               *  "pad": Fill with zeros.
+
+                               *  "copy": Fill with values from first existing traces.
+
+                               *  "ignore": Order all existing components in the requested order,
+                                  but ignore missing ones. This will raise an error if traces with different
+                                  numbers of components are requested together.
     :type missing_components: str
     :param kwargs:
     """
@@ -97,6 +103,10 @@ class WaveformDataset:
 
         self._missing_components = None
 
+        self._trace_identification_warning_issued = (
+            False  # Traced whether warning for trace name was issued already
+        )
+
         self._dimension_order = None  # Target dimension order
         self._dimension_mapping = None  # List for reordering input to target dimensions
         self._component_order = None  # Target component order
@@ -108,10 +118,14 @@ class WaveformDataset:
 
         metadatas = []
         for chunk, metadata_path, _ in zip(*self._chunks_with_paths()):
-            tmp_metadata = pd.read_csv(
-                metadata_path,
-                dtype={"trace_sampling_rate_hz": float, "trace_dt_s": float},
-            )
+            with warnings.catch_warnings():
+                # Catch warning for mixed dtype
+                warnings.filterwarnings("ignore", category=pd.errors.DtypeWarning)
+
+                tmp_metadata = pd.read_csv(
+                    metadata_path,
+                    dtype={"trace_sampling_rate_hz": float, "trace_dt_s": float},
+                )
             tmp_metadata["trace_chunk"] = chunk
             metadatas.append(tmp_metadata)
         self._metadata = pd.concat(metadatas)
@@ -126,7 +140,7 @@ class WaveformDataset:
         self.component_order = component_order
         self.missing_components = missing_components
 
-        self._waveform_cache = {}
+        self._waveform_cache = defaultdict(dict)
 
     def __str__(self):
         return f"{self._name} - {len(self)} traces"
@@ -154,7 +168,9 @@ class WaveformDataset:
 
         other = copy.copy(self)
         other._metadata = self._metadata.copy()
-        other._waveform_cache = copy.copy(self._waveform_cache)
+        other._waveform_cache = defaultdict(dict)
+        for key in self._waveform_cache.keys():
+            other._waveform_cache[key] = copy.copy(self._waveform_cache[key])
 
         return other
 
@@ -570,15 +586,45 @@ class WaveformDataset:
                     "Keeping original components."
                 )
 
-    def get_idx_from_trace_name(self, trace_name):
+    def get_idx_from_trace_name(self, trace_name, chunk=None, dataset=None):
         """
-        Returns the index of the trace with given trace_name
+        Returns the index of a trace with given trace_name, chunk and dataset.
+        Chunk and dataset parameters are optional, but might be necessary to uniquely identify traces for
+        chunked datasets or for :py:class:`MultiWaveformDataset`.
+        The method will issue a warning *the first time* a non-uniquely identifiable trace is requested.
+        If no matching key is found, a `KeyError` is raised.
 
         :param trace_name: Trace name as in metadata["trace_name"]
+        :type trace_name: str
+        :param chunk: Trace chunk as in metadata["trace_chunk"]. If None this key will be ignored.
+        :type chunk: None
+        :param dataset: Trace dataset as in metadata["trace_dataset"]. Only for :py:class:`MultiWaveformDataset`.
+                        If None this key will be ignored.
+        :type dataset: None
         :return: Index of the sample
         """
-        if trace_name in self._trace_name_to_idx:
-            return self._trace_name_to_idx[trace_name]
+        dict_key = "name"
+        search_key = [trace_name]
+        if chunk is not None:
+            dict_key += "_chunk"
+            search_key.append(chunk)
+        if dataset is not None:
+            dict_key += "_dataset"
+            search_key.append(dataset)
+
+        search_key = tuple(search_key)
+
+        if not self._trace_identification_warning_issued and len(
+            self._trace_name_to_idx[dict_key]
+        ) != len(self.metadata):
+            seisbench.logger.warning(
+                f'Traces can not uniformly be identified using {dict_key.replace("_", ", ")}. '
+                '"get_idx_from_trace_name" will return only one possible matching trace.'
+            )
+            self._trace_identification_warning_issued = True
+
+        if search_key in self._trace_name_to_idx[dict_key]:
+            return self._trace_name_to_idx[dict_key][search_key]
         else:
             raise KeyError("The dataset does not contain the requested trace.")
 
@@ -586,14 +632,38 @@ class WaveformDataset:
         """
         Builds mapping of trace_names to idx.
         """
-        self._trace_name_to_idx = {
-            trace_name: i for i, trace_name in enumerate(self.metadata["trace_name"])
+        self._trace_name_to_idx = {}
+        self._trace_name_to_idx["name"] = {
+            (trace_name,): i for i, trace_name in enumerate(self.metadata["trace_name"])
         }
-        if len(self._trace_name_to_idx) != len(self.metadata):
-            seisbench.logger.warning(
-                "Found non-unique trace names. "
-                "get_idx_from_trace_name will return only one possible matching trace."
+        self._trace_name_to_idx["name_chunk"] = {
+            trace_info: i
+            for i, trace_info in enumerate(
+                zip(self.metadata["trace_name"], self.metadata["trace_chunk"])
             )
+        }
+        if "trace_dataset" in self.metadata.columns:
+            self._trace_name_to_idx["name_dataset"] = {
+                trace_info: i
+                for i, trace_info in enumerate(
+                    zip(self.metadata["trace_name"], self.metadata["trace_dataset"])
+                )
+            }
+            self._trace_name_to_idx["name_chunk_dataset"] = {
+                trace_info: i
+                for i, trace_info in enumerate(
+                    zip(
+                        self.metadata["trace_name"],
+                        self.metadata["trace_chunk"],
+                        self.metadata["trace_dataset"],
+                    )
+                )
+            }
+        else:
+            self._trace_name_to_idx["name_dataset"] = {}
+            self._trace_name_to_idx["name_chunk_dataset"] = {}
+
+        self._trace_identification_warning_issued = False
 
     def preload_waveforms(self, pbar=False):
         """
@@ -746,25 +816,32 @@ class WaveformDataset:
 
         :return: None
         """
+        existing_keys = defaultdict(set)
         if self.cache == "full":
             # Extract block names
-            existing_keys = set(
-                self._metadata["trace_name"].apply(lambda x: x.split("$")[0])
-            )
+            block_names = self._metadata["trace_name"].apply(lambda x: x.split("$")[0])
+            chunks = self._metadata["trace_chunk"]
+            for chunk, block in zip(chunks, block_names):
+                existing_keys[chunk].add(block)
         elif self.cache == "trace":
-            existing_keys = set(self._metadata["trace_name"])
-        else:
-            existing_keys = set()
+            trace_names = self._metadata["trace_name"]
+            chunks = self._metadata["trace_chunk"]
+            for chunk, trace in zip(chunks, trace_names):
+                existing_keys[chunk].add(trace)
 
-        delete_keys = []
-        for key in self._waveform_cache.keys():
-            if key not in existing_keys:
-                delete_keys.append(key)
+        delete_count = 0
+        for chunk in self._waveform_cache.keys():
+            delete_keys = []
+            for key in self._waveform_cache[chunk].keys():
+                if key not in existing_keys[chunk]:
+                    delete_keys.append(key)
 
-        for key in delete_keys:
-            del self._waveform_cache[key]
+            for key in delete_keys:
+                del self._waveform_cache[chunk][key]
 
-        seisbench.logger.debug(f"Deleted {len(delete_keys)} entries in cache eviction")
+            delete_count += len(delete_keys)
+
+        seisbench.logger.debug(f"Deleted {delete_count} entries in cache eviction")
 
     def __getitem__(self, item):
         """
@@ -921,9 +998,9 @@ class WaveformDataset:
         """
         trace_name = str(trace_name)
 
-        if trace_name in self._waveform_cache:
+        if trace_name in self._waveform_cache[chunk]:
             # Cache hit on trace level
-            waveform = self._waveform_cache[trace_name]
+            waveform = self._waveform_cache[chunk][trace_name]
 
         else:
             # Cache miss on trace level
@@ -936,9 +1013,9 @@ class WaveformDataset:
 
             location = self._parse_location(location)
 
-            if block_name in self._waveform_cache:
+            if block_name in self._waveform_cache[chunk]:
                 # Cache hit on block level
-                waveform = self._waveform_cache[block_name][location]
+                waveform = self._waveform_cache[chunk][block_name][location]
 
             else:
                 # Cache miss on block level - Load from hdf5 file required
@@ -946,12 +1023,12 @@ class WaveformDataset:
                 block = g_data[block_name]
                 if self.cache == "full":
                     block = block[()]  # Explicit load from hdf5 file
-                    self._waveform_cache[block_name] = block
+                    self._waveform_cache[chunk][block_name] = block
                     waveform = block[location]
                 else:
                     waveform = block[location]  # Implies the load from hdf5 file
                     if self.cache == "trace":
-                        self._waveform_cache[trace_name] = waveform
+                        self._waveform_cache[chunk][trace_name] = waveform
 
         if target_sampling_rate is not None:
             if np.isnan(source_sampling_rate):
@@ -1221,6 +1298,16 @@ class MultiWaveformDataset:
 
         self._datasets = [dataset.copy() for dataset in datasets]
         self._metadata = pd.concat(x.metadata for x in datasets)
+
+        # Identify dataset
+        self._metadata["trace_dataset"] = sum(
+            ([dataset.name] * len(dataset) for dataset in self.datasets), []
+        )
+
+        self._trace_identification_warning_issued = (
+            False  # Traced whether warning for trace name was issued already
+        )
+
         self._homogenize_dataformat(datasets)
         self._build_trace_name_to_idx_dict()
 
@@ -2090,19 +2177,22 @@ class WaveformDataWriter:
 
         if len(bucket) == 1:
             metadata, waveform = bucket[0]
-            # Use trace name as bucket name
-            trace_name = str(metadata["trace_name"])
-            trace_name = trace_name.replace(
-                "$", "_"
-            )  # As $ will be interpreted as a control sequence to remove padding
+            if "trace_name" in metadata:
+                # Use trace name as bucket name
+                trace_name = str(metadata["trace_name"])
+                trace_name = trace_name.replace(
+                    "$", "_"
+                )  # As $ will be interpreted as a control sequence to remove padding
+            else:
+                # Use the next bucket name
+                trace_name = self._get_bucket_name()
+
             metadata["trace_name"] = trace_name
 
             self._waveform_file["data"].create_dataset(trace_name, data=waveform)
 
         else:
-            bucket_id = self._bucket_counter
-            self._bucket_counter += 1
-            bucket_name = f"bucket{bucket_id}"
+            bucket_name = self._get_bucket_name()
 
             bucket_waveforms, locations = self._pack_arrays([x[1] for x in bucket])
             self._waveform_file["data"].create_dataset(
@@ -2118,6 +2208,17 @@ class WaveformDataWriter:
                     ]  # Keep original trace_name in the metadata
 
                 metadata["trace_name"] = f"{bucket_name}${location}"
+
+    def _get_bucket_name(self):
+        """
+        Get the next available bucket name and increment bucket counter
+
+        :return: bucket name
+        :rtype: str
+        """
+        bucket_id = self._bucket_counter
+        self._bucket_counter += 1
+        return f"bucket{bucket_id}"
 
     @staticmethod
     def _pack_arrays(arrays):
