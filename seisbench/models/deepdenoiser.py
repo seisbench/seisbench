@@ -145,21 +145,17 @@ class DeepDenoiser(WaveformModel):
 
     def get_model_args(self):
         model_args = super().get_model_args()
-        model_args = {
-            k: model_args[k]
-            for k in model_args.keys()
-            if k
-            not in (
-                "citation",
-                "in_samples",
-                "output_type",
-                "default_args",
-                "pred_sample",
-                "labels",
-                "sampling_rate",
-                "grouping",
-            )
-        }
+        for key in [
+            "citation",
+            "in_samples",
+            "output_type",
+            "default_args",
+            "pred_sample",
+            "labels",
+            "sampling_rate",
+            "grouping",
+        ]:
+            del model_args[key]
 
         model_args["sampling_rate"] = self.sampling_rate
 

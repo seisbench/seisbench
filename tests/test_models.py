@@ -11,6 +11,15 @@ import logging
 import pytest
 import asyncio
 import os
+import inspect
+
+
+def get_input_args(obj):
+    signature = inspect.signature(obj)
+    args = {k: v._default for k, v in signature.parameters.items()}
+    if "kwargs" in args.keys():
+        del args["kwargs"]
+    return args
 
 
 def test_weights_docstring():
@@ -1052,7 +1061,7 @@ def test_eqtransformer_annotate_window_post():
 
 def test_save_load_gpd(tmp_path):
     model_orig = seisbench.models.GPD()
-    model_orig_args = model_orig._get_input_args(model_orig.__class__)
+    model_orig_args = get_input_args(model_orig.__class__)
 
     # Test model saving
     model_orig.save(tmp_path / "gpd")
@@ -1063,7 +1072,7 @@ def test_save_load_gpd(tmp_path):
 
     # Test model loading
     model_load = seisbench.models.GPD.load(tmp_path / "gpd")
-    model_load_args = model_load._get_input_args(model_orig.__class__)
+    model_load_args = get_input_args(model_orig.__class__)
 
     # Test no changes to weights
     pred_orig = model_orig.annotate(stream, sampling_rate=400)
@@ -1076,7 +1085,7 @@ def test_save_load_gpd(tmp_path):
 
 def test_save_load_basicphaseae(tmp_path, caplog):
     model_orig = seisbench.models.BasicPhaseAE()
-    model_orig_args = model_orig._get_input_args(model_orig.__class__)
+    model_orig_args = get_input_args(model_orig.__class__)
 
     # Test model saving
     with caplog.at_level(logging.WARNING):
@@ -1089,7 +1098,7 @@ def test_save_load_basicphaseae(tmp_path, caplog):
 
     # Test model loading
     model_load = seisbench.models.BasicPhaseAE.load(tmp_path / "basicphaseae")
-    model_load_args = model_load._get_input_args(model_orig.__class__)
+    model_load_args = get_input_args(model_orig.__class__)
 
     # Test no changes to weights
     pred_orig = model_orig.annotate(stream, sampling_rate=400)
@@ -1103,7 +1112,7 @@ def test_save_load_basicphaseae(tmp_path, caplog):
 
 def test_save_load_phasenet(tmp_path):
     model_orig = seisbench.models.PhaseNet()
-    model_orig_args = model_orig._get_input_args(model_orig.__class__)
+    model_orig_args = get_input_args(model_orig.__class__)
 
     # Test model saving
     model_orig.save(tmp_path / "phasenet")
@@ -1114,7 +1123,7 @@ def test_save_load_phasenet(tmp_path):
 
     # Test model loading
     model_load = seisbench.models.PhaseNet.load(tmp_path / "phasenet")
-    model_load_args = model_load._get_input_args(model_orig.__class__)
+    model_load_args = get_input_args(model_orig.__class__)
 
     # Test no changes to weights
     pred_orig = model_orig.annotate(stream, sampling_rate=400)
@@ -1127,7 +1136,7 @@ def test_save_load_phasenet(tmp_path):
 
 def test_save_load_eqtransformer(tmp_path):
     model_orig = seisbench.models.EQTransformer()
-    model_orig_args = model_orig._get_input_args(model_orig.__class__)
+    model_orig_args = get_input_args(model_orig.__class__)
 
     # Test model saving
     model_orig.save(tmp_path / "eqtransformer")
@@ -1138,7 +1147,7 @@ def test_save_load_eqtransformer(tmp_path):
 
     # Test model loading
     model_load = seisbench.models.EQTransformer.load(tmp_path / "eqtransformer")
-    model_load_args = model_load._get_input_args(model_orig.__class__)
+    model_load_args = get_input_args(model_orig.__class__)
 
     # Test no changes to weights
     pred_orig = model_orig.annotate(stream, sampling_rate=400)
@@ -1151,7 +1160,7 @@ def test_save_load_eqtransformer(tmp_path):
 
 def test_save_load_cred(tmp_path):
     model_orig = seisbench.models.CRED()
-    model_orig_args = model_orig._get_input_args(model_orig.__class__)
+    model_orig_args = get_input_args(model_orig.__class__)
 
     # Test model saving
     model_orig.save(tmp_path / "cred")
@@ -1162,7 +1171,7 @@ def test_save_load_cred(tmp_path):
 
     # Test model loading
     model_load = seisbench.models.CRED.load(tmp_path / "cred")
-    model_load_args = model_load._get_input_args(model_orig.__class__)
+    model_load_args = get_input_args(model_orig.__class__)
 
     # Test no changes to weights
     pred_orig = model_orig.annotate(stream, sampling_rate=400)
@@ -1175,7 +1184,7 @@ def test_save_load_cred(tmp_path):
 
 def test_save_load_deepdenoiser(tmp_path):
     model_orig = seisbench.models.DeepDenoiser()
-    model_orig_args = model_orig._get_input_args(model_orig.__class__)
+    model_orig_args = get_input_args(model_orig.__class__)
 
     # Test model saving
     model_orig.save(tmp_path / "deepdenoiser")
@@ -1186,7 +1195,7 @@ def test_save_load_deepdenoiser(tmp_path):
 
     # Test model loading
     model_load = seisbench.models.DeepDenoiser.load(tmp_path / "deepdenoiser")
-    model_load_args = model_load._get_input_args(model_orig.__class__)
+    model_load_args = get_input_args(model_orig.__class__)
 
     # Test no changes to weights
     pred_orig = model_orig.annotate(stream, sampling_rate=400)
@@ -1202,7 +1211,7 @@ def test_save_load_model_updated_after_construction(tmp_path):
     model_orig_state = model_orig.__dict__
 
     # Check obtaining of original arguments for object works
-    model_orig_args = model_orig._get_input_args(model_orig.__class__)
+    model_orig_args = get_input_args(model_orig.__class__)
     assert model_orig_state["in_samples"] == model_orig_args["in_samples"]
     assert model_orig_state["sampling_rate"] == model_orig_args["sampling_rate"]
 

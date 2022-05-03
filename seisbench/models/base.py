@@ -344,13 +344,6 @@ class SeisBenchModel(nn.Module):
         default_args = self._weights_metadata.get("default_args", {})
         self.default_args.update(default_args)
 
-    def _get_input_args(self, obj):
-        signature = inspect.signature(obj)
-        args = {k: v._default for k, v in signature.parameters.items()}
-        if "kwargs" in args.keys():
-            del args["kwargs"]
-        return args
-
     @abstractmethod
     def get_model_args(self):
         """
@@ -359,7 +352,7 @@ class SeisBenchModel(nn.Module):
         :return: Dictionary of all parameters for a model to store during saving.
         :rtype: Dict
         """
-        return {}
+        return {"citation": self._citation}
 
 
 class WaveformModel(SeisBenchModel, ABC):
@@ -1523,18 +1516,23 @@ class WaveformModel(SeisBenchModel, ABC):
         return detections
 
     def get_model_args(self):
-        return {
-            "sampling_rate": self.sampling_rate,
-            "output_type": self.output_type,
-            "component_order": self.component_order,
-            "default_args": self.default_args,
-            "in_samples": self.in_samples,
-            "pred_sample": self.pred_sample,
-            "labels": self.labels,
-            "filter_args": self.filter_args,
-            "filter_kwargs": self.filter_kwargs,
-            "grouping": self._grouping,
+        model_args = super().get_model_args()
+        model_args = {
+            **model_args,
+            **{
+                "sampling_rate": self.sampling_rate,
+                "output_type": self.output_type,
+                "component_order": self.component_order,
+                "default_args": self.default_args,
+                "in_samples": self.in_samples,
+                "pred_sample": self.pred_sample,
+                "labels": self.labels,
+                "filter_args": self.filter_args,
+                "filter_kwargs": self.filter_kwargs,
+                "grouping": self._grouping,
+            },
         }
+        return model_args
 
 
 class WaveformPipeline(ABC):

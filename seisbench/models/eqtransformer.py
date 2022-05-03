@@ -264,20 +264,16 @@ class EQTransformer(WaveformModel):
 
     def get_model_args(self):
         model_args = super().get_model_args()
-        model_args = {
-            k: model_args[k]
-            for k in model_args.keys()
-            if k
-            not in (
-                "citation",
-                "output_type",
-                "default_args",
-                "in_samples",
-                "pred_sample",
-                "labels",
-                "sampling_rate",
-            )
-        }
+        for key in [
+            "citation",
+            "in_samples",
+            "output_type",
+            "default_args",
+            "pred_sample",
+            "labels",
+            "sampling_rate",
+        ]:
+            del model_args[key]
 
         model_args["in_channels"] = self.in_channels
         model_args["in_samples"] = self.in_samples

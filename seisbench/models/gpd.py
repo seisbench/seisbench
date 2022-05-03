@@ -126,20 +126,16 @@ class GPD(WaveformModel):
 
     def get_model_args(self):
         model_args = super().get_model_args()
-        model_args = {
-            k: model_args[k]
-            for k in model_args.keys()
-            if k
-            not in (
-                "citation",
-                "output_type",
-                "in_samples",
-                "pred_sample",
-                "labels",
-                "sampling_rate",
-                "default_args",
-            )
-        }
+        for key in [
+            "citation",
+            "in_samples",
+            "output_type",
+            "default_args",
+            "pred_sample",
+            "labels",
+            "sampling_rate",
+        ]:
+            del model_args[key]
 
         model_args["sampling_rate"] = self.sampling_rate
         model_args["in_channels"] = self.in_channels
@@ -149,4 +145,5 @@ class GPD(WaveformModel):
         model_args["sampling_rate"] = self.sampling_rate
         model_args["pred_sample"] = self.pred_sample
         model_args["original_compatible"] = self.original_compatible
+
         return model_args
