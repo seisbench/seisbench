@@ -29,4 +29,5 @@ from .windows import (
     SteeredWindow,
     AlignGroupsOnKey,
     UTCOffsets,
+    SelectOrPadAlongAxis,
 )

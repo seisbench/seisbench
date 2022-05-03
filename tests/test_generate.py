@@ -1778,3 +1778,50 @@ def test_utc_offsets():
         ValueError, match="UTCOffsets can only be applied to group samples"
     ):
         offsets(state_dict)
+
+
+def test_select_or_pad_along_axis():
+    aug = seisbench.generate.SelectOrPadAlongAxis(n=5, axis=0, key=("X", "X2"))
+
+    x = np.random.rand(2, 3, 1000)
+    state_dict = {"X": (x, {"something": [0.0, 5.0]})}
+
+    aug(state_dict)
+
+    x2, metadata2 = state_dict["X2"]
+    assert x2.shape == (5, 3, 1000)
+    assert np.allclose(x2[:2], x)
+    assert np.allclose(
+        metadata2["something"], [0, 5, np.nan, np.nan, np.nan], equal_nan=True
+    )
+
+    x = np.random.rand(10, 3, 1000)
+    state_dict = {"X": (x, {"something": np.arange(10)})}
+
+    with patch("numpy.random.shuffle") as shuffle:
+
+        def side_effect(ind):
+            ind[:5] = [2, 3, 4, 5, 6]
+
+        shuffle.side_effect = side_effect
+
+        aug(state_dict)
+
+    x2, metadata2 = state_dict["X2"]
+    assert x2.shape == (5, 3, 1000)
+    assert np.allclose(x2, x[2:7])
+    assert np.allclose(metadata2["something"], np.arange(2, 7))
+
+    # Along different axis
+    aug = seisbench.generate.SelectOrPadAlongAxis(
+        n=5, axis=1, adjust_metadata=False, key=("X", "X2")
+    )
+
+    x = np.random.rand(2, 3, 1000)
+    state_dict = {"X": (x, {})}
+
+    aug(state_dict)
+
+    x2, metadata2 = state_dict["X2"]
+    assert x2.shape == (2, 5, 1000)
+    assert np.allclose(x2[:, :3], x)

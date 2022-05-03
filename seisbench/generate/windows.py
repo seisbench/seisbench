@@ -686,3 +686,107 @@ class UTCOffsets:
 
     def __str__(self):
         return f"UTCOffsets (time_key={self.time_key}, offset_key={self.offset_key}, key={self.key})"
+
+
+class SelectOrPadAlongAxis:
+    """
+    Changes the length of an axis from `m` to `n` by:
+    - padding if `m` < `n`
+    - random selection if `m` > `n`
+
+    In addition, can adjust the length of the metadata arrays accordingly. This augmentation is primarily intended to
+    apply to grouped data. The input data must be an array.
+
+    Data is padded with zeros, metadata with values depending on the dtype (NaN for float, 0 for int, empty string for str).
+
+    :param n: Length of output
+    :type n: int
+    :param adjust_metadata: If true, adjusts metadata. Otherwise, leaves metadata unaltered.
+    :type adjust_metadata: None
+    :param axis: Axis along which reshaping should be applied
+    :type axis: None
+    :param key: The keys for reading from and writing to the state dict.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
+    """
+
+    def __init__(self, n, adjust_metadata=True, axis=0, key="X"):
+        self.n = n
+        self.adjust_metadata = adjust_metadata
+        self.axis = axis
+
+        if isinstance(key, str):
+            self.key = (key, key)
+        else:
+            self.key = key
+
+    def __call__(self, state_dict):
+        x, metadata = state_dict[self.key[0]]
+
+        if self.key[0] != self.key[1]:
+            # Ensure metadata is not modified inplace unless input and output key are anyhow identical
+            metadata = copy.deepcopy(metadata)
+
+        output_shape = list(x.shape)
+        output_shape[self.axis] = self.n
+
+        if x.shape[self.axis] <= self.n:
+            idx = np.arange(x.shape[self.axis])
+        else:
+            idx = np.arange(x.shape[self.axis])
+            np.random.shuffle(idx)
+            idx = np.sort(idx[: self.n])
+
+        output = np.zeros_like(x, shape=output_shape)
+
+        for target_idx, source_idx in enumerate(idx):
+            self._place_trace_in_array(output, x, source_idx, target_idx)
+
+        if self.adjust_metadata:
+            for key in metadata.keys():
+                new_value = np.asarray(metadata[key])[idx]
+                new_value = np.pad(
+                    new_value,
+                    (0, self.n - len(idx)),
+                    mode="constant",
+                    constant_values=self._get_pad_value(new_value),
+                )
+                metadata[key] = new_value
+
+        state_dict[self.key[1]] = output, metadata
+
+    @staticmethod
+    def _get_pad_value(x):
+        if x.dtype.kind == "f":
+            return np.nan
+        elif x.dtype.kind in ["i", "u"]:
+            return 0
+        elif x.dtype.kind == "b":
+            return False
+        elif x.dtype.kind == "S":
+            return ""
+        else:
+            return None
+
+    def _place_trace_in_array(self, output, x, source_idx, target_idx):
+        """
+        Places data x in the output array at positions p0 to p1 along self.sample_axis
+        """
+        axis = self.axis
+        if axis < 0:
+            axis += x.ndim
+
+        data = np.take(x, source_idx, axis)
+        data = np.expand_dims(data, axis)
+
+        ind = np.array([target_idx])
+        for _ in range(axis):
+            ind = np.expand_dims(ind, 0)
+        for _ in range(axis + 1, x.ndim):
+            ind = np.expand_dims(ind, -1)
+        np.put_along_axis(output, ind, data, axis)
+
+    def __str__(self):
+        return f"SelectOrPadAlongAxis (n={self.n}, key={self.key})"
