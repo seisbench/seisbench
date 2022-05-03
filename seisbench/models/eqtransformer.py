@@ -268,6 +268,30 @@ class EQTransformer(WaveformModel):
 
         return sorted(picks), sorted(detections)
 
+    def get_model_args(self):
+        model_args = super().get_model_args()
+        for key in [
+            "citation",
+            "in_samples",
+            "output_type",
+            "default_args",
+            "pred_sample",
+            "labels",
+            "sampling_rate",
+        ]:
+            del model_args[key]
+
+        model_args["in_channels"] = self.in_channels
+        model_args["in_samples"] = self.in_samples
+        model_args["classes"] = self.classes
+        model_args["phases"] = self.phases
+        model_args["lstm_blocks"] = self.lstm_blocks
+        model_args["drop_rate"] = self.drop_rate
+        model_args["original_compatible"] = self.original_compatible
+        model_args["sampling_rate"] = self.sampling_rate
+
+        return model_args
+
 
 class Encoder(nn.Module):
     """

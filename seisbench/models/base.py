@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from collections import defaultdict
 from queue import PriorityQueue
+import inspect
 import json
 import math
 import numpy as np
@@ -455,6 +456,136 @@ class SeisBenchModel(nn.Module):
         prefix_len = len(f"{name}.json.v")
         return sorted([config[prefix_len:] for config in configs])
 
+    @classmethod
+    def load(cls, path):
+        """
+        Load a SeisBench model from local path.
+
+        For more information on the SeisBench model format see py:func:`save`.
+
+        :param path: Define the path to the SeisBench model.
+        :type path: pathlib.Path ot str
+        :return: Model instance
+        :rtype: SeisBenchModel
+        """
+        if isinstance(path, str):
+            path = Path(path)
+
+        path_json = path.with_name(path.stem + ".json")
+        path_pt = path.with_name(path.stem + ".pt")
+
+        # Load model metadata
+        with open(path_json, "r") as f:
+            weights_metadata = json.load(f)
+        # Load model weights
+        model_weights = torch.load(f"{path_pt}")
+
+        model_args = weights_metadata.get("model_args", {})
+
+        model = cls(**model_args)
+        model._weights_metadata = weights_metadata
+        model._parse_metadata()
+
+        model.load_state_dict(model_weights)
+
+        return model
+
+    def save(self, path, weights_docstring=""):
+        """
+        Save a SeisBench model locally.
+
+        SeisBench models are stored inside the directory 'path'. SeisBench models are saved in 2 parts,
+        the model configuration is stored in JSON format [path][.json], and the underlying model weights
+        in PyTorch format [path][.pt]. Where 'path' is the output path to store. The suffixes are appended
+        to the path parameter automatically.
+
+        The model config should contain the following information, which is automatically created from
+        the model instance state:
+            - "weights_docstring": A string documenting the pipeline. Usually also contains information on the author.
+            - "model_args": Argument dictionary passed to the init function of the pipeline.
+            - "seisbench_requirement": The minimal version of SeisBench required to use the weights file.
+            - "default_args": Default args for the :py:func:`annotate`/:py:func:`classify` functions.
+
+        Non-serializable arguments (e.g. functions) cannot be saved to JSON, so are not converted.
+
+        :param path: Define the path to the output model.
+        :type path: pathlib.Path or str
+        :param weights_docstring: Documentation for the model weights (training details, author etc.)
+        :type weights_docstring: str, default to ''
+        """
+        if isinstance(path, str):
+            path = Path(path)
+
+        path_json = path.with_name(path.stem + ".json")
+        path_pt = path.with_name(path.stem + ".pt")
+
+        def _contains_callable_recursive(dict_obj):
+            """
+            Recursive lookup through dictionary to check wheter any values are callable.
+            """
+            for k, v in dict_obj.items():
+                if callable(v):
+                    return True
+                if isinstance(v, dict):
+                    obj = _contains_callable_recursive(v)
+                    if obj is not None:
+                        return obj
+
+        model_args = self.get_model_args()
+
+        if not model_args:
+            seisbench.logger.warning(
+                "No 'model_args' found. "
+                "Saving any model parameters should be done manually within abstractmethod: `get_model_args`. "
+                "Have you implemented `get_model_args`?. "
+                "If this is the desired behaviour, and you have no parameters for your model, please ignore."
+            )
+
+        parsed_model_args = {}
+        for k, v in model_args.items():
+            if k not in (
+                "__class__",
+                "self",
+                "default_args",
+                "_weights_metadata",
+                "_weights_docstring",
+            ):
+                # Check for non-serlizable types
+                _flagged_callable = False
+                if isinstance(v, set):
+                    # Sets converted
+                    parsed_model_args.update({k: list(v)})
+                    continue
+                if callable(v):
+                    # Callables not stored in JSON
+                    _flagged_callable = True
+                if isinstance(v, dict):
+                    # Check inside nested dicts for callables
+                    if not _contains_callable_recursive(v):
+                        _flagged_callable = True
+
+                if not _flagged_callable:
+                    parsed_model_args.update({k: v})
+                else:
+                    seisbench.logger.warning(
+                        f"{k} parameter is a non-serilizable object, cannot be saved to JSON config file."
+                    )
+
+        model_metadata = {
+            "docstring": weights_docstring,
+            "model_args": parsed_model_args,
+            "seisbench-requirements": seisbench.__version__,
+            "default_args": self.__dict__.get("default_args", ""),
+        }
+
+        # Save weights
+        torch.save(self.state_dict(), path_pt)
+        # Save model metadata
+        with open(path_json, "w") as json_fp:
+            json.dump(model_metadata, json_fp)
+
+        seisbench.logger.debug(f"Saved {self.name} model at {path.absolute}")
+
     def _parse_metadata(self):
         # Load docstring
         self._weights_docstring = self._weights_metadata.get("docstring", "")
@@ -476,6 +607,16 @@ class SeisBenchModel(nn.Module):
         # Parse default args - Config default_args supersede constructor args
         default_args = self._weights_metadata.get("default_args", {})
         self.default_args.update(default_args)
+
+    @abstractmethod
+    def get_model_args(self):
+        """
+        Obtain all model parameters for saving.
+
+        :return: Dictionary of all parameters for a model to store during saving.
+        :rtype: Dict
+        """
+        return {"citation": self._citation}
 
 
 class WaveformModel(SeisBenchModel, ABC):
@@ -2197,6 +2338,25 @@ class WaveformModel(SeisBenchModel, ABC):
                 detections.append(detection)
 
         return detections
+
+    def get_model_args(self):
+        model_args = super().get_model_args()
+        model_args = {
+            **model_args,
+            **{
+                "sampling_rate": self.sampling_rate,
+                "output_type": self.output_type,
+                "component_order": self.component_order,
+                "default_args": self.default_args,
+                "in_samples": self.in_samples,
+                "pred_sample": self.pred_sample,
+                "labels": self.labels,
+                "filter_args": self.filter_args,
+                "filter_kwargs": self.filter_kwargs,
+                "grouping": self._grouping,
+            },
+        }
+        return model_args
 
 
 class WaveformPipeline(ABC):

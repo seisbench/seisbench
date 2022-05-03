@@ -143,6 +143,24 @@ class DeepDenoiser(WaveformModel):
         )
         return denoised_signal.reshape(-1, 1)
 
+    def get_model_args(self):
+        model_args = super().get_model_args()
+        for key in [
+            "citation",
+            "in_samples",
+            "output_type",
+            "default_args",
+            "pred_sample",
+            "labels",
+            "sampling_rate",
+            "grouping",
+        ]:
+            del model_args[key]
+
+        model_args["sampling_rate"] = self.sampling_rate
+
+        return model_args
+
 
 class DownConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels):

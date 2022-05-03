@@ -130,6 +130,26 @@ class CRED(WaveformModel):
 
         return detections
 
+    def get_model_args(self):
+        model_args = super().get_model_args()
+        for key in [
+            "citation",
+            "in_samples",
+            "output_type",
+            "default_args",
+            "pred_sample",
+            "labels",
+            "sampling_rate",
+        ]:
+            del model_args[key]
+
+        model_args["in_samples"] = self.in_samples
+        model_args["in_channels"] = self.in_channels
+        model_args["sampling_rate"] = self.sampling_rate
+        model_args["original_compatible"] = self.original_compatible
+
+        return model_args
+
 
 class BlockCNN(nn.Module):
     """
