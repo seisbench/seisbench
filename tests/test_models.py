@@ -11,6 +11,7 @@ import logging
 import pytest
 import inspect
 from collections import defaultdict
+from pathlib import Path
 
 
 def get_input_args(obj):
@@ -1677,3 +1678,36 @@ def test_from_pretrained(tmp_path, prefill_cache, update):
             ensure_weight_files.side_effect = write_weights
 
             seisbench.models.GPD.from_pretrained("test", update=update)
+
+
+def test_save_load_with_version(tmp_path):
+    model = seisbench.models.GPD()
+    model.save(tmp_path / "mymodel", version_str="1")
+
+    assert (tmp_path / "mymodel.json.v1").is_file()
+    assert (tmp_path / "mymodel.pt.v1").is_file()
+    assert not (tmp_path / "mymodel.json").is_file()
+    assert not (tmp_path / "mymodel.pt").is_file()
+
+    with pytest.raises(FileNotFoundError):
+        # No version specified
+        seisbench.models.GPD.load(tmp_path / "mymodel")
+
+    # Call just passes
+    seisbench.models.GPD.load(tmp_path / "mymodel", version_str="1")
+
+
+def test_get_weights_file_paths():
+    # Without suffix
+    path_json, path_pt = seisbench.models.GPD._get_weights_file_paths(
+        "path", version_str=None
+    )
+    assert path_json == Path("path.json")
+    assert path_pt == Path("path.pt")
+
+    # With suffix
+    path_json, path_pt = seisbench.models.GPD._get_weights_file_paths(
+        "path", version_str="3rc2"
+    )
+    assert path_json == Path("path.json.v3rc2")
+    assert path_pt == Path("path.pt.v3rc2")

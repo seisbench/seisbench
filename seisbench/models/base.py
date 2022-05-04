@@ -10,7 +10,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from collections import defaultdict
 from queue import PriorityQueue
-import inspect
 import json
 import math
 import numpy as np
@@ -180,18 +179,7 @@ class SeisBenchModel(nn.Module):
             name, version_str, weight_path, metadata_path, force, wait_for_file
         )
 
-        with open(metadata_path, "r") as f:
-            weights_metadata = json.load(f)
-
-        model_args = weights_metadata.get("model_args", {})
-        model = cls(**model_args)
-
-        model._weights_metadata = weights_metadata
-        model._parse_metadata()
-
-        model.load_state_dict(torch.load(weight_path))
-
-        return model
+        return cls.load(weight_path.with_name(name), version_str=version_str)
 
     @classmethod
     def _cleanup_local_repository(cls):
@@ -457,7 +445,7 @@ class SeisBenchModel(nn.Module):
         return sorted([config[prefix_len:] for config in configs])
 
     @classmethod
-    def load(cls, path):
+    def load(cls, path, version_str=None):
         """
         Load a SeisBench model from local path.
 
@@ -465,14 +453,12 @@ class SeisBenchModel(nn.Module):
 
         :param path: Define the path to the SeisBench model.
         :type path: pathlib.Path ot str
+        :param version_str: Version string of the model. If none, no version string is appended.
+        :type version_str: str, None
         :return: Model instance
         :rtype: SeisBenchModel
         """
-        if isinstance(path, str):
-            path = Path(path)
-
-        path_json = path.with_name(path.stem + ".json")
-        path_pt = path.with_name(path.stem + ".pt")
+        path_json, path_pt = cls._get_weights_file_paths(path, version_str)
 
         # Load model metadata
         with open(path_json, "r") as f:
@@ -490,7 +476,7 @@ class SeisBenchModel(nn.Module):
 
         return model
 
-    def save(self, path, weights_docstring=""):
+    def save(self, path, weights_docstring="", version_str=None):
         """
         Save a SeisBench model locally.
 
@@ -498,6 +484,9 @@ class SeisBenchModel(nn.Module):
         the model configuration is stored in JSON format [path][.json], and the underlying model weights
         in PyTorch format [path][.pt]. Where 'path' is the output path to store. The suffixes are appended
         to the path parameter automatically.
+
+        In addition, the models can have a version string which is appended to the json and the pt path.
+        For example, setting `version_str="1"` will append `.v1` to the file names.
 
         The model config should contain the following information, which is automatically created from
         the model instance state:
@@ -512,12 +501,10 @@ class SeisBenchModel(nn.Module):
         :type path: pathlib.Path or str
         :param weights_docstring: Documentation for the model weights (training details, author etc.)
         :type weights_docstring: str, default to ''
+        :param version_str: Version string of the model. If none, no version string is appended.
+        :type version_str: str, None
         """
-        if isinstance(path, str):
-            path = Path(path)
-
-        path_json = path.with_name(path.stem + ".json")
-        path_pt = path.with_name(path.stem + ".pt")
+        path_json, path_pt = self._get_weights_file_paths(path, version_str)
 
         def _contains_callable_recursive(dict_obj):
             """
@@ -584,7 +571,26 @@ class SeisBenchModel(nn.Module):
         with open(path_json, "w") as json_fp:
             json.dump(model_metadata, json_fp)
 
-        seisbench.logger.debug(f"Saved {self.name} model at {path.absolute}")
+        seisbench.logger.debug(f"Saved {self.name} model at {path}")
+
+    @staticmethod
+    def _get_weights_file_paths(path, version_str):
+        """
+        Return file names by parsing the path and version_str. For details, see save or load methods.
+        """
+        if isinstance(path, str):
+            path = Path(path)
+
+        if version_str is None:
+            version_suffix = ""
+        else:
+            version_suffix = f".v{version_str}"
+
+        base_name = path.name
+        path_json = path.with_name(base_name + ".json" + version_suffix)
+        path_pt = path.with_name(base_name + ".pt" + version_suffix)
+
+        return path_json, path_pt
 
     def _parse_metadata(self):
         # Load docstring
