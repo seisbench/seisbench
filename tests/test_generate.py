@@ -1781,7 +1781,25 @@ def test_utc_offsets():
 
 
 def test_select_or_pad_along_axis():
-    aug = seisbench.generate.SelectOrPadAlongAxis(n=5, axis=0, key=("X", "X2"))
+    aug = seisbench.generate.SelectOrPadAlongAxis(
+        n=5, repeat=True, axis=0, key=("X", "X2")
+    )
+
+    x = np.random.rand(2, 3, 1000)
+    state_dict = {"X": (x, {"something": [0.0, 5.0]})}
+
+    aug(state_dict)
+
+    x2, metadata2 = state_dict["X2"]
+    assert x2.shape == (5, 3, 1000)
+    assert np.allclose(x2[:2], x)
+    assert np.allclose(x2[2:4], x)
+    assert np.allclose(x2[4], x[0])
+    assert np.allclose(metadata2["something"], [0, 5, 0, 5, 0])
+
+    aug = seisbench.generate.SelectOrPadAlongAxis(
+        n=5, repeat=False, axis=0, key=("X", "X2")
+    )
 
     x = np.random.rand(2, 3, 1000)
     state_dict = {"X": (x, {"something": [0.0, 5.0]})}

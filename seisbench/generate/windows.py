@@ -691,7 +691,7 @@ class UTCOffsets:
 class SelectOrPadAlongAxis:
     """
     Changes the length of an axis from `m` to `n` by:
-    - padding if `m` < `n`
+    - padding/repeating data if `m` < `n`
     - random selection if `m` > `n`
 
     In addition, can adjust the length of the metadata arrays accordingly. This augmentation is primarily intended to
@@ -703,8 +703,10 @@ class SelectOrPadAlongAxis:
     :type n: int
     :param adjust_metadata: If true, adjusts metadata. Otherwise, leaves metadata unaltered.
     :type adjust_metadata: None
+    :param repeat: If true, repeat data instead of padding
+    :type repeat: bool
     :param axis: Axis along which reshaping should be applied
-    :type axis: None
+    :type axis: int
     :param key: The keys for reading from and writing to the state dict.
                 If key is a single string, the corresponding entry in state dict is modified.
                 Otherwise, a 2-tuple is expected, with the first string indicating the key to
@@ -712,9 +714,10 @@ class SelectOrPadAlongAxis:
     :type key: str, tuple[str, str]
     """
 
-    def __init__(self, n, adjust_metadata=True, axis=0, key="X"):
+    def __init__(self, n, adjust_metadata=True, repeat=True, axis=0, key="X"):
         self.n = n
         self.adjust_metadata = adjust_metadata
+        self.repeat = repeat
         self.axis = axis
 
         if isinstance(key, str):
@@ -734,6 +737,8 @@ class SelectOrPadAlongAxis:
 
         if x.shape[self.axis] <= self.n:
             idx = np.arange(x.shape[self.axis])
+            if self.repeat:
+                idx = np.tile(idx, self.n)[: self.n]
         else:
             idx = np.arange(x.shape[self.axis])
             np.random.shuffle(idx)
