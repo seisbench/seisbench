@@ -125,6 +125,24 @@ def test_normalize():
         Normalize(amp_norm_type="Unknown normalization type")
 
 
+def test_normalize_unaligned_group():
+    # Negative axis definition
+    state_dict = {"X": ([np.random.rand(3, 1000), np.random.rand(3, 2000)], {})}
+
+    norm = Normalize(demean_axis=-1)
+    norm(state_dict)
+
+    assert np.allclose([np.mean(y) for y in state_dict["X"][0]], 0)
+
+    # Positive axis definition
+    state_dict = {"X": ([np.random.rand(3, 1000), np.random.rand(3, 2000)], {})}
+
+    norm = Normalize(demean_axis=1)
+    norm(state_dict)
+
+    assert np.allclose([np.mean(y) for y in state_dict["X"][0]], 0)
+
+
 def test_filter():
     np.random.seed(42)
     base_state_dict = {

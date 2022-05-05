@@ -7,6 +7,10 @@ class Normalize:
     """
     A normalization augmentation that allows demeaning, detrending and amplitude normalization (in this order).
 
+    The normalization can also be applied to unaligned groups, i.e., lists of numpy arrays. The list is not taken into
+    account for the enumeration of the axis, i.e., `demean_axis=0` will refer to the first axis in every array within
+    the list.
+
     :param demean_axis: The axis (single axis or tuple) which should be jointly demeaned.
                         None indicates no demeaning.
     :type demean_axis: int, None
@@ -56,9 +60,14 @@ class Normalize:
     def __call__(self, state_dict):
         x, metadata = state_dict[self.key[0]]
 
-        x = self._demean(x)
-        x = self._detrend(x)
-        x = self._amp_norm(x)
+        if isinstance(x, list):
+            x = [self._demean(y) for y in x]
+            x = [self._detrend(y) for y in x]
+            x = [self._amp_norm(y) for y in x]
+        else:
+            x = self._demean(x)
+            x = self._detrend(x)
+            x = self._amp_norm(x)
 
         state_dict[self.key[1]] = (x, metadata)
 
