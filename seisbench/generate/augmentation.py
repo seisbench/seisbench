@@ -135,7 +135,11 @@ class Copy:
 class Filter:
     """
     Implements a filter augmentation, closely based on scipy.signal.butter.
-    Please refer to the scipy documentation for more detailed description of the parameters
+    Please refer to the scipy documentation for more detailed description of the parameters.
+
+    The filter can also be applied to unaligned groups, i.e., lists of numpy arrays. The list is not taken into
+    account for the enumeration of the axis, i.e., `axis=0` will refer to the first axis in every array within
+    the list.
 
     :param N: Filter order
     :type N: int
@@ -173,24 +177,32 @@ class Filter:
         x, metadata = state_dict[self.key[0]]
 
         sampling_rate = metadata["trace_sampling_rate_hz"]
-        if isinstance(sampling_rate, (list, tuple, np.ndarray)):
-            if not np.allclose(sampling_rate, sampling_rate[0]):
-                raise NotImplementedError(
-                    "Found mixed sampling rates in filter. "
-                    "Filter currently only works on consistent sampling rates."
-                )
-            else:
-                sampling_rate = sampling_rate[0]
+        if isinstance(x, list):
+            x = [self._filter_trace(y, sr) for y, sr in zip(x, sampling_rate)]
+        else:
+            if isinstance(sampling_rate, (list, tuple, np.ndarray)):
+                if not np.allclose(sampling_rate, sampling_rate[0]):
+                    raise NotImplementedError(
+                        "Found mixed sampling rates in filter. "
+                        "Filter currently only works on consistent sampling rates or for unaligned groups of traces."
+                    )
+                else:
+                    sampling_rate = sampling_rate[0]
 
+            x = self._filter_trace(x, sampling_rate)
+
+        state_dict[self.key[1]] = (x, metadata)
+
+    def _filter_trace(self, x, sampling_rate):
         sos = scipy.signal.butter(*self._filt_args, output="sos", fs=sampling_rate)
+
         if self.forward_backward:
             # Copy is required, because otherwise the stride of x is negative.T
             # This can break the pytorch collate function.
             x = scipy.signal.sosfiltfilt(sos, x, axis=self.axis).copy()
         else:
             x = scipy.signal.sosfilt(sos, x, axis=self.axis)
-
-        state_dict[self.key[1]] = (x, metadata)
+        return x
 
     def __str__(self):
         N, Wn, btype, analog = self._filt_args

@@ -190,6 +190,38 @@ def test_filter_sampling_rate_list():
         filt(state_dict)
 
 
+def test_filter_unaligned_group():
+    filt = Filter(2, 1, "lowpass")
+
+    # Identical sampling rate
+    state_dict = {
+        "X": (
+            [np.random.rand(3, 1000), np.random.rand(3, 2000)],
+            {"trace_sampling_rate_hz": [20, 20]},
+        )
+    }
+    filt(state_dict)
+
+    # Just sanity checks
+    assert len(state_dict["X"][0]) == 2
+    assert state_dict["X"][0][0].shape == (3, 1000)
+    assert state_dict["X"][0][1].shape == (3, 2000)
+
+    # Mixed sampling rate
+    state_dict = {
+        "X": (
+            [np.random.rand(3, 1000), np.random.rand(3, 2000)],
+            {"trace_sampling_rate_hz": [20, 25]},
+        )
+    }
+    filt(state_dict)
+
+    # Just sanity checks
+    assert len(state_dict["X"][0]) == 2
+    assert state_dict["X"][0][0].shape == (3, 1000)
+    assert state_dict["X"][0][1].shape == (3, 2000)
+
+
 def test_fixed_window():
     np.random.seed(42)
     base_state_dict = {
