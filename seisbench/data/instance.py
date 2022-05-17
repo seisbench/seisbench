@@ -115,7 +115,7 @@ class InstanceNoise(InstanceTypeDataset):
         )
         license = "CC BY 4.0"
         super().__init__(
-            citation=citation, license=license, repository_lookup=False, **kwargs
+            citation=citation, license=license, repository_lookup=True, **kwargs
         )
 
     def _download_dataset(self, writer, **kwargs):
@@ -139,7 +139,7 @@ class InstanceCounts(InstanceTypeDataset):
         )
         license = "CC BY 4.0"
         super().__init__(
-            citation=citation, license=license, repository_lookup=False, **kwargs
+            citation=citation, license=license, repository_lookup=True, **kwargs
         )
 
     def _download_dataset(self, writer, **kwargs):
@@ -172,7 +172,7 @@ class InstanceGM(InstanceTypeDataset):
         )
         license = "CC BY 4.0"
         super().__init__(
-            citation=citation, license=license, repository_lookup=False, **kwargs
+            citation=citation, license=license, repository_lookup=True, **kwargs
         )
 
     def _download_dataset(self, writer, **kwargs):
