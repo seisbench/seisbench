@@ -124,7 +124,7 @@ class WaveformDataset:
 
                 tmp_metadata = pd.read_csv(
                     metadata_path,
-                    dtype={"trace_sampling_rate_hz": float, "trace_dt_s": float},
+                    dtype={"trace_sampling_rate_hz": float, "trace_dt_s": float, "trace_component_order": str},
                 )
             tmp_metadata["trace_chunk"] = chunk
             metadatas.append(tmp_metadata)
@@ -442,7 +442,7 @@ class WaveformDataset:
         :param target:
         :return:
         """
-        source = list(source)
+        source = list(str(source))
         target = list(target)
 
         mapping = []
