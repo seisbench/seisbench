@@ -919,7 +919,7 @@ class WaveformModel(SeisBenchModel, ABC):
         self.annotate_stream_pre(stream, argdict)
 
         # Validate stream
-        self.annotate_stream_validate(stream, argdict)
+        stream = self.annotate_stream_validate(stream, argdict)
 
         # Group stream
         groups = self.group_stream(stream)
@@ -1037,7 +1037,7 @@ class WaveformModel(SeisBenchModel, ABC):
         self.annotate_stream_pre(stream, argdict)
 
         # Validate stream
-        self.annotate_stream_validate(stream, argdict)
+        stream = self.annotate_stream_validate(stream, argdict)
 
         # Group stream
         groups = self.group_stream(stream)
@@ -1901,10 +1901,7 @@ class WaveformModel(SeisBenchModel, ABC):
                     f"Expected {self.sampling_rate} Hz for all traces."
                 )
 
-        if self.has_mismatching_records(stream):
-            raise ValueError(
-                "Detected multiple records for the same time and component that did not agree."
-            )
+        return self.sanitize_mismatching_overlapping_records(stream)
 
     def annotate_window_pre(self, window, argdict):
         """
@@ -2086,38 +2083,74 @@ class WaveformModel(SeisBenchModel, ABC):
         return list(groups.values())
 
     @staticmethod
-    def has_mismatching_records(stream):
+    def sanitize_mismatching_overlapping_records(stream):
         """
         Detects if for any id the stream contains overlapping traces that do not match.
+        If yes, all mismatching parts are removed and a warning is issued.
 
         :param stream: Input stream
         :type stream: obspy.core.Stream
-        :return: Flag whether there are mismatching records
-        :rtype: bool
+        :return: The stream object without mismatching traces
+        :rtype: obspy.core.Stream
         """
         stream.merge(-1)  # Ensures overlapping matching traces are merged
+        original_num_traces = len(stream)
 
         ids = defaultdict(list)
-        for trace in stream:
-            ids[trace.id].append(trace)
+        for trace_idx, trace in enumerate(stream):
+            ids[trace.id].append((trace_idx, trace))
 
+        del_idx = []
         for traces in ids.values():
-            starttimes = sorted(
-                [(trace.stats.starttime, i) for i, trace in enumerate(traces)],
-                key=lambda x: x[0],
-            )
-            endtimes = sorted(
-                [(trace.stats.endtime, i) for i, trace in enumerate(traces)],
+            # Go through all traces in order, keep stack of active elements.
+            # If more than one element is active, all events are discarded until the stack is empty again.
+            start_times = sorted(
+                [
+                    (trace.stats.starttime, trace.stats.endtime, trace_idx)
+                    for trace_idx, trace in traces
+                ],
                 key=lambda x: x[0],
             )
 
-            for i, _ in enumerate(starttimes):
-                if starttimes[i][1] != endtimes[i][1]:
-                    return True
-                if i > 0 and starttimes[i] < endtimes[i - 1]:
-                    return True
+            p = 0
+            conflict = False
+            active_traces = PriorityQueue()
+            while p < len(start_times):
+                # Note that as active_traces.queue is a heap, the first element is always the smallest one
+                act_start_time, act_end_time, act_trace_idx = start_times[p]
+                while (
+                    not active_traces.empty()
+                    and active_traces.queue[0][0] <= act_start_time
+                ):
+                    _, trace_idx = active_traces.get()
+                    if conflict:
+                        del_idx.append(trace_idx)
 
-        return False
+                if active_traces.qsize() == 0:
+                    conflict = False
+
+                active_traces.put((act_end_time, act_trace_idx))
+                p += 1
+
+                if active_traces.qsize() > 1:
+                    conflict = True
+
+            if conflict:
+                while not active_traces.empty():
+                    _, trace_idx = active_traces.get()
+                    del_idx.append(trace_idx)
+
+        for idx in sorted(del_idx, reverse=True):
+            # Reverse order to ensure that the different deletions do not interfere with each other
+            del stream[idx]
+
+        if not original_num_traces == len(stream):
+            seisbench.logger.warning(
+                "Detected multiple records for the same time and component that did not agree. "
+                "All mismatching traces will be ignored."
+            )
+
+        return stream
 
     def stream_to_arrays(
         self, stream, strict=True, flexible_horizontal_components=True
