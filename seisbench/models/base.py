@@ -1587,6 +1587,7 @@ class WaveformModel(SeisBenchModel, ABC):
         Reassembles array predictions into numpy arrays.
         """
         overlap = argdict.get("overlap", 0)
+        max_stack = argdict.get("max_stack", False)  # Default is to stack prediction cfts by mean.
         window, metadata = elem
         t0, s, len_starts, trace_stats, bucket_id = metadata
         key = f"{t0}_{trace_stats.network}.{trace_stats.station}.{trace_stats.station}.{trace_stats.channel[:-1]}"
@@ -1628,7 +1629,11 @@ class WaveformModel(SeisBenchModel, ABC):
 
             with warnings.catch_warnings():
                 warnings.filterwarnings(action="ignore", message="Mean of empty slice")
-                preds = np.nanmean(pred_merge, axis=-1)
+                warnings.filterwarnings(action="ignore", message="All-NaN")
+                if not max_stack:
+                    preds = np.nanmean(pred_merge, axis=-1)
+                else:
+                    preds = np.nanmax(pred_merge, axis=-1)
 
             pred_time = t0 + self.pred_sample[0] / argdict["sampling_rate"]
             pred_rate = argdict["sampling_rate"] * prediction_sample_factor
