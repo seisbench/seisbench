@@ -633,6 +633,64 @@ def test_reassemble_blocks_array():
     assert out[0][2].shape == (10001, 3)
 
 
+def test_reassemble_blocks_array_maxstack():
+    # Check that the maximum is taken when stacking
+    dummy = DummyWaveformModel(
+        component_order="ZNE", in_samples=1000, sampling_rate=100, pred_sample=(0, 1000)
+    )
+
+    trace_stats = obspy.read()[0].stats
+
+    out = []
+    argdict = {"overlap": 100, "stacking": "max", "sampling_rate": 100}
+    buffer = defaultdict(list)
+
+    starts = [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200, 8100, 9000, 9001]
+
+    for i in range(12):
+        elem = (np.ones((1000, 3)) + i, (0, starts[i], 12, trace_stats, 0))
+        out_elem = dummy._reassemble_blocks_array(elem, buffer, argdict)
+        if out_elem is not None:
+            out += [out_elem[0]]
+
+    assert len(out) == 1
+    assert out[0][0] == 100.0
+    assert out[0][2].shape == (10001, 3)
+    assert out[0][2].min() == 1
+    assert out[0][2].max() == 12
+    # In the max stacking scheme the last window length samples should be equal to the max
+    assert np.all(out[0][2][-1000:] == 12)
+
+
+def test_reassemble_blocks_array_avgstack():
+    # Check that the maximum is taken when stacking
+    dummy = DummyWaveformModel(
+        component_order="ZNE", in_samples=1000, sampling_rate=100, pred_sample=(0, 1000)
+    )
+
+    trace_stats = obspy.read()[0].stats
+
+    out = []
+    argdict = {"overlap": 100, "stacking": "avg", "sampling_rate": 100}
+    buffer = defaultdict(list)
+
+    starts = [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200, 8100, 9000, 9001]
+
+    for i in range(12):
+        elem = (np.ones((1000, 3)) + i, (0, starts[i], 12, trace_stats, 0))
+        out_elem = dummy._reassemble_blocks_array(elem, buffer, argdict)
+        if out_elem is not None:
+            out += [out_elem[0]]
+
+    assert len(out) == 1
+    assert out[0][0] == 100.0
+    assert out[0][2].shape == (10001, 3)
+    assert out[0][2].min() == 1
+    assert out[0][2].max() == 12
+    # In the avg stacking scheme the samples from 9100 to 10000 should be equal to the mean of 11, 12
+    assert np.all(out[0][2][9100:10000] == 11.5)
+
+
 def test_picks_from_annotations():
     data = np.zeros(1000)
     data[100:201] = 0.7

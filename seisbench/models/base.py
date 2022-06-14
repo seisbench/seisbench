@@ -1646,6 +1646,7 @@ class WaveformModel(SeisBenchModel, ABC):
                 elif stack_method == "max":
                     warnings.filterwarnings(action="ignore", message="All-NaN")
                     preds = np.nanmax(pred_merge, axis=-1)
+                # Case of stack_method not in avg or max is caught by assert above
 
             pred_time = t0 + self.pred_sample[0] / argdict["sampling_rate"]
             pred_rate = argdict["sampling_rate"] * prediction_sample_factor
