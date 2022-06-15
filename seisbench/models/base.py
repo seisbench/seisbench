@@ -684,6 +684,11 @@ class WaveformModel(SeisBenchModel, ABC):
     :param kwargs: Kwargs are passed to the superclass
     """
 
+    _stack_options = {
+        "avg",
+        "max",
+    }  # Known stacking options - mutable and accessible for docs.
+
     def __init__(
         self,
         component_order=None,
@@ -1587,6 +1592,12 @@ class WaveformModel(SeisBenchModel, ABC):
         Reassembles array predictions into numpy arrays.
         """
         overlap = argdict.get("overlap", 0)
+        stack_method = argdict.get(
+            "stacking", "max"
+        ).lower()  # This is a breaking change for v 0.3 - see PR#99
+        assert (
+            stack_method in self._stack_options
+        ), f"Stacking method {stack_method} unknown. Known options are: {self._stack_options}"
         window, metadata = elem
         t0, s, len_starts, trace_stats, bucket_id = metadata
         key = f"{t0}_{trace_stats.network}.{trace_stats.station}.{trace_stats.station}.{trace_stats.channel[:-1]}"
@@ -1627,8 +1638,15 @@ class WaveformModel(SeisBenchModel, ABC):
                 ] = pred
 
             with warnings.catch_warnings():
-                warnings.filterwarnings(action="ignore", message="Mean of empty slice")
-                preds = np.nanmean(pred_merge, axis=-1)
+                if stack_method == "avg":
+                    warnings.filterwarnings(
+                        action="ignore", message="Mean of empty slice"
+                    )
+                    preds = np.nanmean(pred_merge, axis=-1)
+                elif stack_method == "max":
+                    warnings.filterwarnings(action="ignore", message="All-NaN")
+                    preds = np.nanmax(pred_merge, axis=-1)
+                # Case of stack_method not in avg or max is caught by assert above
 
             pred_time = t0 + self.pred_sample[0] / argdict["sampling_rate"]
             pred_rate = argdict["sampling_rate"] * prediction_sample_factor
