@@ -70,10 +70,17 @@ class EQTransformer(WaveformModel):
         self.classes = classes
         self.lstm_blocks = lstm_blocks
         self.drop_rate = drop_rate
+        # Add options for conservative and the true original - see https://github.com/seisbench/seisbench/issues/96#issuecomment-1155158224
+        if original_compatible == True:
+            warnings.warn(
+                "Using the non-conservative 'original' model, set `original_compatible='conservative' to use the more conservative model"
+            )
+            original_compatible = "non-conservative"
+
         self.original_compatible = original_compatible
 
         if original_compatible and in_samples != 6000:
-            raise ValueError("original_compatible=True requires in_samples=6000.")
+            raise ValueError("original_compatible requires in_samples=6000.")
 
         self._phases = phases
         if phases is not None and len(phases) != classes:
@@ -145,8 +152,11 @@ class EQTransformer(WaveformModel):
         self.dropout = nn.Dropout(drop_rate)
 
         for _ in range(self.classes):
-            if original_compatible:
+            if original_compatible == "conservative":
+                # The non-conservative model uses a sigmoid activiation as handled by the base nn.LSTM
                 lstm = CustomLSTM(ActivationLSTMCell, 16, 16, bidirectional=False)
+            # elif original_compatible == "non-conservative":
+            # lstm = CustomLSTM(ActivationLSTMCell, 16, 16, gate_activation=torch.sigmoid, bidirectional=False)
             else:
                 lstm = nn.LSTM(16, 16, bidirectional=False)
             self.pick_lstms.append(lstm)
@@ -480,8 +490,16 @@ class BiLSTMBlock(nn.Module):
     def __init__(self, input_size, hidden_size, drop_rate, original_compatible=False):
         super().__init__()
 
-        if original_compatible:
+        if original_compatible == "conservative":
+            # The non-conservative model uses a sigmoid activiation as handled by the base nn.LSTM
             self.lstm = CustomLSTM(ActivationLSTMCell, input_size, hidden_size)
+        elif original_compatible == "non-conservative":
+            self.lstm = CustomLSTM(
+                ActivationLSTMCell,
+                input_size,
+                hidden_size,
+                gate_activation=torch.sigmoid,
+            )
         else:
             self.lstm = nn.LSTM(input_size, hidden_size, bidirectional=True)
         self.dropout = nn.Dropout(drop_rate)
