@@ -30,42 +30,103 @@ def test_weights_docstring():
     assert isinstance(model.weights_docstring, str)
 
 
-def test_has_mismatching_records():
+def test_sanitize_mismatching_records(caplog):
     t0 = UTCDateTime(0)
     stats = {
         "network": "SB",
         "station": "TEST",
         "channel": "HHZ",
-        "sampling_rate": 100,
+        "sampling_rate": 20,
         "starttime": t0,
     }
 
     trace0 = obspy.Trace(np.zeros(1000), stats)
     trace1 = obspy.Trace(np.ones(1000), stats)
+    trace2 = obspy.Trace(2 * np.ones(1000), stats)
 
     # Overlapping matching
     stream = obspy.Stream([trace0.slice(t0, t0 + 10), trace0.slice(t0 + 5, t0 + 15)])
-    assert not seisbench.models.WaveformModel.has_mismatching_records(stream)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        assert (
+            len(
+                seisbench.models.WaveformModel.sanitize_mismatching_overlapping_records(
+                    stream
+                )
+            )
+            == 1
+        )
+    assert caplog.text == ""
 
     # Overlapping not matching
     stream = obspy.Stream([trace0.slice(t0, t0 + 10), trace1.slice(t0 + 5, t0 + 15)])
-    assert seisbench.models.WaveformModel.has_mismatching_records(stream)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        assert (
+            len(
+                seisbench.models.WaveformModel.sanitize_mismatching_overlapping_records(
+                    stream
+                )
+            )
+            == 0
+        )
+    assert "All mismatching traces will be ignored." in caplog.text
 
     # Full intersection matching
     stream = obspy.Stream([trace0.slice(t0, t0 + 15), trace0.slice(t0 + 5, t0 + 10)])
-    assert not seisbench.models.WaveformModel.has_mismatching_records(stream)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        assert (
+            len(
+                seisbench.models.WaveformModel.sanitize_mismatching_overlapping_records(
+                    stream
+                )
+            )
+            == 1
+        )
+    assert caplog.text == ""
 
     # Full intersection not matching
     stream = obspy.Stream([trace0.slice(t0, t0 + 15), trace1.slice(t0 + 5, t0 + 10)])
-    assert seisbench.models.WaveformModel.has_mismatching_records(stream)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        assert (
+            len(
+                seisbench.models.WaveformModel.sanitize_mismatching_overlapping_records(
+                    stream
+                )
+            )
+            == 0
+        )
+    assert "All mismatching traces will be ignored." in caplog.text
 
-    # No intersection matching
+    # No intersection same values
     stream = obspy.Stream([trace0.slice(t0, t0 + 10), trace0.slice(t0 + 15, t0 + 20)])
-    assert not seisbench.models.WaveformModel.has_mismatching_records(stream)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        assert (
+            len(
+                seisbench.models.WaveformModel.sanitize_mismatching_overlapping_records(
+                    stream
+                )
+            )
+            == 2
+        )
+    assert caplog.text == ""
 
-    # No intersection not matching
+    # No intersection different values
     stream = obspy.Stream([trace0.slice(t0, t0 + 10), trace1.slice(t0 + 15, t0 + 20)])
-    assert not seisbench.models.WaveformModel.has_mismatching_records(stream)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        assert (
+            len(
+                seisbench.models.WaveformModel.sanitize_mismatching_overlapping_records(
+                    stream
+                )
+            )
+            == 2
+        )
+    assert caplog.text == ""
 
     # Three traces matching
     stream = obspy.Stream(
@@ -75,7 +136,17 @@ def test_has_mismatching_records():
             trace0.slice(t0 + 7, t0 + 11),
         ]
     )
-    assert not seisbench.models.WaveformModel.has_mismatching_records(stream)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        assert (
+            len(
+                seisbench.models.WaveformModel.sanitize_mismatching_overlapping_records(
+                    stream
+                )
+            )
+            == 1
+        )
+    assert caplog.text == ""
 
     # Three traces not matching
     stream = obspy.Stream(
@@ -85,7 +156,57 @@ def test_has_mismatching_records():
             trace1.slice(t0 + 7, t0 + 11),
         ]
     )
-    assert seisbench.models.WaveformModel.has_mismatching_records(stream)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        assert (
+            len(
+                seisbench.models.WaveformModel.sanitize_mismatching_overlapping_records(
+                    stream
+                )
+            )
+            == 0
+        )
+    assert "All mismatching traces will be ignored." in caplog.text
+
+    # Three traces not matching
+    stream = obspy.Stream(
+        [
+            trace0.slice(t0, t0 + 10),
+            trace1.slice(t0 + 2, t0 + 4),
+            trace2.slice(t0 + 5, t0 + 11),
+        ]
+    )
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        assert (
+            len(
+                seisbench.models.WaveformModel.sanitize_mismatching_overlapping_records(
+                    stream
+                )
+            )
+            == 0
+        )
+    assert "All mismatching traces will be ignored." in caplog.text
+
+    # Three traces - two mismatching, one independent
+    stream = obspy.Stream(
+        [
+            trace0.slice(t0, t0 + 10),
+            trace1.slice(t0 + 2, t0 + 4),
+            trace2.slice(t0 + 11, t0 + 15),
+        ]
+    )
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        assert (
+            len(
+                seisbench.models.WaveformModel.sanitize_mismatching_overlapping_records(
+                    stream
+                )
+            )
+            == 1
+        )
+    assert "All mismatching traces will be ignored." in caplog.text
 
 
 class DummyWaveformModel(seisbench.models.WaveformModel):
