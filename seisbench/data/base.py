@@ -126,7 +126,11 @@ class WaveformDataset:
 
                 tmp_metadata = pd.read_csv(
                     metadata_path,
-                    dtype={"trace_sampling_rate_hz": float, "trace_dt_s": float, "trace_component_order": str},
+                    dtype={
+                        "trace_sampling_rate_hz": float,
+                        "trace_dt_s": float,
+                        "trace_component_order": str,
+                    },
                 )
             tmp_metadata["trace_chunk"] = chunk
             metadatas.append(tmp_metadata)
@@ -445,8 +449,14 @@ class WaveformDataset:
         :return:
         """
 
-        if isinstance(source, float) and np.isnan(source) or \
-                ((isinstance(source, list) or isinstance(source, str)) and not len(source)):
+        if (
+            isinstance(source, float)
+            and np.isnan(source)
+            or (
+                (isinstance(source, list) or isinstance(source, str))
+                and not len(source)
+            )
+        ):
             raise ValueError(f"Component order not set for trace or dataset.")
 
         source = list(source)
@@ -1866,10 +1876,7 @@ class BenchmarkDataset(WaveformDataset, ABC):
 
             chunks_path = cls._path_internal() / "chunks"
             seisbench.util.callback_if_uncached(
-                chunks_path,
-                chunks_callback,
-                force=force,
-                wait_for_file=wait_for_file,
+                chunks_path, chunks_callback, force=force, wait_for_file=wait_for_file,
             )
 
             if chunks_path.is_file():

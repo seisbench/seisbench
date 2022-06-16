@@ -34,7 +34,7 @@ class DeepDenoiser(WaveformModel):
         self.in_bn = nn.BatchNorm2d(8, eps=1e-3)
 
         self.down_conv_blocks = nn.ModuleList(
-            [DownConvBlock(8 * 2 ** max(0, i - 1), 8 * 2**i) for i in range(5)]
+            [DownConvBlock(8 * 2 ** max(0, i - 1), 8 * 2 ** i) for i in range(5)]
         )
 
         self.conv5 = nn.Conv2d(128, 256, (3, 3), padding=(1, 1), bias=False)

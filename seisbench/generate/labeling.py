@@ -240,11 +240,7 @@ class ProbabilisticLabeller(PickLabeller):
             y = np.zeros(shape=(len(self.labels), X.shape[width_dim]))
         elif self.ndim == 3:
             y = np.zeros(
-                shape=(
-                    X.shape[sample_dim],
-                    len(self.labels),
-                    X.shape[width_dim],
-                )
+                shape=(X.shape[sample_dim], len(self.labels), X.shape[width_dim],)
             )
 
         # Construct pick labels
@@ -343,11 +339,7 @@ class StepLabeller(PickLabeller):
             y = np.zeros(shape=(len(self.labels), X.shape[width_dim]))
         elif self.ndim == 3:
             y = np.zeros(
-                shape=(
-                    X.shape[sample_dim],
-                    len(self.labels),
-                    X.shape[width_dim],
-                )
+                shape=(X.shape[sample_dim], len(self.labels), X.shape[width_dim],)
             )
 
         # Construct pick labels
@@ -506,13 +498,7 @@ class DetectionLabeller(SupervisedLabeller):
                     y[0, p0:p1] = 1
 
         elif self.ndim == 3:
-            y = np.zeros(
-                shape=(
-                    X.shape[sample_dim],
-                    1,
-                    X.shape[width_dim],
-                )
-            )
+            y = np.zeros(shape=(X.shape[sample_dim], 1, X.shape[width_dim],))
             p_arrivals = [
                 metadata[phase] for phase in self.p_phases if phase in metadata
             ]

@@ -682,7 +682,7 @@ def test_geometric_bucketer():
     assert "1" == bucketer.get_bucket({}, np.ones((3, 101)))
 
     # Later bucket
-    assert "10" == bucketer.get_bucket({}, np.ones((3, int(100 * 1.2**9 + 1))))
+    assert "10" == bucketer.get_bucket({}, np.ones((3, int(100 * 1.2 ** 9 + 1))))
 
     # Ignores split
     assert "0" == bucketer.get_bucket({"split": "train"}, np.ones((3, 99)))
@@ -700,7 +700,7 @@ def test_geometric_bucketer():
 
     # Later bucket
     assert "test10" == bucketer.get_bucket(
-        {"split": "test"}, np.ones((3, int(100 * 1.2**9 + 1)))
+        {"split": "test"}, np.ones((3, int(100 * 1.2 ** 9 + 1)))
     )
 
     # Ignores missing split
@@ -718,7 +718,7 @@ def test_geometric_bucketer():
     assert "(1)_1" == bucketer.get_bucket({}, np.ones((1, 101)))
 
     # Later bucket
-    assert "(3)_10" == bucketer.get_bucket({}, np.ones((3, int(100 * 1.2**9 + 1))))
+    assert "(3)_10" == bucketer.get_bucket({}, np.ones((3, int(100 * 1.2 ** 9 + 1))))
 
     # Ignores split
     assert "(3)_0" == bucketer.get_bucket({"split": "train"}, np.ones((3, 99)))

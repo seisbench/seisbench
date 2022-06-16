@@ -644,10 +644,7 @@ def test_probabilistic_pick_labeller():
         state_dict = {
             "X": (
                 10 * np.random.rand(5, 3, 1000),
-                {
-                    "trace_p_arrival_sample": 500,
-                    "trace_s_arrival_sample": 700,
-                },
+                {"trace_p_arrival_sample": 500, "trace_s_arrival_sample": 700,},
             )
         }
         with pytest.raises(ValueError):
@@ -714,10 +711,7 @@ def test_step_labeller():
     state_dict = {
         "X": (
             10 * np.random.rand(5, 3, 1000),
-            {
-                "trace_p_arrival_sample": 500,
-                "trace_s_arrival_sample": 700,
-            },
+            {"trace_p_arrival_sample": 500, "trace_s_arrival_sample": 700,},
         )
     }
     with pytest.raises(ValueError):
@@ -908,10 +902,7 @@ def test_standard_pick_labeller_pickgroups():
     state_dict = {
         "X": (
             np.random.rand(5, 3, 1000),
-            {
-                "trace_p_arrival_sample": 500,
-                "trace_s_arrival_sample": 700,
-            },
+            {"trace_p_arrival_sample": 500, "trace_s_arrival_sample": 700,},
         )
     }
     with pytest.raises(IndexError):
@@ -1099,9 +1090,7 @@ def test_detection_labeller_3d_fixed():
     state_dict = {
         "X": (
             np.random.rand(5, 3, 1000),
-            {
-                "trace_p_arrival_sample": np.array([100, 150, np.nan, 900, np.nan]),
-            },
+            {"trace_p_arrival_sample": np.array([100, 150, np.nan, 900, np.nan]),},
         )
     }
 
@@ -1216,14 +1205,7 @@ def test_detection_labeller_2d():
 def test_detection_labeller_2d_fixed():
     np.random.seed(42)
 
-    state_dict = {
-        "X": (
-            np.random.rand(3, 1000),
-            {
-                "trace_p_arrival_sample": 100,
-            },
-        )
-    }
+    state_dict = {"X": (np.random.rand(3, 1000), {"trace_p_arrival_sample": 100,},)}
 
     target = np.zeros(1000)
     target[100:300] = 1
@@ -1235,14 +1217,7 @@ def test_detection_labeller_2d_fixed():
     assert y.shape == (1000,)
     assert np.allclose(y, target)
 
-    state_dict = {
-        "X": (
-            np.random.rand(3, 1000),
-            {
-                "trace_p_arrival_sample": np.nan,
-            },
-        )
-    }
+    state_dict = {"X": (np.random.rand(3, 1000), {"trace_p_arrival_sample": np.nan,},)}
 
     labeller(state_dict)
     y = state_dict["y"][0][0, :]
@@ -1396,10 +1371,7 @@ def test_probabilistic_point_labeller():
     state_dict = {
         "X": (
             10 * np.random.rand(3, 1000),
-            {
-                "trace_p_arrival_sample": 500,
-                "trace_s_arrival_sample": 700,
-            },
+            {"trace_p_arrival_sample": 500, "trace_s_arrival_sample": 700,},
         )
     }
 
@@ -1600,12 +1572,7 @@ def test_standard_labeller_no_labels_in_metadata():
     # Checks that the labeller works correct if no label columns are present in the metadata
     np.random.seed(42)
 
-    state_dict = {
-        "X": (
-            10 * np.random.rand(3, 1000),
-            {},
-        )
-    }
+    state_dict = {"X": (10 * np.random.rand(3, 1000), {},)}
 
     label_columns = {
         "trace_Pn_arrival_sample": "P",

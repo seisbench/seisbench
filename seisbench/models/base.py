@@ -2482,10 +2482,7 @@ class WaveformPipeline(ABC):
             util.download_http(remote_config_path, config_path, progress_bar=False)
 
         seisbench.util.callback_if_uncached(
-            config_path,
-            download_callback,
-            force=force,
-            wait_for_file=wait_for_file,
+            config_path, download_callback, force=force, wait_for_file=wait_for_file,
         )
 
         with open(config_path, "r") as f:

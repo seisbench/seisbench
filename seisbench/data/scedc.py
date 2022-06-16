@@ -62,7 +62,7 @@ class Ross2018JGRFM(BenchmarkDataset):
             citation=citation, repository_lookup=False, component_order="Z", **kwargs
         )
 
-    def _download_dataset(self, writer, cleanup=False, blocksize=2**14):
+    def _download_dataset(self, writer, cleanup=False, blocksize=2 ** 14):
         """
         Downloads and converts the dataset from the original publication
 
@@ -94,9 +94,7 @@ class Ross2018JGRFM(BenchmarkDataset):
 
             def callback_download_original(path):
                 seisbench.util.download_http(
-                    f,
-                    path,
-                    desc=f"Downloading file {filename}",
+                    f, path, desc=f"Downloading file {filename}",
                 )
 
             seisbench.util.callback_if_uncached(
@@ -215,7 +213,7 @@ class Ross2018JGRPick(BenchmarkDataset):
             citation=citation, repository_lookup=False, component_order="Z", **kwargs
         )
 
-    def _download_dataset(self, writer, cleanup=False, blocksize=2**14):
+    def _download_dataset(self, writer, cleanup=False, blocksize=2 ** 14):
         """
         Downloads and converts the dataset from the original publication
 
@@ -247,9 +245,7 @@ class Ross2018JGRPick(BenchmarkDataset):
 
             def callback_download_original(path):
                 seisbench.util.download_http(
-                    f,
-                    path,
-                    desc=f"Downloading file {filename}",
+                    f, path, desc=f"Downloading file {filename}",
                 )
 
             seisbench.util.callback_if_uncached(
@@ -360,7 +356,7 @@ class Ross2018GPD(BenchmarkDataset):
         )
         super().__init__(citation=citation, repository_lookup=False, **kwargs)
 
-    def _download_dataset(self, writer, cleanup=False, blocksize=2**14):
+    def _download_dataset(self, writer, cleanup=False, blocksize=2 ** 14):
         """
         Downloads and converts the dataset from the original publication
 
@@ -384,9 +380,7 @@ class Ross2018GPD(BenchmarkDataset):
 
         def callback_download_original(path):
             seisbench.util.download_http(
-                data_url,
-                path,
-                desc=f"Downloading file {filename}",
+                data_url, path, desc=f"Downloading file {filename}",
             )
 
         seisbench.util.callback_if_uncached(
@@ -471,7 +465,7 @@ class Meier2019JGR(BenchmarkDataset):
         )
         super().__init__(citation=citation, repository_lookup=False, **kwargs)
 
-    def _download_dataset(self, writer, cleanup=False, blocksize=2**14):
+    def _download_dataset(self, writer, cleanup=False, blocksize=2 ** 14):
         """
         Downloads and converts the dataset from the original publication
 
@@ -495,9 +489,7 @@ class Meier2019JGR(BenchmarkDataset):
 
         def callback_download_original(path):
             seisbench.util.download_http(
-                data_url,
-                path,
-                desc=f"Downloading file {filename}",
+                data_url, path, desc=f"Downloading file {filename}",
             )
 
         seisbench.util.callback_if_uncached(
