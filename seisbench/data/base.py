@@ -1,3 +1,5 @@
+import math
+
 import seisbench
 import seisbench.util
 
@@ -442,7 +444,12 @@ class WaveformDataset:
         :param target:
         :return:
         """
-        source = list(str(source))
+
+        if isinstance(source, float) and np.isnan(source) or \
+                ((isinstance(source, list) or isinstance(source, str)) and not len(source)):
+            raise ValueError(f"Component order not set for trace or dataset.")
+
+        source = list(source)
         target = list(target)
 
         mapping = []
