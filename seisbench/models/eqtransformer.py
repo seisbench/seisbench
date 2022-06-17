@@ -184,6 +184,8 @@ class EQTransformer(WaveformModel):
         self.pick_convs = nn.ModuleList(self.pick_convs)
 
     def forward(self, x):
+        import copy
+
         assert x.ndim == 3
         assert x.shape[1:] == (self.in_channels, self.in_samples)
 
@@ -193,6 +195,7 @@ class EQTransformer(WaveformModel):
         x = self.bi_lstm_stack(x)
         x, _ = self.transformer_d0(x)
         x, _ = self.transformer_d(x)
+        #layerout = copy.deepcopy(x)
 
         # Detection part
         detection = self.decoder_d(x)
@@ -201,6 +204,8 @@ class EQTransformer(WaveformModel):
 
         outputs = [detection]
 
+        layerouts = []
+        weightsout = []
         # Pick parts
         for lstm, attention, decoder, conv in zip(
             self.pick_lstms, self.pick_attentions, self.pick_decoders, self.pick_convs
@@ -214,12 +219,16 @@ class EQTransformer(WaveformModel):
                 1, 2, 0
             )  # From sequence, batch, channels to batch, channels, sequence
             px, _ = attention(px)
+            layerouts.append(copy.deepcopy(px))
+            weightsout.append(copy.deepcopy(_))
             px = decoder(px)
             pred = torch.sigmoid(conv(px))
             pred = torch.squeeze(pred, dim=1)  # Remove channel dimension
 
             outputs.append(pred)
 
+        outputs.append(layerouts[0])
+        outputs.append(weightsout[0])
         return tuple(outputs)
 
     def annotate_window_post(self, pred, piggyback=None, argdict=None):
@@ -577,10 +586,12 @@ class SeqSelfAttention(nn.Module):
             torch.matmul(h, self.Wa) + self.ba, -1
         )  # Shape (batch, time, time)
 
+        # Original models apply a linear activation function - e.g. no change tp input
+
         if self.attention_width is None:
             a = F.softmax(e, dim=-1)
         else:
-            e = e - torch.max(x, dim=-1, keepdim=True)[0]
+            e = e - torch.max(x, dim=-1, keepdim=True).values#[0]
             e = torch.exp(e)
             lower = (
                 torch.arange(0, e.shape[1], device=e.device) - self.attention_width // 2
