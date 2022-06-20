@@ -76,6 +76,10 @@ class EQTransformer(WaveformModel):
                 "Using the non-conservative 'original' model, set `original_compatible='conservative' to use the more conservative model"
             )
             original_compatible = "non-conservative"
+        if original_compatible:
+            eps = 1e-7  # See Issue #96 - original models use tensorflow defult epsilon of 1e-7
+        else:
+            eps = 1e-5
 
         self.original_compatible = original_compatible
 
@@ -161,7 +165,7 @@ class EQTransformer(WaveformModel):
                 lstm = nn.LSTM(16, 16, bidirectional=False)
             self.pick_lstms.append(lstm)
 
-            attention = SeqSelfAttention(input_size=16, attention_width=3)
+            attention = SeqSelfAttention(input_size=16, attention_width=3, eps=eps)
             self.pick_attentions.append(attention)
 
             decoder = Decoder(
@@ -184,8 +188,6 @@ class EQTransformer(WaveformModel):
         self.pick_convs = nn.ModuleList(self.pick_convs)
 
     def forward(self, x):
-        import copy
-
         assert x.ndim == 3
         assert x.shape[1:] == (self.in_channels, self.in_samples)
 
@@ -195,8 +197,6 @@ class EQTransformer(WaveformModel):
         x = self.bi_lstm_stack(x)
         x, _ = self.transformer_d0(x)
         x, _ = self.transformer_d(x)
-        #layerout = copy.deepcopy(x)
-
         # Detection part
         detection = self.decoder_d(x)
         detection = torch.sigmoid(self.conv_d(detection))
@@ -204,8 +204,6 @@ class EQTransformer(WaveformModel):
 
         outputs = [detection]
 
-        layerouts = []
-        weightsout = []
         # Pick parts
         for lstm, attention, decoder, conv in zip(
             self.pick_lstms, self.pick_attentions, self.pick_decoders, self.pick_convs
@@ -219,16 +217,11 @@ class EQTransformer(WaveformModel):
                 1, 2, 0
             )  # From sequence, batch, channels to batch, channels, sequence
             px, _ = attention(px)
-            layerouts.append(copy.deepcopy(px))
-            weightsout.append(copy.deepcopy(_))
             px = decoder(px)
             pred = torch.sigmoid(conv(px))
             pred = torch.squeeze(pred, dim=1)  # Remove channel dimension
 
             outputs.append(pred)
-
-        outputs.append(layerouts[0])
-        outputs.append(weightsout[0])
         return tuple(outputs)
 
     def annotate_window_post(self, pred, piggyback=None, argdict=None):
@@ -369,7 +362,7 @@ class Decoder(nn.Module):
         self.upsample = nn.Upsample(scale_factor=2, mode="nearest")
         self.original_compatible = original_compatible
 
-        # We need to trim of the final sample sometimes to get to the right number of output samples
+        # We need to trim off the final sample sometimes to get to the right number of output samples
         self.crops = []
         current_samples = out_samples
         for i, _ in enumerate(filters):
@@ -530,10 +523,10 @@ class BiLSTMBlock(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, input_size, drop_rate, attention_width=None):
+    def __init__(self, input_size, drop_rate, attention_width=None, eps=1e-5):
         super().__init__()
 
-        self.attention = SeqSelfAttention(input_size, attention_width=attention_width)
+        self.attention = SeqSelfAttention(input_size, attention_width=attention_width, eps=eps)
         self.norm1 = LayerNormalization(input_size)
         self.ff = FeedForward(input_size, drop_rate)
         self.norm2 = LayerNormalization(input_size)
@@ -586,13 +579,15 @@ class SeqSelfAttention(nn.Module):
             torch.matmul(h, self.Wa) + self.ba, -1
         )  # Shape (batch, time, time)
 
-        # Original models apply a linear activation function - e.g. no change tp input
+        # Original models apply a linear activation function - e.g. no change to input
 
-        if self.attention_width is None:
-            a = F.softmax(e, dim=-1)
-        else:
-            e = e - torch.max(x, dim=-1, keepdim=True).values#[0]
-            e = torch.exp(e)
+        # This softmax part isn't in the original EQTransformer code
+        #if self.attention_width is None:
+            #a = F.softmax(e, dim=-1)
+        #else:
+        e = e - torch.max(e, dim=-1, keepdim=True).values  # Versions <= 0.2.1 had a big here, the max of x was used instead of e
+        e = torch.exp(e)
+        if self.attention_width is not None:
             lower = (
                 torch.arange(0, e.shape[1], device=e.device) - self.attention_width // 2
             )
@@ -600,7 +595,8 @@ class SeqSelfAttention(nn.Module):
             indices = torch.unsqueeze(torch.arange(0, e.shape[1], device=e.device), 1)
             mask = torch.logical_and(lower <= indices, indices < upper)
             e = torch.where(mask, e, torch.zeros_like(e))
-            a = e / (torch.sum(e, dim=-1, keepdim=True) + self.eps)
+
+        a = e / (torch.sum(e, dim=-1, keepdim=True) + self.eps)
 
         v = torch.matmul(a, x)
 
