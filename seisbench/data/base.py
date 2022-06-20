@@ -124,7 +124,11 @@ class WaveformDataset:
 
                 tmp_metadata = pd.read_csv(
                     metadata_path,
-                    dtype={"trace_sampling_rate_hz": float, "trace_dt_s": float},
+                    dtype={
+                        "trace_sampling_rate_hz": float,
+                        "trace_dt_s": float,
+                        "trace_component_order": str,
+                    },
                 )
             tmp_metadata["trace_chunk"] = chunk
             metadatas.append(tmp_metadata)
@@ -442,6 +446,17 @@ class WaveformDataset:
         :param target:
         :return:
         """
+
+        if (
+            isinstance(source, float)
+            and np.isnan(source)
+            or (
+                (isinstance(source, list) or isinstance(source, str))
+                and not len(source)
+            )
+        ):
+            raise ValueError(f"Component order not set for (parts of) the dataset.")
+
         source = list(source)
         target = list(target)
 
