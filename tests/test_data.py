@@ -1308,6 +1308,7 @@ def test_chunked_datasets_key_collision(tmp_path):
     assert (data.get_waveforms(0) == 0).all()
     assert (data.get_waveforms(1) == 1).all()
 
+
 def test_component_mapping_fix_for_implicit_int_casts(tmp_path: Path):
 
     # The following implicit calls of seisbench.data.WaveformDataset._get_component_mapping() no longer raise
