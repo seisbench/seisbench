@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import warnings
 
 
 # For implementation, potentially follow: https://medium.com/huggingface/from-tensorflow-to-pytorch-265f40ef2a28
@@ -76,8 +77,9 @@ class EQTransformer(WaveformModel):
                 "Using the non-conservative 'original' model, set `original_compatible='conservative' to use the more conservative model"
             )
             original_compatible = "non-conservative"
+
         if original_compatible:
-            eps = 1e-7  # See Issue #96 - original models use tensorflow defult epsilon of 1e-7
+            eps = 1e-7  # See Issue #96 - original models use tensorflow default epsilon of 1e-7
         else:
             eps = 1e-5
 
@@ -133,8 +135,12 @@ class EQTransformer(WaveformModel):
         )
 
         # Global attention - two transformers
-        self.transformer_d0 = Transformer(input_size=16, drop_rate=self.drop_rate)
-        self.transformer_d = Transformer(input_size=16, drop_rate=self.drop_rate)
+        self.transformer_d0 = Transformer(
+            input_size=16, drop_rate=self.drop_rate, eps=eps
+        )
+        self.transformer_d = Transformer(
+            input_size=16, drop_rate=self.drop_rate, eps=eps
+        )
 
         # Detection decoder and final Conv
         self.decoder_d = Decoder(
@@ -526,7 +532,9 @@ class Transformer(nn.Module):
     def __init__(self, input_size, drop_rate, attention_width=None, eps=1e-5):
         super().__init__()
 
-        self.attention = SeqSelfAttention(input_size, attention_width=attention_width, eps=eps)
+        self.attention = SeqSelfAttention(
+            input_size, attention_width=attention_width, eps=eps
+        )
         self.norm1 = LayerNormalization(input_size)
         self.ff = FeedForward(input_size, drop_rate)
         self.norm2 = LayerNormalization(input_size)
@@ -579,13 +587,10 @@ class SeqSelfAttention(nn.Module):
             torch.matmul(h, self.Wa) + self.ba, -1
         )  # Shape (batch, time, time)
 
-        # Original models apply a linear activation function - e.g. no change to input
-
-        # This softmax part isn't in the original EQTransformer code
-        #if self.attention_width is None:
-            #a = F.softmax(e, dim=-1)
-        #else:
-        e = e - torch.max(e, dim=-1, keepdim=True).values  # Versions <= 0.2.1 had a big here, the max of x was used instead of e
+        # This is essentially softmax with an additional attention component.
+        e = (
+            e - torch.max(e, dim=-1, keepdim=True).values
+        )  # In versions <= 0.2.1 e was incorrectly normalized by max(x)
         e = torch.exp(e)
         if self.attention_width is not None:
             lower = (
