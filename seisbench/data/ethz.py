@@ -168,7 +168,8 @@ class ETHZ(BenchmarkDataset):
                 stream = waveforms.slice(t_start, t_end)
 
                 actual_t_start, data, completeness = stream_to_array(
-                    stream, component_order=writer.data_format["component_order"],
+                    stream,
+                    component_order=writer.data_format["component_order"],
                 )
 
                 if int((t_end - t_start) * sampling_rate) + 1 > data.shape[1]:

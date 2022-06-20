@@ -16,7 +16,7 @@ class InstanceTypeDataset(BenchmarkDataset, ABC):
     """
 
     def _download_helper(
-        self, writer, metadata_url, data_url, cleanup=True, blocksize=2 ** 14
+        self, writer, metadata_url, data_url, cleanup=True, blocksize=2**14
     ):
         """
         Download the dataset from the given metadata_url and data_url and unpack it.
@@ -38,7 +38,9 @@ class InstanceTypeDataset(BenchmarkDataset, ABC):
 
             def callback_download_original(path):
                 seisbench.util.download_http(
-                    url, path, desc=f"Downloading {name}",
+                    url,
+                    path,
+                    desc=f"Downloading {name}",
                 )
 
             seisbench.util.callback_if_uncached(

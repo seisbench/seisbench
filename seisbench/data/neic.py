@@ -26,7 +26,7 @@ class NEIC(BenchmarkDataset):
         )
         super().__init__(citation=citation, repository_lookup=True, **kwargs)
 
-    def _download_dataset(self, writer, cleanup=True, blocksize=2 ** 14):
+    def _download_dataset(self, writer, cleanup=True, blocksize=2**14):
         """
         Downloads and converts the dataset from the original publication
 
@@ -65,7 +65,9 @@ class NEIC(BenchmarkDataset):
             # It's therefore considered save to set force=True.
             def callback_download_original(path):
                 seisbench.util.download_http(
-                    f["url"], path, desc=f"Downloading file {f['name']}",
+                    f["url"],
+                    path,
+                    desc=f"Downloading file {f['name']}",
                 )
 
             seisbench.util.callback_if_uncached(

@@ -457,7 +457,7 @@ class WaveformDataset:
                 and not len(source)
             )
         ):
-            raise ValueError(f"Component order not set for trace or dataset.")
+            raise ValueError(f"Component order not set for (parts of) the dataset.")
 
         source = list(source)
         target = list(target)
@@ -1876,7 +1876,10 @@ class BenchmarkDataset(WaveformDataset, ABC):
 
             chunks_path = cls._path_internal() / "chunks"
             seisbench.util.callback_if_uncached(
-                chunks_path, chunks_callback, force=force, wait_for_file=wait_for_file,
+                chunks_path,
+                chunks_callback,
+                force=force,
+                wait_for_file=wait_for_file,
             )
 
             if chunks_path.is_file():

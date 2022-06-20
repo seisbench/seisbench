@@ -316,7 +316,9 @@ def test_stream_to_arrays_channel():
 
     # Simple
     stream = obspy.Stream([trace_z])
-    times, data = dummy.stream_to_arrays(stream,)
+    times, data = dummy.stream_to_arrays(
+        stream,
+    )
     assert len(times) == len(data) == 1
     assert times[0] == t0
     assert data[0].shape == (len(trace_z.data),)
@@ -885,7 +887,8 @@ def test_default_labels():
 
 
 @pytest.mark.parametrize(
-    "parallelism", [None, 1],
+    "parallelism",
+    [None, 1],
 )
 def test_annotate_cred(parallelism):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
@@ -902,7 +905,8 @@ def test_annotate_cred(parallelism):
 
 
 @pytest.mark.parametrize(
-    "parallelism", [None, 1],
+    "parallelism",
+    [None, 1],
 )
 def test_annotate_eqtransformer(parallelism):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
@@ -919,7 +923,8 @@ def test_annotate_eqtransformer(parallelism):
 
 
 @pytest.mark.parametrize(
-    "parallelism", [None, 1],
+    "parallelism",
+    [None, 1],
 )
 def test_annotate_gpd(parallelism):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
@@ -936,7 +941,8 @@ def test_annotate_gpd(parallelism):
 
 
 @pytest.mark.parametrize(
-    "parallelism", [None, 1],
+    "parallelism",
+    [None, 1],
 )
 def test_annotate_phasenet(parallelism):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
@@ -953,7 +959,8 @@ def test_annotate_phasenet(parallelism):
 
 
 @pytest.mark.parametrize(
-    "parallelism", [None, 1],
+    "parallelism",
+    [None, 1],
 )
 def test_annotate_basicphaseae(parallelism):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
@@ -995,7 +1002,8 @@ def test_deep_denoiser():
 
 
 @pytest.mark.parametrize(
-    "parallelism", [None, 1],
+    "parallelism",
+    [None, 1],
 )
 def test_annotate_deep_denoiser(parallelism):
     stream = obspy.read()
