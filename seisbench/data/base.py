@@ -1,5 +1,3 @@
-import math
-
 import seisbench
 import seisbench.util
 
