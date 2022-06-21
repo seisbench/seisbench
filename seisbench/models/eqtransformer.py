@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import warnings
 
 
 # For implementation, potentially follow: https://medium.com/huggingface/from-tensorflow-to-pytorch-265f40ef2a28
@@ -70,6 +71,18 @@ class EQTransformer(WaveformModel):
         self.classes = classes
         self.lstm_blocks = lstm_blocks
         self.drop_rate = drop_rate
+
+        # Add options for conservative and the true original - see https://github.com/seisbench/seisbench/issues/96#issuecomment-1155158224
+        if original_compatible == True:
+            warnings.warn(
+                "Using the non-conservative 'original' model, set `original_compatible='conservative' to use the more conservative model"
+            )
+            original_compatible = "non-conservative"
+
+        if original_compatible:
+            eps = 1e-7  # See Issue #96 - original models use tensorflow default epsilon of 1e-7
+        else:
+            eps = 1e-5
         self.original_compatible = original_compatible
 
         if original_compatible and in_samples != 6000:
@@ -122,8 +135,12 @@ class EQTransformer(WaveformModel):
         )
 
         # Global attention - two transformers
-        self.transformer_d0 = Transformer(input_size=16, drop_rate=self.drop_rate)
-        self.transformer_d = Transformer(input_size=16, drop_rate=self.drop_rate)
+        self.transformer_d0 = Transformer(
+            input_size=16, drop_rate=self.drop_rate, eps=eps
+        )
+        self.transformer_d = Transformer(
+            input_size=16, drop_rate=self.drop_rate, eps=eps
+        )
 
         # Detection decoder and final Conv
         self.decoder_d = Decoder(
@@ -145,13 +162,14 @@ class EQTransformer(WaveformModel):
         self.dropout = nn.Dropout(drop_rate)
 
         for _ in range(self.classes):
-            if original_compatible:
+            if original_compatible == "conservative":
+                # The non-conservative model uses a sigmoid activiation as handled by the base nn.LSTM
                 lstm = CustomLSTM(ActivationLSTMCell, 16, 16, bidirectional=False)
             else:
                 lstm = nn.LSTM(16, 16, bidirectional=False)
             self.pick_lstms.append(lstm)
 
-            attention = SeqSelfAttention(input_size=16, attention_width=3)
+            attention = SeqSelfAttention(input_size=16, attention_width=3, eps=eps)
             self.pick_attentions.append(attention)
 
             decoder = Decoder(
@@ -350,7 +368,7 @@ class Decoder(nn.Module):
         self.upsample = nn.Upsample(scale_factor=2, mode="nearest")
         self.original_compatible = original_compatible
 
-        # We need to trim of the final sample sometimes to get to the right number of output samples
+        # We need to trim off the final sample sometimes to get to the right number of output samples
         self.crops = []
         current_samples = out_samples
         for i, _ in enumerate(filters):
@@ -480,8 +498,16 @@ class BiLSTMBlock(nn.Module):
     def __init__(self, input_size, hidden_size, drop_rate, original_compatible=False):
         super().__init__()
 
-        if original_compatible:
+        if original_compatible == "conservative":
+            # The non-conservative model uses a sigmoid activiation as handled by the base nn.LSTM
             self.lstm = CustomLSTM(ActivationLSTMCell, input_size, hidden_size)
+        elif original_compatible == "non-conservative":
+            self.lstm = CustomLSTM(
+                ActivationLSTMCell,
+                input_size,
+                hidden_size,
+                gate_activation=torch.sigmoid,
+            )
         else:
             self.lstm = nn.LSTM(input_size, hidden_size, bidirectional=True)
         self.dropout = nn.Dropout(drop_rate)
@@ -503,10 +529,12 @@ class BiLSTMBlock(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, input_size, drop_rate, attention_width=None):
+    def __init__(self, input_size, drop_rate, attention_width=None, eps=1e-5):
         super().__init__()
 
-        self.attention = SeqSelfAttention(input_size, attention_width=attention_width)
+        self.attention = SeqSelfAttention(
+            input_size, attention_width=attention_width, eps=eps
+        )
         self.norm1 = LayerNormalization(input_size)
         self.ff = FeedForward(input_size, drop_rate)
         self.norm2 = LayerNormalization(input_size)
@@ -559,11 +587,12 @@ class SeqSelfAttention(nn.Module):
             torch.matmul(h, self.Wa) + self.ba, -1
         )  # Shape (batch, time, time)
 
-        if self.attention_width is None:
-            a = F.softmax(e, dim=-1)
-        else:
-            e = e - torch.max(x, dim=-1, keepdim=True)[0]
-            e = torch.exp(e)
+        # This is essentially softmax with an additional attention component.
+        e = (
+            e - torch.max(e, dim=-1, keepdim=True).values
+        )  # In versions <= 0.2.1 e was incorrectly normalized by max(x)
+        e = torch.exp(e)
+        if self.attention_width is not None:
             lower = (
                 torch.arange(0, e.shape[1], device=e.device) - self.attention_width // 2
             )
@@ -571,7 +600,8 @@ class SeqSelfAttention(nn.Module):
             indices = torch.unsqueeze(torch.arange(0, e.shape[1], device=e.device), 1)
             mask = torch.logical_and(lower <= indices, indices < upper)
             e = torch.where(mask, e, torch.zeros_like(e))
-            a = e / (torch.sum(e, dim=-1, keepdim=True) + self.eps)
+
+        a = e / (torch.sum(e, dim=-1, keepdim=True) + self.eps)
 
         v = torch.matmul(a, x)
 
