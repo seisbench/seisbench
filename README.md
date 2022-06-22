@@ -72,6 +72,7 @@ Check out the [contribution guidelines](https://github.com/seisbench/seisbench/b
   In the meantime, if you are having trouble, try downloading through another network/VPN if possible.
   You can also contact your network administrator to allow access to port 2443 on our server.
   Otherwise, reach out to us, and we will work on finding a solution.
+- EQTransformer model weights "original" in version 1 and 2 are incompatible with SeisBench >=0.2.3. Simply use `from_pretrained("original", version="3")` or `from_pretrained("original", update=True)`. The weights will not differ in their predictions.
 
 ## References
 Reference publications for SeisBench:
