@@ -295,6 +295,9 @@ class SeisBenchModel(nn.Module):
         # Idea: If details, copy all "latest" configs to a temp directory
 
         model_path = cls._model_path()
+        model_path.mkdir(
+            parents=True, exist_ok=True
+        )  # Create directory if not existent
         weights = [
             cls._parse_weight_filename(x)[0]
             for x in model_path.iterdir()

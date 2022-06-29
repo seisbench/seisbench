@@ -1832,3 +1832,15 @@ def test_get_weights_file_paths():
     )
     assert path_json == Path("path.json.v3rc2")
     assert path_pt == Path("path.pt.v3rc2")
+
+
+def test_list_pretrained_version_empty_cache(tmp_path):
+    with patch(
+        "seisbench.cache_root", tmp_path / "list_pretrained"
+    ):  # Ensure SeisBench cache is empty
+        seisbench.models.GPD.list_pretrained(details=True, remote=False)
+
+    with patch(
+        "seisbench.cache_root", tmp_path / "list_versions"
+    ):  # Ensure SeisBench cache is empty
+        seisbench.models.GPD.list_versions("original", remote=False)
