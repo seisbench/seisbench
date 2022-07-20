@@ -1961,9 +1961,10 @@ class WaveformModel(SeisBenchModel, ABC):
         mask = ~np.isnan(x)
         valid = np.nonzero(mask == True)[0]
         mask[valid[0] : valid[-1]] = True
+        _end = len(x)
         x = x[mask]
 
-        return x, valid[0], len(x) - (1 + valid[-1])
+        return x, valid[0], _end - (1 + valid[-1])
 
     def _recursive_torch_to_numpy(self, x):
         """
