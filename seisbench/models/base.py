@@ -1960,7 +1960,7 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         mask = ~np.isnan(x)
         valid = np.nonzero(mask == True)[0]
-        mask[valid[0]:valid[-1]] = True
+        mask[valid[0] : valid[-1]] = True
         x = x[mask]
 
         return x, valid[0], len(x) - (1 + valid[-1])
