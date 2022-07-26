@@ -1848,7 +1848,6 @@ class WaveformModel(SeisBenchModel, ABC):
                     },
                 )
             )
-
         return output
 
     def annotate_stream_pre(self, stream, argdict):
@@ -1865,6 +1864,7 @@ class WaveformModel(SeisBenchModel, ABC):
         :param argdict: Dictionary of arguments
         :return: Preprocessed stream
         """
+        # TODO: This should check for gaps and ensure that these are zeroed at the end of processing
         if self.filter_args is not None or self.filter_kwargs is not None:
             if self.filter_args is None:
                 filter_args = ()
@@ -1941,16 +1941,13 @@ class WaveformModel(SeisBenchModel, ABC):
         Removes all starting and trailing nan values from a 1D array and returns the new array and the number of NaNs
         removed per side.
         """
-        mask_forward = np.cumprod(np.isnan(x)).astype(
-            bool
-        )  # cumprod will be one until the first non-Nan value
-        x = x[~mask_forward]
-        mask_backward = np.cumprod(np.isnan(x)[::-1])[::-1].astype(
-            bool
-        )  # Double reverse for a backwards cumprod
-        x = x[~mask_backward]
+        mask = ~np.isnan(x)
+        valid = np.nonzero(mask == True)[0]
+        mask[valid[0] : valid[-1]] = True
+        _end = len(x)
+        x = x[mask]
 
-        return x, np.sum(mask_forward.astype(int)), np.sum(mask_backward.astype(int))
+        return x, valid[0], _end - (1 + valid[-1])
 
     def _recursive_torch_to_numpy(self, x):
         """
