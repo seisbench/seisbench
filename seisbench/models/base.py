@@ -1936,23 +1936,6 @@ class WaveformModel(SeisBenchModel, ABC):
         return pred
 
     @staticmethod
-    def _trim_nan_old(x):
-        """
-        Removes all starting and trailing nan values from a 1D array and returns the new array and the number of NaNs
-        removed per side.
-        """
-        mask_forward = np.cumprod(np.isnan(x)).astype(
-            bool
-        )  # cumprod will be one until the first non-Nan value
-        x = x[~mask_forward]
-        mask_backward = np.cumprod(np.isnan(x)[::-1])[::-1].astype(
-            bool
-        )  # Double reverse for a backwards cumprod
-        x = x[~mask_backward]
-
-        return x, np.sum(mask_forward.astype(int)), np.sum(mask_backward.astype(int))
-
-    @staticmethod
     def _trim_nan(x):
         """
         Removes all starting and trailing nan values from a 1D array and returns the new array and the number of NaNs
