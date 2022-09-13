@@ -6,6 +6,13 @@ import numpy as np
 
 
 class PhaseNet(WaveformModel):
+    """
+    .. document_args:: seisbench.models PhaseNet
+    """
+
+    _annotate_args = WaveformModel._annotate_args.copy()
+    _annotate_args["*_threshold"] = ("Detection threshold for the provided phase", 0.3)
+
     def __init__(
         self, in_channels=3, classes=3, phases="NPS", sampling_rate=100, **kwargs
     ):

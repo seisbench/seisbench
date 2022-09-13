@@ -644,6 +644,8 @@ class WaveformModel(SeisBenchModel, ABC):
 
     For details see the documentation of these functions.
 
+    .. document_args:: seisbench.models WaveformModel
+
     :param component_order: Specify component order (e.g. ['ZNE']), defaults to None.
     :type component_order: list, optional
     :param sampling_rate: Sampling rate of the model, defaults to None.
@@ -686,6 +688,21 @@ class WaveformModel(SeisBenchModel, ABC):
     :type grouping: str
     :param kwargs: Kwargs are passed to the superclass
     """
+
+    # Optional arguments for annotate/classify: key -> (documentation, default_value)
+    _annotate_args = {
+        "batch_size": ("Batch size for the model", 64),
+        "overlap": (
+            "Overlap between prediction windows in samples (only for window prediction models)",
+            0,
+        ),
+        "stacking": (
+            "Stacking method for overlapping windows (only for window prediction models). "
+            "Options are 'max' and 'avg'. ",
+            "max",
+        ),
+        "stride": ("Stride in samples (only for point prediction models)", 1),
+    }
 
     _stack_options = {
         "avg",

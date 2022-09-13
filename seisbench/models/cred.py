@@ -11,7 +11,12 @@ class CRED(WaveformModel):
     """
     Note: There are subtle differences between the model presented in the paper (as in Figure 1) and the code on Github.
           Here we follow the implementation from Github to allow for compatibility with the pretrained weights.
+
+    .. document_args:: seisbench.models CRED
     """
+
+    _annotate_args = WaveformModel._annotate_args.copy()
+    _annotate_args["detection_threshold"] = ("Detection threshold", 0.5)
 
     def __init__(
         self,
