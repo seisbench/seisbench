@@ -130,7 +130,9 @@ class CRED(WaveformModel):
         """
         detections = self.detections_from_annotations(
             annotations.select(channel="CRED_Detection"),
-            argdict.get("detection_threshold", 0.5),
+            argdict.get(
+                "detection_threshold", self._annotate_args.get("detection_threshold")[1]
+            ),
         )
 
         return detections

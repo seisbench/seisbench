@@ -242,7 +242,9 @@ class EQTransformer(WaveformModel):
 
     def annotate_window_post(self, pred, piggyback=None, argdict=None):
         # Combine predictions in one array
-        prenan, postnan = argdict.get("blinding", (0, 0))
+        prenan, postnan = argdict.get(
+            "blinding", self._annotate_args.get("blinding")[1]
+        )
         pred = np.stack(pred, axis=-1)
         if prenan > 0:
             pred[:prenan] = np.nan
@@ -285,13 +287,17 @@ class EQTransformer(WaveformModel):
         for phase in self.phases:
             picks += self.picks_from_annotations(
                 annotations.select(channel=f"EQTransformer_{phase}"),
-                argdict.get(f"{phase}_threshold", 0.1),
+                argdict.get(
+                    f"{phase}_threshold", self._annotate_args.get("*_threshold")[1]
+                ),
                 phase,
             )
 
         detections = self.detections_from_annotations(
             annotations.select(channel="EQTransformer_Detection"),
-            argdict.get("detection_threshold", 0.3),
+            argdict.get(
+                "detection_threshold", self._annotate_args.get("detection_threshold")[1]
+            ),
         )
 
         return sorted(picks), sorted(detections)

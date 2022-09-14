@@ -125,7 +125,9 @@ class GPD(WaveformModel):
 
             picks += self.picks_from_annotations(
                 annotations.select(channel=f"GPD_{phase}"),
-                argdict.get(f"{phase}_threshold", 0.7),
+                argdict.get(
+                    f"{phase}_threshold", self._annotate_args.get("*_threshold")[1]
+                ),
                 phase,
             )
 

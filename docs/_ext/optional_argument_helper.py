@@ -6,8 +6,6 @@ from docutils.parsers.rst import Directive
 from docutils import nodes
 from importlib import import_module
 
-# TODO: (In the base file and model files) Read defaults from _annotate_args instead of hardcoding them throughout the code
-
 
 class ArgsDirective(Directive):
     """
@@ -68,7 +66,7 @@ class ArgsDirective(Directive):
         tgroup += tbody
 
         caption = nodes.Text(
-            "The following parameters are available for the annotate/classify functions"
+            "The following parameters are available for the annotate/classify functions:"
         )
         remark = nodes.hint()
         remark += nodes.Text(
