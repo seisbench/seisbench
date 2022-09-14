@@ -21,6 +21,7 @@ import nest_asyncio
 from packaging import version
 import torch.multiprocessing as torchmp
 import logging
+import re
 
 
 @log_lifecycle(logging.DEBUG)
@@ -867,6 +868,7 @@ class WaveformModel(SeisBenchModel, ABC):
             parallelism = None
 
         self._check_parallelism_annotate(stream, parallelism)
+        self._verify_argdict(kwargs)
 
         if parallelism is None:
             nest_asyncio.apply()
@@ -914,6 +916,14 @@ class WaveformModel(SeisBenchModel, ABC):
                 "You are processing a small stream with the parallel implementation. "
                 "Consider using the sequential asyncio implementation. " + detail_str
             )
+
+    def _verify_argdict(self, argdict):
+        for key in argdict.keys():
+            if not any(
+                re.fullmatch(pattern.replace("*", ".*"), key)
+                for pattern in self._annotate_args.keys()
+            ):
+                seisbench.logger.warning(f"Unknown argument '{key}' will be ignored.")
 
     async def _annotate_async(
         self, stream, strict=True, flexible_horizontal_components=True, **kwargs

@@ -6,7 +6,7 @@ from docutils.parsers.rst import Directive
 from docutils import nodes
 from importlib import import_module
 
-# TODO: (In the base file) Validate args passed to annotate
+# TODO: (In the base file and model files) Read defaults from _annotate_args instead of hardcoding them throughout the code
 
 
 class ArgsDirective(Directive):
