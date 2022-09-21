@@ -21,6 +21,7 @@ import nest_asyncio
 from packaging import version
 import torch.multiprocessing as torchmp
 import logging
+import re
 
 
 @log_lifecycle(logging.DEBUG)
@@ -644,6 +645,8 @@ class WaveformModel(SeisBenchModel, ABC):
 
     For details see the documentation of these functions.
 
+    .. document_args:: seisbench.models WaveformModel
+
     :param component_order: Specify component order (e.g. ['ZNE']), defaults to None.
     :type component_order: list, optional
     :param sampling_rate: Sampling rate of the model, defaults to None.
@@ -686,6 +689,21 @@ class WaveformModel(SeisBenchModel, ABC):
     :type grouping: str
     :param kwargs: Kwargs are passed to the superclass
     """
+
+    # Optional arguments for annotate/classify: key -> (documentation, default_value)
+    _annotate_args = {
+        "batch_size": ("Batch size for the model", 64),
+        "overlap": (
+            "Overlap between prediction windows in samples (only for window prediction models)",
+            0,
+        ),
+        "stacking": (
+            "Stacking method for overlapping windows (only for window prediction models). "
+            "Options are 'max' and 'avg'. ",
+            "max",
+        ),
+        "stride": ("Stride in samples (only for point prediction models)", 1),
+    }
 
     _stack_options = {
         "avg",
@@ -850,6 +868,7 @@ class WaveformModel(SeisBenchModel, ABC):
             parallelism = None
 
         self._check_parallelism_annotate(stream, parallelism)
+        self._verify_argdict(kwargs)
 
         if parallelism is None:
             nest_asyncio.apply()
@@ -898,6 +917,14 @@ class WaveformModel(SeisBenchModel, ABC):
                 "Consider using the sequential asyncio implementation. " + detail_str
             )
 
+    def _verify_argdict(self, argdict):
+        for key in argdict.keys():
+            if not any(
+                re.fullmatch(pattern.replace("*", ".*"), key)
+                for pattern in self._annotate_args.keys()
+            ):
+                seisbench.logger.warning(f"Unknown argument '{key}' will be ignored.")
+
     async def _annotate_async(
         self, stream, strict=True, flexible_horizontal_components=True, **kwargs
     ):
@@ -931,7 +958,7 @@ class WaveformModel(SeisBenchModel, ABC):
         argdict["sampling_rate"] = groups[0][0].stats.sampling_rate
 
         # Queues for multiprocessing
-        batch_size = argdict.get("batch_size", 64)
+        batch_size = argdict.get("batch_size", self._annotate_args.get("batch_size")[1])
         queue_groups = asyncio.Queue()  # Waveform groups
         queue_raw_blocks = (
             asyncio.Queue()
@@ -1053,7 +1080,7 @@ class WaveformModel(SeisBenchModel, ABC):
         self.cpu()
 
         # Queues for multiprocessing
-        batch_size = argdict.get("batch_size", 64)
+        batch_size = argdict.get("batch_size", self._annotate_args.get("batch_size")[1])
 
         queue_groups = torchmp.JoinableQueue()  # Waveform groups
         queue_raw_blocks = (
@@ -1266,7 +1293,7 @@ class WaveformModel(SeisBenchModel, ABC):
         :return: None
         """
         buffer = []
-        batch_size = argdict.get("batch_size", 64)
+        batch_size = argdict.get("batch_size", self._annotate_args.get("batch_size")[1])
 
         elem = await queue_in.get()
         while True:
@@ -1400,7 +1427,7 @@ class WaveformModel(SeisBenchModel, ABC):
         :param argdict:
         :return:
         """
-        stride = argdict.get("stride", 1)
+        stride = argdict.get("stride", self._annotate_args.get("stride")[1])
         starts = np.arange(0, block.shape[1] - self.in_samples + 1, stride)
         if len(starts) == 0:
             seisbench.logger.warning(
@@ -1458,7 +1485,7 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         Reassembles point predictions into numpy arrays. Returns None except if a buffer was processed.
         """
-        stride = argdict.get("stride", 1)
+        stride = argdict.get("stride", self._annotate_args.get("stride")[1])
 
         window, metadata = elem
         t0, s, len_starts, trace_stats, bucket_id = metadata
@@ -1519,7 +1546,7 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         Cuts numpy arrays into fragments for array prediction models.
         """
-        overlap = argdict.get("overlap", 0)
+        overlap = argdict.get("overlap", self._annotate_args.get("overlap")[1])
 
         t0, block, trace_stats = elem
 
@@ -1594,9 +1621,9 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         Reassembles array predictions into numpy arrays.
         """
-        overlap = argdict.get("overlap", 0)
+        overlap = argdict.get("overlap", self._annotate_args.get("overlap")[1])
         stack_method = argdict.get(
-            "stacking", "max"
+            "stacking", self._annotate_args.get("stacking")[1]
         ).lower()  # This is a breaking change for v 0.3 - see PR#99
         assert (
             stack_method in self._stack_options
@@ -1707,7 +1734,7 @@ class WaveformModel(SeisBenchModel, ABC):
             self.to(device)
 
         buffer = []
-        batch_size = argdict.get("batch_size", 64)
+        batch_size = argdict.get("batch_size", self._annotate_args.get("batch_size")[1])
 
         while True:
             elem = queue_in.get()

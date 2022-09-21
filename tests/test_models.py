@@ -1878,3 +1878,35 @@ def test_list_pretrained_version_empty_cache(tmp_path):
         "seisbench.cache_root", tmp_path / "list_versions"
     ):  # Ensure SeisBench cache is empty
         seisbench.models.GPD.list_versions("original", remote=False)
+
+
+def test_verify_argdict(caplog):
+    model = seisbench.models.GPD()
+
+    # No wildcard - Matching
+    model._annotate_args = {"param": ("", 0)}
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        model._verify_argdict({"param": 3})
+    assert caplog.text == ""
+
+    # Wildcard - Matching
+    model._annotate_args = {"*_param": ("", 0)}
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        model._verify_argdict({"my_param": 3})
+    assert caplog.text == ""
+
+    # No wildcard - Not matching
+    model._annotate_args = {"param": ("", 0)}
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        model._verify_argdict({"not_param": 3})
+    assert "Unknown argument" in caplog.text
+
+    # Wildcard - Not matching
+    model._annotate_args = {"*_param": ("", 0)}
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        model._verify_argdict({"my_var": 3})
+    assert "Unknown argument" in caplog.text

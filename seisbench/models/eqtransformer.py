@@ -10,13 +10,15 @@ import warnings
 # For implementation, potentially follow: https://medium.com/huggingface/from-tensorflow-to-pytorch-265f40ef2a28
 class EQTransformer(WaveformModel):
     """
-    The EQTranformer from Mousavi et al. (2020)
+    The EQTransformer from Mousavi et al. (2020)
 
     Implementation adapted from the Github repository https://github.com/smousavi05/EQTransformer
     Assumes padding="same" and activation="relu" as in the pretrained EQTransformer models
 
     By instantiating the model with `from_pretrained("original")` a binary compatible version of the original
     EQTransformer with the original weights from Mousavi et al. (2020) can be loaded.
+
+    .. document_args:: seisbench.models EQTransformer
 
     :param in_channels: Number of input channels, by default 3.
     :param in_samples: Number of input samples per channel, by default 6000.
@@ -34,6 +36,14 @@ class EQTransformer(WaveformModel):
                                 The exception is when loading the original weights using :py:func:`from_pretrained`.
     :param kwargs: Keyword arguments passed to the constructor of :py:class:`WaveformModel`.
     """
+
+    _annotate_args = WaveformModel._annotate_args.copy()
+    _annotate_args["*_threshold"] = ("Detection threshold for the provided phase", 0.1)
+    _annotate_args["detection_threshold"] = ("Detection threshold", 0.3)
+    _annotate_args["blinding"] = (
+        "Number of prediction samples to discard on each side of each window prediction",
+        (0, 0),
+    )
 
     def __init__(
         self,
@@ -232,7 +242,9 @@ class EQTransformer(WaveformModel):
 
     def annotate_window_post(self, pred, piggyback=None, argdict=None):
         # Combine predictions in one array
-        prenan, postnan = argdict.get("blinding", (0, 0))
+        prenan, postnan = argdict.get(
+            "blinding", self._annotate_args.get("blinding")[1]
+        )
         pred = np.stack(pred, axis=-1)
         if prenan > 0:
             pred[:prenan] = np.nan
@@ -275,13 +287,17 @@ class EQTransformer(WaveformModel):
         for phase in self.phases:
             picks += self.picks_from_annotations(
                 annotations.select(channel=f"EQTransformer_{phase}"),
-                argdict.get(f"{phase}_threshold", 0.1),
+                argdict.get(
+                    f"{phase}_threshold", self._annotate_args.get("*_threshold")[1]
+                ),
                 phase,
             )
 
         detections = self.detections_from_annotations(
             annotations.select(channel="EQTransformer_Detection"),
-            argdict.get("detection_threshold", 0.3),
+            argdict.get(
+                "detection_threshold", self._annotate_args.get("detection_threshold")[1]
+            ),
         )
 
         return sorted(picks), sorted(detections)
