@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import warnings
+import scipy.signal
 
 
 # For implementation, potentially follow: https://medium.com/huggingface/from-tensorflow-to-pytorch-265f40ef2a28
@@ -55,6 +56,10 @@ class EQTransformer(WaveformModel):
         drop_rate=0.1,
         original_compatible=False,
         sampling_rate=100,
+        highpass_axis=None,
+        highpass_freq_hz=None,
+        norm_amp_per_comp=False,
+        norm_detrend=False,
         **kwargs,
     ):
         citation = (
@@ -69,7 +74,7 @@ class EQTransformer(WaveformModel):
         super().__init__(
             citation=citation,
             output_type="array",
-            default_args={"overlap": 1800, "blinding": (500, 500)},
+            default_args={"overlap": 1800, "blinding": (0, 0)},
             in_samples=in_samples,
             pred_sample=(0, in_samples),
             labels=["Detection"] + list(phases),
@@ -81,6 +86,12 @@ class EQTransformer(WaveformModel):
         self.classes = classes
         self.lstm_blocks = lstm_blocks
         self.drop_rate = drop_rate
+
+        # PickBlue options
+        self.highpass_axis = highpass_axis
+        self.highpass_freq_hz = highpass_freq_hz
+        self.norm_amp_per_comp = norm_amp_per_comp
+        self.norm_detrend = norm_detrend
 
         # Add options for conservative and the true original - see https://github.com/seisbench/seisbench/issues/96#issuecomment-1155158224
         if original_compatible == True:
@@ -203,7 +214,7 @@ class EQTransformer(WaveformModel):
 
     def forward(self, x):
         assert x.ndim == 3
-        assert x.shape[1:] == (self.in_channels, self.in_samples)
+        assert x.shape[1:] == (self.in_channels, self.in_samples), f"{x.shape[1:]=}{self.in_channels=}{self.in_samples=}"
 
         # Shared encoder part
         x = self.encoder(x)
@@ -253,9 +264,29 @@ class EQTransformer(WaveformModel):
         return pred
 
     def annotate_window_pre(self, window, argdict):
+
         # Add a demean and an amplitude normalization step to the preprocessing
         window = window - np.mean(window, axis=-1, keepdims=True)
-        window = window / (np.std(window) + 1e-10)
+        detrended = np.zeros(window.shape)
+        if self.norm_detrend:
+            for i, a in enumerate(window):
+                detrended[i, :] = scipy.signal.detrend(a)
+            window = detrended
+        if self.norm_amp_per_comp:
+            amp_normed = np.zeros(window.shape)
+            for i, a in enumerate(window):
+                amp_normed[i, :] = a / (np.max(np.abs(a)) + 1e-10)
+            window = amp_normed
+        else:
+            window = window / (np.std(window) + 1e-10)
+
+
+        if self.highpass_axis is not None:
+            # Apply a highpass filter to the hydrophone component
+            filt_args = (1, self.highpass_freq_hz, "highpass", False)
+            sos = scipy.signal.butter(*filt_args, output="sos", fs=self.sampling_rate)
+            window[self.highpass_axis] = scipy.signal.sosfilt(sos, window[self.highpass_axis], axis=self.highpass_axis)
+
 
         # Cosine taper (very short, i.e., only six samples on each side)
         tap = 0.5 * (1 + np.cos(np.linspace(np.pi, 2 * np.pi, 6)))
@@ -263,6 +294,7 @@ class EQTransformer(WaveformModel):
         window[:, -6:] *= tap[::-1]
 
         return window
+
 
     @property
     def phases(self):

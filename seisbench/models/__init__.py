@@ -6,3 +6,4 @@ from .cred import CRED
 from .dpp import DeepPhasePick, DPPDetector, DPPPicker
 from .aepicker import BasicPhaseAE
 from .deepdenoiser import DeepDenoiser
+from .pickblue import  PickBlue
