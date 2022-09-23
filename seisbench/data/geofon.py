@@ -28,10 +28,10 @@ class GEOFON(BenchmarkDataset):
     def __init__(self, **kwargs):
         # TODO: Add citation
         citation = "GEOFON dataset"
-        super().__init__(citation=citation, repository_lookup=True, **kwargs)
+        super().__init__(citation=citation, **kwargs)
 
     def _download_dataset(
-        self, writer, basepath=None, time_before=60, time_after=60, **kwargs
+            self, writer, basepath=None, time_before=60, time_after=60, **kwargs
     ):
         if basepath is None:
             raise ValueError(
@@ -68,7 +68,7 @@ class GEOFON(BenchmarkDataset):
                 continue
 
             quakeml = quakeml[0]
-
+            print(str(quakeml))
             catalog = obspy.read_events(str(quakeml))
             if len(catalog) != 1:
                 seisbench.logger.warning(
@@ -119,8 +119,9 @@ class GEOFON(BenchmarkDataset):
             "source_latitude_uncertainty_deg": origin.latitude_errors["uncertainty"],
             "source_longitude_deg": origin.longitude,
             "source_longitude_uncertainty_deg": origin.longitude_errors["uncertainty"],
-            "source_depth_km": origin.depth / 1e3,
-            "source_depth_uncertainty_km": origin.depth_errors["uncertainty"] / 1e3,
+            "source_depth_km": origin.depth / 1e3 if origin.depth is not None else np.nan,
+            "source_depth_uncertainty_km": origin.depth_errors["uncertainty"] / 1e3
+                                            if origin.depth_errors["uncertainty"] is not None else np.nan,
         }
 
         if str(origin.time) < "2012-11-01":
@@ -187,17 +188,17 @@ class GEOFON(BenchmarkDataset):
         return trace_params
 
     def _write_picks(
-        self,
-        picks,
-        event_params,
-        event_path,
-        writer,
-        location_helper,
-        inventory,
-        time_before=60,
-        time_after=60,
-        component_order="ZNE",
-        suffix="",
+            self,
+            picks,
+            event_params,
+            event_path,
+            writer,
+            location_helper,
+            inventory,
+            time_before=60,
+            time_after=60,
+            component_order="ZNE",
+            suffix="",
     ):
         picks = sorted(picks, key=lambda x: x.time)
         # For stations where spacing between two picks is larger than (time_before + time_after), write multiple traces
@@ -216,7 +217,7 @@ class GEOFON(BenchmarkDataset):
                     suffix + "0",
                 )
                 self._write_picks(
-                    picks[i + 1 :],
+                    picks[i + 1:],
                     event_params,
                     event_path,
                     writer,
