@@ -98,7 +98,7 @@ class PhaseNet(WaveformModel):
         x = self.softmax(x)
 
         return x
-    
+
     def logits(self, x):
         x_in = self.activation(self.in_bn(self.inc(x)))
 
