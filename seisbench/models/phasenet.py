@@ -98,6 +98,23 @@ class PhaseNet(WaveformModel):
         x = self.softmax(x)
 
         return x
+    
+    def logits(self, x):
+        x_in = self.activation(self.in_bn(self.inc(x)))
+
+        x1 = self.activation(self.bnd1(self.conv1(x_in)))
+        x2 = self.activation(self.bnd2(self.conv2(x1)))
+        x3 = self.activation(self.bnd3(self.conv3(x2)))
+        x4 = self.activation(self.bnd4(self.conv4(x3)))
+
+        x = torch.cat([self.activation(self.bnu1(self.up1(x4))), x3], dim=1)
+        x = torch.cat([self.activation(self.bnu2(self.up2(x))), x2], dim=1)
+        x = torch.cat([self.activation(self.bnu3(self.up3(x))), x1], dim=1)
+        x = torch.cat([self.activation(self.bnu4(self.up4(x))), x_in], dim=1)
+
+        x = self.out(x)
+
+        return x
 
     def annotate_window_pre(self, window, argdict):
         # Add a demean and normalize step to the preprocessing
