@@ -103,6 +103,36 @@ class GPD(WaveformModel):
         else:
             return list(range(self.classes))
 
+    def forward(self, x):
+        # Max normalization
+        x = x / (
+            torch.max(
+                torch.max(torch.abs(x), dim=-1, keepdims=True)[0], dim=-2, keepdims=True
+            )[0]
+            + self.eps
+        )
+        x = self.pool(self.activation(self.bn1(self.conv1(x))))
+        x = self.pool(self.activation(self.bn2(self.conv2(x))))
+        x = self.pool(self.activation(self.bn3(self.conv3(x))))
+        x = self.pool(self.activation(self.bn4(self.conv4(x))))
+
+        if self.original_compatible:
+            # Permutation is required to be consistent with the following fully connected layer
+            x = x.permute(0, 2, 1)
+        x = torch.flatten(x, 1)
+
+        x = self.activation(self.bn5(self.fc1(x)))
+        x = self.activation(self.bn6(self.fc2(x)))
+        x = self.fc3(x)
+
+        return x
+
+    @property
+    def phases(self):
+        if self._phases is not None:
+            return self._phases
+        else:
+            return list(range(self.classes))
     def annotate_window_pre(self, window, argdict):
         # Add a demean step to the preprocessing
         return window - np.mean(window, axis=-1, keepdims=True)
