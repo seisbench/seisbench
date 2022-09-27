@@ -279,6 +279,12 @@ class EQTransformer(WaveformModel):
 
     def annotate_window_pre(self, window, argdict):
 
+        if self.highpass_axis is not None:
+            # Apply a highpass filter to the hydrophone component
+            filt_args = (1, self.highpass_freq_hz, "highpass", False)
+            sos = scipy.signal.butter(*filt_args, output="sos", fs=self.sampling_rate)
+            window[self.highpass_axis] = scipy.signal.sosfilt(sos, window[self.highpass_axis], axis=self.highpass_axis)
+
         # Add a demean and an amplitude normalization step to the preprocessing
         window = window - np.mean(window, axis=-1, keepdims=True)
         detrended = np.zeros(window.shape)
@@ -293,14 +299,6 @@ class EQTransformer(WaveformModel):
             window = amp_normed
         else:
             window = window / (np.std(window) + 1e-10)
-
-
-        if self.highpass_axis is not None:
-            # Apply a highpass filter to the hydrophone component
-            filt_args = (1, self.highpass_freq_hz, "highpass", False)
-            sos = scipy.signal.butter(*filt_args, output="sos", fs=self.sampling_rate)
-            window[self.highpass_axis] = scipy.signal.sosfilt(sos, window[self.highpass_axis], axis=self.highpass_axis)
-
 
         # Cosine taper (very short, i.e., only six samples on each side)
         tap = 0.5 * (1 + np.cos(np.linspace(np.pi, 2 * np.pi, 6)))

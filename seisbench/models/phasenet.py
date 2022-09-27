@@ -1,6 +1,7 @@
-import numpy as np
 import torch
+import numpy as np
 import torch.nn as nn
+import scipy.signal
 
 from .base import Conv1dSame, WaveformModel
 
@@ -14,7 +15,12 @@ class PhaseNet(WaveformModel):
     _annotate_args["*_threshold"] = ("Detection threshold for the provided phase", 0.3)
 
     def __init__(
-        self, in_channels=3, classes=3, phases="NPS", sampling_rate=100, **kwargs
+        self, in_channels=3, classes=3, phases="NPS", sampling_rate=100,
+        highpass_axis=None,
+        highpass_freq_hz=None,
+        norm_amp_per_comp=False,
+        norm_detrend=False,
+        **kwargs
     ):
         citation = (
             "Zhu, W., & Beroza, G. C. (2019). "
@@ -33,6 +39,12 @@ class PhaseNet(WaveformModel):
             sampling_rate=sampling_rate,
             **kwargs,
         )
+
+        # PickBlue options
+        self.highpass_axis = highpass_axis
+        self.highpass_freq_hz = highpass_freq_hz
+        self.norm_amp_per_comp = norm_amp_per_comp
+        self.norm_detrend = norm_detrend
 
         self.in_channels = in_channels
         self.classes = classes
@@ -101,11 +113,32 @@ class PhaseNet(WaveformModel):
             return self.softmax(x)
 
     def annotate_window_pre(self, window, argdict):
-        # Add a demean and normalize step to the preprocessing
+
+        if self.highpass_axis is not None:
+            # Apply a highpass filter to the hydrophone component
+            filt_args = (1, self.highpass_freq_hz, "highpass", False)
+            sos = scipy.signal.butter(*filt_args, output="sos", fs=self.sampling_rate)
+            window[self.highpass_axis] = scipy.signal.sosfilt(sos, window[self.highpass_axis], axis=self.highpass_axis)
+
+        # Add a demean and an amplitude normalization step to the preprocessing
         window = window - np.mean(window, axis=-1, keepdims=True)
-        std = np.std(window, axis=-1, keepdims=True)
-        std[std == 0] = 1  # Avoid NaN errors
-        window = window / std
+        detrended = np.zeros(window.shape)
+        if self.norm_detrend:
+            for i, a in enumerate(window):
+                detrended[i, :] = scipy.signal.detrend(a)
+            window = detrended
+        if self.norm_amp_per_comp:
+            amp_normed = np.zeros(window.shape)
+            for i, a in enumerate(window):
+                amp =  a / (np.max(np.abs(a)) + 1e-10)
+                amp[amp == 0] = 1  # Avoid NaN errors
+                amp_normed[i, :] = amp
+            window = amp_normed
+        else:
+            std = np.std(window, axis=-1, keepdims=True)
+            std[std == 0] = 1  # Avoid NaN errors
+            window = window / std
+
         return window
 
     def annotate_window_post(self, pred, piggyback=None, argdict=None):
