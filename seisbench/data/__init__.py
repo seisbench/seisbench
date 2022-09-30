@@ -13,5 +13,6 @@ from .instance import InstanceCounts, InstanceCountsCombined, InstanceGM, Instan
 from .iquique import Iquique
 from .lendb import LenDB
 from .neic import NEIC
+from .obs import OBS
 from .scedc import SCEDC, Meier2019JGR, Ross2018GPD, Ross2018JGRFM, Ross2018JGRPick
 from .stead import STEAD
