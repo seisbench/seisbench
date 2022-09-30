@@ -10,6 +10,8 @@ class BasicPhaseAE(WaveformModel):
     Simple AutoEncoder network architecture to pick P-/S-phases,
     from Woollam et al., (2019).
 
+    .. document_args:: seisbench.models BasicPhaseAE
+
     :param in_channels: Number of input channels, by default 3.
     :type in_channels: int
     :param in_samples: Number of input samples per channel, by default 600.
@@ -23,6 +25,9 @@ class BasicPhaseAE(WaveformModel):
     :type sampling_rate: float
     :param kwargs: Keyword arguments passed to the constructor of :py:class:`WaveformModel`.
     """
+
+    _annotate_args = WaveformModel._annotate_args.copy()
+    _annotate_args["*_threshold"] = ("Detection threshold for the provided phase", 0.3)
 
     def __init__(
         self, in_channels=3, classes=3, phases="NPS", sampling_rate=100, **kwargs
@@ -122,7 +127,9 @@ class BasicPhaseAE(WaveformModel):
 
             picks += self.picks_from_annotations(
                 annotations.select(channel=f"BasicPhaseAE_{phase}"),
-                argdict.get(f"{phase}_threshold", 0.3),
+                argdict.get(
+                    f"{phase}_threshold", self._annotate_args.get("*_threshold")[1]
+                ),
                 phase,
             )
 
