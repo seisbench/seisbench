@@ -472,7 +472,6 @@ class SeisBenchModel(nn.Module):
         model_weights = torch.load(f"{path_pt}")
 
         model_args = weights_metadata.get("model_args", {})
-
         model = cls(**model_args)
         model._weights_metadata = weights_metadata
         model._parse_metadata()
