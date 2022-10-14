@@ -4,6 +4,10 @@ import seisbench.util
 class OBS(BenchmarkDataset):
     """
     OBS Benchmark Dataset of local events
+
+    Default component order is 'Z12H'. You can easily omit one component like, e.g., hydrophone by explicitly passing
+    parameter 'component_order="Z12"'. This way, the dataset can be input to land station pickers that use only 3
+    components.
     """
 
     def __init__(self, **kwargs):
@@ -11,6 +15,8 @@ class OBS(BenchmarkDataset):
         citation = (
             "OBS dataset by Bornstein et al."
         )
+        if 'component_order' not in kwargs:
+            kwargs['component_order'] = 'Z12H'
 
         super().__init__(citation=citation, **kwargs)
 
