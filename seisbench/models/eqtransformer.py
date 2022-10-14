@@ -68,6 +68,7 @@ class EQTransformer(WaveformModel):
         highpass_freq_hz=None,
         norm_amp_per_comp=False,
         norm_detrend=False,
+        blinding=(500,500),
         **kwargs,
     ):
         citation = (
@@ -82,7 +83,7 @@ class EQTransformer(WaveformModel):
         super().__init__(
             citation=citation,
             output_type="array",
-            default_args={"overlap": 1800, "blinding": (0, 0)},
+            default_args={"overlap": 1800, "blinding": blinding},
             in_samples=in_samples,
             pred_sample=(0, in_samples),
             labels=["Detection"] + list(phases),
@@ -222,7 +223,7 @@ class EQTransformer(WaveformModel):
 
     def forward(self, x, logits=False):
         assert x.ndim == 3
-        assert x.shape[1:] == (self.in_channels, self.in_samples), f"{x.shape[1:]=}{self.in_channels=}{self.in_samples=}"
+        assert x.shape[1:] == (self.in_channels, self.in_samples)
 
         # Shared encoder part
         x = self.encoder(x)
