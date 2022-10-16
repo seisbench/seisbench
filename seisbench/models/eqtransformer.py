@@ -60,6 +60,7 @@ class EQTransformer(WaveformModel):
         highpass_freq_hz=None,
         norm_amp_per_comp=False,
         norm_detrend=False,
+        blinding=500,
         **kwargs,
     ):
         citation = (
@@ -74,7 +75,7 @@ class EQTransformer(WaveformModel):
         super().__init__(
             citation=citation,
             output_type="array",
-            default_args={"overlap": 1800, "blinding": (0, 0)},
+            default_args={"overlap": 1800, "blinding": (blinding, blinding)},
             in_samples=in_samples,
             pred_sample=(0, in_samples),
             labels=["Detection"] + list(phases),
@@ -214,7 +215,7 @@ class EQTransformer(WaveformModel):
 
     def forward(self, x):
         assert x.ndim == 3
-        assert x.shape[1:] == (self.in_channels, self.in_samples), f"{x.shape[1:]=}{self.in_channels=}{self.in_samples=}"
+        assert x.shape[1:] == (self.in_channels, self.in_samples)
 
         # Shared encoder part
         x = self.encoder(x)
@@ -269,7 +270,9 @@ class EQTransformer(WaveformModel):
             # Apply a highpass filter to the hydrophone component
             filt_args = (1, self.highpass_freq_hz, "highpass", False)
             sos = scipy.signal.butter(*filt_args, output="sos", fs=self.sampling_rate)
-            window[self.highpass_axis] = scipy.signal.sosfilt(sos, window[self.highpass_axis], axis=self.highpass_axis)
+            window[self.highpass_axis] = scipy.signal.sosfilt(
+                sos, window[self.highpass_axis], axis=self.highpass_axis
+            )
 
         # Add a demean and an amplitude normalization step to the preprocessing
         window = window - np.mean(window, axis=-1, keepdims=True)
@@ -292,7 +295,6 @@ class EQTransformer(WaveformModel):
         window[:, -6:] *= tap[::-1]
 
         return window
-
 
     @property
     def phases(self):
