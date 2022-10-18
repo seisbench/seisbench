@@ -109,7 +109,7 @@ class NEIC(BenchmarkDataset):
         tar_files = [x for x in path_original.iterdir() if x.name.endswith(".tar.gz")]
         for tar_path in tar_files:
             with tarfile.open(tar_path, "r:gz") as file:
-                file.extractall(path_unpacked)
+                seisbench.util.safe_extract_tar(file, path_unpacked)
 
         groups = [("P", "Train"), ("S", "Train"), ("P", "Test"), ("S", "Test")]
 
