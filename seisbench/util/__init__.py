@@ -4,6 +4,7 @@ from .file import (
     callback_if_uncached,
     ls_webdav,
     precheck_url,
+    safe_extract_tar,
 )
 from .annotations import Pick, Detection
 from .torch_helpers import worker_seeding
