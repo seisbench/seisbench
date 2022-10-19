@@ -1080,35 +1080,21 @@ def test_annotate_eqtransformer(parallelism):
 
 
 @pytest.mark.parametrize(
-    "parallelism",
-    [None, 1],
+    "parallelism,model",
+    [
+        (None, "phasenet"),
+        (1, "phasenet"),
+        (None, "eqtransformer"),
+        (1, "eqtransformer"),
+    ],
 )
-def test_annotate_pickblue_eqtransformer(parallelism):
+def test_annotate_pickblue(parallelism, model):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.PickBlue(
-        base="eqtransformer", sampling_rate=400
+        base=model, sampling_rate=400
     )  # Higher sampling rate ensures trace is long enough
 
     stream = obspy.read("./tests/examples/OBS*")
-    annotations = model.annotate(stream, parallelism=parallelism)
-    assert len(annotations) > 0
-    model.classify(
-        stream, parallelism=parallelism
-    )  # Ensures classify succeeds even though labels are unknown
-
-
-@pytest.mark.parametrize(
-    "parallelism",
-    [None, 1],
-)
-def test_annotate_pickblue_phasenet(parallelism):
-    # Tests that the annotate/classify functions run without crashes and annotate produces an output
-    model = seisbench.models.PickBlue(
-        base="phasenet", sampling_rate=400
-    )  # Higher sampling rate ensures trace is long enough
-
-    stream = obspy.read("./tests/examples/OBS*")
-
     annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
     model.classify(
