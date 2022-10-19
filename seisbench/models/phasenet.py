@@ -244,6 +244,78 @@ class PhaseNet(WaveformModel):
 
         return model_args
 
+    @classmethod
+    def from_pretrained_expand(
+            cls, name, version_str="latest", update=False, force=False, wait_for_file=False
+    ):
+        """
+        Load pretrained model with weights and copy the input channel weights that match the Z component to a new,
+        4th dimension that is used to process the hydrophone component of the input trace.
+
+        For further instructions, see :py:func:`~seisbench.models.base.SeisBenchModel.from_pretrained`. This method
+        differs from :py:func:`~seisbench.models.base.SeisBenchModel.from_pretrained` in that it does not call helper
+        functions to load the model weights. Instead it covers the same logic and, in addition, takes intermediate
+        steps to insert a new `in_channels` dimension to the loaded model and copy weights.
+
+        :param name: Model name prefix.
+        :type name: str
+        :param version_str: Version of the weights to load. Either a version string or "latest". The "latest" model is
+                            the model with the highest version number.
+        :type version_str: str
+        :param force: Force execution of download callback, defaults to False
+        :type force: bool, optional
+        :param update: If true, downloads potential new weights file and config from the remote repository.
+                       The old files are retained with their version suffix.
+        :type update: bool
+        :param wait_for_file: Whether to wait on partially downloaded files, defaults to False
+        :type wait_for_file: bool, optional
+        :return: Model instance
+        :rtype: SeisBenchModel
+        """
+        cls._cleanup_local_repository()
+        _cache_migration_v0_v3()
+
+        if version_str == "latest":
+            versions = cls.list_versions(name, remote=update)
+            # Always query remote versions if cache is empty
+            if len(versions) == 0:
+                versions = cls.list_versions(name, remote=True)
+
+            if len(versions) == 0:
+                raise ValueError(f"No version for weight '{name}' available.")
+            version_str = max(versions, key=version.parse)
+
+        weight_path, metadata_path = cls._pretrained_path(name, version_str)
+
+        cls._ensure_weight_files(
+            name, version_str, weight_path, metadata_path, force, wait_for_file
+        )
+
+        path_json, path_pt = cls._get_weights_file_paths(weight_path.with_name(name), version_str)
+        if metadata_path.is_file():
+            with open(metadata_path, "r") as f:
+                weights_metadata = json.load(f)
+        else:
+            weights_metadata = {}
+        model_args = weights_metadata.get("model_args", {})
+        model_args['in_channels'] = 4
+        model = cls(**model_args)
+
+        model._weights_metadata = weights_metadata
+        model._parse_metadata()
+
+        state_dict = torch.load(weight_path)
+        old_weight = state_dict['inc.weight']
+        state_dict['inc.weight'] = torch.zeros(
+            old_weight.shape[0],
+            old_weight.shape[1] + 1,
+            old_weight.shape[2]
+        ).type_as(old_weight)
+        state_dict['inc.weight'][:, :3, ...] = old_weight
+        state_dict['inc.weight'][:, 3, ...] = old_weight[:, 0, ...]
+        model.load_state_dict(state_dict)
+        return model
+
 
 class PhaseNetLight(PhaseNet):
     """
