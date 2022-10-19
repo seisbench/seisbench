@@ -1,6 +1,7 @@
 from seisbench.data.base import BenchmarkDataset
 import seisbench.util
 
+
 class OBS(BenchmarkDataset):
     """
     OBS Benchmark Dataset of local events
@@ -10,22 +11,61 @@ class OBS(BenchmarkDataset):
     components.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, component_order="Z12H", **kwargs):
+        citation = "OBS dataset by Bornstein et al."
 
-        citation = (
-            "OBS dataset by Bornstein et al."
+        self._write_chunk_file()
+
+        super().__init__(
+            citation=citation,
+            repository_lookup=True,
+            component_order=component_order,
+            **kwargs,
         )
-        if 'component_order' not in kwargs:
-            kwargs['component_order'] = 'Z12H'
 
-        super().__init__(citation=citation, **kwargs)
+    @staticmethod
+    def available_chunks(*args, **kwargs):
+        return [
+            "201805",
+            "201806",
+            "201807",
+            "201808",
+            "201809",
+            "201810",
+            "201811",
+            "201812",
+            "201901",
+            "201902",
+            "201903",
+            "201904",
+            "201905",
+            "201906",
+            "201907",
+            "201908",
+            "000000",
+        ]
 
-    def _download_dataset(self, writer, **kwargs):
+    def _write_chunk_file(self):
+        """
+        Write out the chunk file
+
+        :return: None
+        """
+        chunks_path = self.path / "chunks"
+
+        if chunks_path.is_file():
+            return
+
+        chunks = self.available_chunks()
+        chunks_str = "\n".join(chunks) + "\n"
+
+        self.path.mkdir(exist_ok=True, parents=True)
+        with open(chunks_path, "w") as f:
+            f.write(chunks_str)
+
+    def _download_dataset(self, writer, chunk, **kwargs):
         path = self.path
-        self.path.mkdir(parents=True, exist_ok=True)
-        seisbench.logger.warning(
-            f"Downloading files to SeisBench cache {path}. This might take a while."
-        )
+        path.mkdir(parents=True, exist_ok=True)
 
         files = {
             'chunks': "https://nextcloud.gfz-potsdam.de/s/m2HxZc73eY6B7q9",
@@ -64,8 +104,16 @@ class OBS(BenchmarkDataset):
             'waveforms201907.csv': "https://nextcloud.gfz-potsdam.de/s/x2Dtbo2pFSpJCoT",
             'waveforms201908.csv': "https://nextcloud.gfz-potsdam.de/s/6PSRaBEfAp3wTGg",
         }
-        for filename, link in files.items():
-            seisbench.util.download_http(
-                link+"/download", path / filename, desc=f"Downloading {filename}"
-            )
 
+        metadata_name = f"metadata{chunk}.csv"
+        waveform_name = f"waveforms{chunk}.hdf5"
+        seisbench.util.download_http(
+            files[metadata_name] + "/download",
+            path / writer.metadata_path,
+            desc=f"Downloading {metadata_name}",
+        )
+        seisbench.util.download_http(
+            files[waveform_name] + "/download",
+            path / writer.waveforms_path,
+            desc=f"Downloading {waveform_name}",
+        )
