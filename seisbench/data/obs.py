@@ -62,7 +62,7 @@ class OBS(BenchmarkDataset):
             'waveforms201905.csv': "https://nextcloud.gfz-potsdam.de/s/jKLGLngyHcBiTCz",
             'waveforms201906.csv': "https://nextcloud.gfz-potsdam.de/s/FEEK8wWtiPGWQaS",
             'waveforms201907.csv': "https://nextcloud.gfz-potsdam.de/s/x2Dtbo2pFSpJCoT",
-            'waveforms201908.csv': "https://nextcloud.gfz-potsdam.de/s/MYkPRQCkgWM2Y5S",
+            'waveforms201908.csv': "https://nextcloud.gfz-potsdam.de/s/6PSRaBEfAp3wTGg",
         }
         for filename, link in files.items():
             seisbench.util.download_http(
