@@ -52,14 +52,17 @@ class Ross2018JGRFM(BenchmarkDataset):
 
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, component_order="Z", **kwargs):
         citation = (
             "Ross, Z. E., Meier, M.‐A., & Hauksson, E. (2018). "
             "P wave arrival picking and first‐motion polarity determination with deep learning. "
             "Journal of Geophysical Research: Solid Earth, 123, 5120– 5129. https://doi.org/10.1029/2017JB015251"
         )
         super().__init__(
-            citation=citation, repository_lookup=False, component_order="Z", **kwargs
+            citation=citation,
+            repository_lookup=False,
+            component_order=component_order,
+            **kwargs,
         )
 
     def _download_dataset(self, writer, cleanup=False, blocksize=2**14):
@@ -205,14 +208,17 @@ class Ross2018JGRPick(BenchmarkDataset):
 
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, component_order="Z", **kwargs):
         citation = (
             "Ross, Z. E., Meier, M.‐A., & Hauksson, E. (2018). "
             "P wave arrival picking and first‐motion polarity determination with deep learning. "
             "Journal of Geophysical Research: Solid Earth, 123, 5120– 5129. https://doi.org/10.1029/2017JB015251"
         )
         super().__init__(
-            citation=citation, repository_lookup=False, component_order="Z", **kwargs
+            citation=citation,
+            repository_lookup=False,
+            component_order=component_order,
+            **kwargs,
         )
 
     def _download_dataset(self, writer, cleanup=False, blocksize=2**14):
