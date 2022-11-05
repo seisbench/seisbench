@@ -22,7 +22,7 @@ copyright = "2021, Jannes Münchmeyer, Jack Woollam"
 author = "Jannes Münchmeyer, Jack Woollam"
 
 # The full version, including alpha/beta/rc tags
-release = "0.2.6"
+release = "0.2.7"
 
 
 # -- General configuration ---------------------------------------------------
