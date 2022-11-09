@@ -1534,8 +1534,13 @@ class MultiWaveformDataset:
     @property
     def grouping(self):
         """
-        The grouping parameters for the dataset. These parameters are used to determine the
-        :py:attr:`~groups` and for the associated methods.
+        The grouping parameters for the dataset.
+        Grouping allows to access metadata and waveforms
+        jointly from a set of traces with a common metadata parameter.
+        This can for example be used to access all waveforms belong to one event
+        and building event based models.
+        Setting the grouping parameter defines the output of
+        :py:attr:`~groups` and the associated methods.
         `grouping` can be either a single string or a list of strings.
         Each string must be a column in the metadata.
         By default, the grouping is None.
