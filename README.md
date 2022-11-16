@@ -100,3 +100,7 @@ Reference publications for SeisBench:
 
 ---
 
+## Acknowledgement
+
+The initial version of SeisBench has been developed at [GFZ Potsdam](https://www.gfz-potsdam.de/) and [KIT](https://www.gpi.kit.edu/) with funding from [Helmholtz AI](https://www.helmholtz.ai/).
+The SeisBench repository is hosted by [HIFIS - Helmholtz Federated IT Services](https://www.hifis.net/).
