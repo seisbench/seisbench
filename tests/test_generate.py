@@ -1,3 +1,5 @@
+import warnings
+
 import seisbench.generate
 import seisbench.generate.labeling
 from seisbench.generate import (
@@ -26,6 +28,7 @@ import scipy.signal
 import logging
 import pytest
 from unittest.mock import patch, MagicMock
+from obspy import UTCDateTime
 
 
 def test_normalize():
@@ -122,6 +125,24 @@ def test_normalize():
         Normalize(amp_norm_type="Unknown normalization type")
 
 
+def test_normalize_unaligned_group():
+    # Negative axis definition
+    state_dict = {"X": ([np.random.rand(3, 1000), np.random.rand(3, 2000)], {})}
+
+    norm = Normalize(demean_axis=-1)
+    norm(state_dict)
+
+    assert np.allclose([np.mean(y) for y in state_dict["X"][0]], 0)
+
+    # Positive axis definition
+    state_dict = {"X": ([np.random.rand(3, 1000), np.random.rand(3, 2000)], {})}
+
+    norm = Normalize(demean_axis=1)
+    norm(state_dict)
+
+    assert np.allclose([np.mean(y) for y in state_dict["X"][0]], 0)
+
+
 def test_filter():
     np.random.seed(42)
     base_state_dict = {
@@ -167,6 +188,38 @@ def test_filter_sampling_rate_list():
     }
     with pytest.raises(NotImplementedError):
         filt(state_dict)
+
+
+def test_filter_unaligned_group():
+    filt = Filter(2, 1, "lowpass")
+
+    # Identical sampling rate
+    state_dict = {
+        "X": (
+            [np.random.rand(3, 1000), np.random.rand(3, 2000)],
+            {"trace_sampling_rate_hz": [20, 20]},
+        )
+    }
+    filt(state_dict)
+
+    # Just sanity checks
+    assert len(state_dict["X"][0]) == 2
+    assert state_dict["X"][0][0].shape == (3, 1000)
+    assert state_dict["X"][0][1].shape == (3, 2000)
+
+    # Mixed sampling rate
+    state_dict = {
+        "X": (
+            [np.random.rand(3, 1000), np.random.rand(3, 2000)],
+            {"trace_sampling_rate_hz": [20, 25]},
+        )
+    }
+    filt(state_dict)
+
+    # Just sanity checks
+    assert len(state_dict["X"][0]) == 2
+    assert state_dict["X"][0][0].shape == (3, 1000)
+    assert state_dict["X"][0][1].shape == (3, 2000)
 
 
 def test_fixed_window():
@@ -487,6 +540,34 @@ def test_window_around_sample():
     state_dict["X"][1]["trace_s_arrival_sample"] = np.nan
     window(state_dict)
     assert (state_dict["X"][0] == base_state_dict["X"][0][:, :200]).all()
+
+
+def test_window_around_sample_grouping():
+    base_state_dict = {
+        "X": (
+            10 * np.random.rand(2, 3, 1000),
+            {
+                "trace_p_arrival_sample": [300, 340],
+                "trace_s_arrival_sample": [np.nan, np.nan],
+            },
+        )
+    }
+
+    window = WindowAroundSample(
+        "trace_p_arrival_sample", samples_before=100, windowlen=200
+    )
+    state_dict = copy.deepcopy(base_state_dict)
+    window(state_dict)
+    assert np.allclose(state_dict["X"][0], base_state_dict["X"][0][:, :, 220:420])
+
+    # All entries NaN - no warnings are issued
+    window = WindowAroundSample(
+        "trace_s_arrival_sample", samples_before=100, windowlen=200
+    )
+    state_dict = copy.deepcopy(base_state_dict)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", "Mean of empty slice")
+        window(state_dict)
 
 
 def test_random_window():
@@ -1643,3 +1724,172 @@ def test_copy():
     # Check deepcopy ok
     state_dict["X"][0][0, 500] = 2
     assert state_dict["Xc"][0][0, 500] != 2
+
+
+def test_group_generator():
+    data = seisbench.data.DummyDataset()
+
+    with pytest.raises(ValueError):
+        seisbench.generate.GroupGenerator(data)
+
+    data.grouping = "source_magnitude"
+    generator = seisbench.generate.GroupGenerator(data)
+    assert len(generator) == len(data.groups)
+
+    # Check that sample can be retrieved
+    generator[0]
+
+
+def test_align_groups_on_key_validate_input():
+    x = np.ones((3, 1000))
+
+    align = seisbench.generate.AlignGroupsOnKey("pick", sample_axis=-1)
+    with pytest.raises(ValueError, match="can only be applied to group samples"):
+        align._validate_input(x, {})
+
+    # Small differences in sampling rate are ignored
+    align._validate_input([x, x], {"trace_sampling_rate_hz": [100, 99.999999]})
+    with pytest.raises(ValueError, match="mixed sampling rates"):
+        align._validate_input([x, x], {"trace_sampling_rate_hz": [100, 50]})
+
+    x2 = np.ones((3, 2, 1000))
+    with pytest.raises(ValueError, match="mixed number of input dimensions"):
+        align._validate_input([x, x2], {"trace_sampling_rate_hz": [100, 100]})
+
+    x2 = np.ones((3, 2000))
+    align._validate_input([x, x2], {"trace_sampling_rate_hz": [100, 100]})
+    with pytest.raises(ValueError, match="mixed shapes"):
+        x2 = np.ones((4, 1000))
+        align._validate_input([x, x2], {"trace_sampling_rate_hz": [100, 100]})
+
+    # Define sample axis with positive number
+    align.sample_axis = 1
+    x2 = np.ones((3, 2000))
+    align._validate_input([x, x2], {"trace_sampling_rate_hz": [100, 100]})
+
+
+def test_align_groups_on_key_place_trace_in_array():
+    x = [np.random.rand(3, 1000)]
+    output = np.zeros((2, 3, 2000))
+
+    align = seisbench.generate.AlignGroupsOnKey("pick", sample_axis=-1)
+
+    align._place_trace_in_array(output[0], x[0], 500, 1500)
+    assert np.allclose(output[0, :, 500:1500], x[0])
+
+
+def test_align_groups_on_key():
+    align = seisbench.generate.AlignGroupsOnKey(
+        "trace_p_arrival_sample", sample_axis=-1, fill_value=np.nan, key=("X", "X2")
+    )
+    x = [np.random.rand(4, 1000), np.random.rand(4, 798), np.random.rand(4, 1200)]
+    metadata = {
+        "trace_p_arrival_sample": [500, 100, np.nan],
+        "trace_s_arrival_sample": [510, 250, 700],
+        "trace_sampling_rate_hz": [100, 100, 100],
+    }
+
+    state_dict = {"X": (x, metadata)}
+
+    align(state_dict)
+    x2, metadata2 = state_dict["X2"]
+    assert x2.shape == (2, 4, 1198)
+    assert np.allclose(x2[0, :, 0:1000], x[0])
+    assert np.allclose(x2[1, :, 400:1198], x[1])
+    assert np.allclose(metadata2["trace_p_arrival_sample"], 500)
+    assert np.allclose(metadata2["trace_s_arrival_sample"], [510, 650])
+
+    align.completeness = 0.6
+    align(state_dict)
+    x2, metadata2 = state_dict["X2"]
+    assert x2.shape == (2, 4, 600)
+    assert np.allclose(x2[0, :, 0:600], x[0][:, 400:1000])
+    assert np.allclose(x2[1, :, 0:600], x[1][:, 0:600])
+    assert np.allclose(metadata2["trace_p_arrival_sample"], 100)
+    assert np.allclose(metadata2["trace_s_arrival_sample"], [110, 250])
+
+
+def test_utc_offsets():
+    offsets = seisbench.generate.UTCOffsets(key=("X", "X2"))
+    t0 = UTCDateTime()
+
+    x = [np.random.rand(4, 1000), np.random.rand(4, 798), np.random.rand(4, 1200)]
+    metadata = {
+        "trace_start_time": [str(t0), str(t0 + 1), str(t0 + 0.5)],
+        "trace_sampling_rate_hz": [100, 50, 10],
+    }
+
+    state_dict = {"X": (x, metadata)}
+    offsets(state_dict)
+    assert np.allclose(state_dict["X2"][1]["trace_offset_sample"], [0, 50, 5])
+
+    state_dict = {"X": (x[0], metadata)}
+    with pytest.raises(
+        ValueError, match="UTCOffsets can only be applied to group samples"
+    ):
+        offsets(state_dict)
+
+
+def test_select_or_pad_along_axis():
+    aug = seisbench.generate.SelectOrPadAlongAxis(
+        n=5, repeat=True, axis=0, key=("X", "X2")
+    )
+
+    x = np.random.rand(2, 3, 1000)
+    state_dict = {"X": (x, {"something": [0.0, 5.0]})}
+
+    aug(state_dict)
+
+    x2, metadata2 = state_dict["X2"]
+    assert x2.shape == (5, 3, 1000)
+    assert np.allclose(x2[:2], x)
+    assert np.allclose(x2[2:4], x)
+    assert np.allclose(x2[4], x[0])
+    assert np.allclose(metadata2["something"], [0, 5, 0, 5, 0])
+
+    aug = seisbench.generate.SelectOrPadAlongAxis(
+        n=5, repeat=False, axis=0, key=("X", "X2")
+    )
+
+    x = np.random.rand(2, 3, 1000)
+    state_dict = {"X": (x, {"something": [0.0, 5.0]})}
+
+    aug(state_dict)
+
+    x2, metadata2 = state_dict["X2"]
+    assert x2.shape == (5, 3, 1000)
+    assert np.allclose(x2[:2], x)
+    assert np.allclose(
+        metadata2["something"], [0, 5, np.nan, np.nan, np.nan], equal_nan=True
+    )
+
+    x = np.random.rand(10, 3, 1000)
+    state_dict = {"X": (x, {"something": np.arange(10)})}
+
+    with patch("numpy.random.shuffle") as shuffle:
+
+        def side_effect(ind):
+            ind[:5] = [2, 3, 4, 5, 6]
+
+        shuffle.side_effect = side_effect
+
+        aug(state_dict)
+
+    x2, metadata2 = state_dict["X2"]
+    assert x2.shape == (5, 3, 1000)
+    assert np.allclose(x2, x[2:7])
+    assert np.allclose(metadata2["something"], np.arange(2, 7))
+
+    # Along different axis
+    aug = seisbench.generate.SelectOrPadAlongAxis(
+        n=5, axis=1, adjust_metadata=False, key=("X", "X2")
+    )
+
+    x = np.random.rand(2, 3, 1000)
+    state_dict = {"X": (x, {})}
+
+    aug(state_dict)
+
+    x2, metadata2 = state_dict["X2"]
+    assert x2.shape == (2, 5, 1000)
+    assert np.allclose(x2[:, :3], x)

@@ -58,7 +58,7 @@ class GenericGenerator(Dataset):
         self._augmentations.extend(augmentations)
 
     def __str__(self):
-        summary = f"GenericGenerator with {len(self._augmentations)} augmentations:\n"
+        summary = f"{self.__class__} with {len(self._augmentations)} augmentations:\n"
         for i, aug in enumerate(self._augmentations):
             summary += f" {i + 1}.\t{str(aug)}\n"
         return summary
@@ -70,15 +70,22 @@ class GenericGenerator(Dataset):
         return self
 
     def __getitem__(self, idx):
-        state_dict = {"X": self.dataset.get_sample(idx)}
+        state_dict = self._populate_state_dict(idx)
 
         # Recursive application of augmentation processing methods
         for func in self._augmentations:
             func(state_dict)
 
+        state_dict = self._clean_state_dict(state_dict)
+
+        return state_dict
+
+    def _populate_state_dict(self, idx):
+        return {"X": self.dataset.get_sample(idx)}
+
+    def _clean_state_dict(self, state_dict):
         # Remove all metadata from the output
         state_dict = {k: v[0] for k, v in state_dict.items()}
-
         return state_dict
 
 
@@ -115,16 +122,10 @@ class SteeredGenerator(GenericGenerator):
         self.metadata = metadata
         super().__init__(dataset)
 
-    def __str__(self):
-        summary = f"SteeredGenerator with {len(self._augmentations)} augmentations:\n"
-        for i, aug in enumerate(self._augmentations):
-            summary += f" {i + 1}.\t{str(aug)}\n"
-        return summary
-
     def __len__(self):
         return len(self.metadata)
 
-    def __getitem__(self, idx):
+    def _populate_state_dict(self, idx):
         control = self.metadata.iloc[idx].to_dict()
         kwargs = {
             "trace_name": control["trace_name"],
@@ -132,15 +133,29 @@ class SteeredGenerator(GenericGenerator):
             "dataset": control.get("trace_dataset", None),
         }
         data_idx = self.dataset.get_idx_from_trace_name(**kwargs)
-        state_dict = {"X": self.dataset.get_sample(data_idx), "_control_": control}
 
-        # Recursive application of augmentation processing methods
-        for func in self._augmentations:
-            func(state_dict)
+        return {"X": self.dataset.get_sample(data_idx), "_control_": control}
 
+    def _clean_state_dict(self, state_dict):
         # Remove control information
         del state_dict["_control_"]
-        # Remove all metadata from the output
-        state_dict = {k: v[0] for k, v in state_dict.items()}
+        super()._clean_state_dict(state_dict)
 
-        return state_dict
+
+class GroupGenerator(GenericGenerator):
+    """
+    This data generator follows the same principle as the :py:class:`GenericGenerator` but instead of single traces
+    always loads groups into the state dict. The `grouping` parameter of the underlying dataset needs to be set.
+    """
+
+    def __init__(self, dataset):
+        if dataset.grouping is None:
+            raise ValueError("Grouping needs to be set in dataset.")
+
+        super().__init__(dataset)
+
+    def __len__(self):
+        return len(self.dataset.groups)
+
+    def _populate_state_dict(self, idx):
+        return {"X": self.dataset.get_group_samples(idx)}

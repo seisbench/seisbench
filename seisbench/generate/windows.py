@@ -1,7 +1,10 @@
+import warnings
+
 import seisbench
 
 import copy
 import numpy as np
+from obspy import UTCDateTime
 
 
 class FixedWindow:
@@ -249,11 +252,13 @@ class WindowAroundSample(FixedWindow):
 
     def __call__(self, state_dict, windowlen=None):
         _, metadata = state_dict[self.key[0]]
-        cand = [
-            metadata[key]
-            for key in self.metadata_keys
-            if key in metadata and not np.isnan(metadata[key])
-        ]
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "Mean of empty slice")
+            cand = [
+                np.nanmean(metadata[key])
+                for key in self.metadata_keys
+                if key in metadata and not np.isnan(np.nanmean(metadata[key]))
+            ]
 
         if len(cand) == 0:
             cand = [self.samples_before]
@@ -453,3 +458,340 @@ class SteeredWindow(FixedWindow):
 
     def __str__(self):
         return f"SteeredWindow"
+
+
+class AlignGroupsOnKey:
+    """
+    Aligns all waveforms according to a metadata key.
+    After alignment, the metadata key will be at the same sample in all examples.
+    All traces with a nan-value in the alignment key well be dropped.
+
+    To align traces according to wall time, you have to write the sample offset into the metadata first.
+    This can be done using the :py:class:`~UTCOffsets` augmentation.
+
+    .. warning::
+
+        Assumes identical sampling rate and shape (except number of samples) for all traces.
+
+    :param alignment_key: Metadata key to align traces on.
+    :type alignment_key: str
+    :param completeness: Required fraction of traces (between 0 and 1) that need to exist to keep the sample.
+                         Samples at the start and end of the trace will be truncated if not enough input traces have
+                         waveforms available for the samples. This function can be used to avoid sparse output.
+    :type completeness: float
+    :param fill_value: Value used in the output for samples without input data.
+    :type fill_value: float
+    :param sample_axis: sample axis in the input
+    :type sample_axis: int
+    :param key: The keys for reading from and writing to the state dict.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
+    """
+
+    def __init__(
+        self, alignment_key, completeness=0.0, fill_value=0, sample_axis=-1, key="X"
+    ):
+        self.alignment_key = alignment_key
+        self.completeness = completeness
+        self.fill_value = fill_value
+        self.sample_axis = sample_axis
+        if isinstance(key, str):
+            self.key = (key, key)
+        else:
+            self.key = key
+
+    def __call__(self, state_dict):
+        x, metadata = state_dict[self.key[0]]
+
+        if self.key[0] != self.key[1]:
+            # Ensure metadata is not modified inplace unless input and output key are anyhow identical
+            metadata = copy.deepcopy(metadata)
+
+        self._validate_input(x, metadata)
+        metadata, output = self._align_traces(metadata, x)
+        output = self._truncate_incomplete(metadata, output)
+        output[np.isnan(output)] = self.fill_value
+
+        state_dict[self.key[1]] = output, metadata
+
+    def _truncate_incomplete(self, metadata, output):
+        axis = self.sample_axis
+        if axis < 0:
+            axis += output.ndim  # Sample axis automatically accounted for
+        else:
+            axis += 1  # Account for sample axis
+
+        mean_axis = list(range(0, output.ndim))
+        del mean_axis[axis]
+
+        completeness_over_time = np.mean(
+            ~np.isnan(output), axis=tuple(mean_axis), keepdims=False
+        )
+        mask = completeness_over_time >= self.completeness
+
+        ind = np.where(mask)[0]
+        for _ in range(axis):
+            ind = np.expand_dims(ind, 0)
+        for _ in range(axis + 1, output.ndim):
+            ind = np.expand_dims(ind, -1)
+
+        output = np.take_along_axis(output, ind, axis)
+
+        first_complete_sample = np.argmax(completeness_over_time > self.completeness)
+        for i in range(output.shape[0]):
+            self._shift_metadata_keys(i, metadata, -first_complete_sample)
+
+        return output
+
+    def _align_traces(self, metadata, x):
+        offset = np.array(metadata[self.alignment_key])
+        mask = ~np.isnan(offset)
+        offset = offset.astype(int)
+
+        samples = np.array([elem.shape[self.sample_axis] for elem in x])
+        samples_before = np.max(offset[mask])
+        samples_after = np.max((samples - offset)[mask])
+
+        output_shape = list(x[0].shape)
+        output_shape[self.sample_axis] = samples_before + samples_after
+        output_shape = tuple([np.sum(mask)] + output_shape)
+        output = np.ones_like(x[0], shape=output_shape) * np.nan
+
+        for out_idx, in_idx in enumerate(np.where(mask)[0]):
+            p0 = samples_before - offset[in_idx]
+            p1 = p0 + samples[in_idx]
+
+            self._place_trace_in_array(output[out_idx], x[in_idx], p0, p1)
+            self._shift_metadata_keys(in_idx, metadata, p0)
+
+        metadata = {key: np.array(val)[mask] for key, val in metadata.items()}
+
+        return metadata, output
+
+    @staticmethod
+    def _shift_metadata_keys(in_idx, metadata, p0):
+        for key in metadata.keys():
+            if key.endswith("_sample"):
+                try:
+                    metadata[key][in_idx] += p0
+                except TypeError:
+                    seisbench.logger.info(
+                        f"Failed to do window adjustment for column {key} "
+                        f"due to type error. "
+                    )
+
+    def _place_trace_in_array(self, output, x, p0, p1):
+        """
+        Places data x in the output array at positions p0 to p1 along self.sample_axis
+        """
+        axis = self.sample_axis
+        if axis < 0:
+            axis += x.ndim
+        ind = np.arange(p0, p1, dtype=int)
+        for _ in range(axis):
+            ind = np.expand_dims(ind, 0)
+        for _ in range(axis + 1, x.ndim):
+            ind = np.expand_dims(ind, -1)
+        np.put_along_axis(output, ind, x, axis)
+
+    def _validate_input(self, x, metadata):
+        if not isinstance(x, list):
+            raise ValueError("AlignGroupsOnKey can only be applied to group samples.")
+
+        sampling_rates = metadata["trace_sampling_rate_hz"]
+        if not np.allclose(sampling_rates, sampling_rates[0]):
+            raise ValueError(
+                "Found mixed sampling rates in AlignGroupsOnKey. "
+                "AlignGroupsOnKey requires consistent sampling rates."
+            )
+
+        ndims = [elem.ndim for elem in x]
+        if any(ndim != ndims[0] for ndim in ndims):
+            raise ValueError(
+                "Found mixed number of input dimensions in AlignGroupsOnKey. "
+                "The number of dimensions must agree for inputs."
+            )
+
+        shapes = [elem.shape for elem in x]
+        for i in range(ndims[0]):
+            if i == self.sample_axis or i == ndims[0] + self.sample_axis:
+                continue
+            else:
+                if any(shape[i] != shapes[0][i] for shape in shapes):
+                    raise ValueError(
+                        "Found mixed shapes in inputs to AlignGroupsOnKey. "
+                        "Shapes (except sample axis) must agree between all inputs."
+                    )
+
+    def __str__(self):
+        return (
+            f"AlignGroupsOnKey (alignment_key={self.alignment_key}, "
+            f"completeness={self.completeness}, "
+            f"fill_value={self.fill_value}, "
+            f"sample_axis={self.sample_axis}, "
+            f"key={self.key})"
+        )
+
+
+class UTCOffsets:
+    """
+    Write the offset in samples between the different traces into the metadata.
+    The offset of the trace with the earliest start time is set to 0.
+    In combination with :py:class:`~AlignGroupsOnKey`, this can be used to align traces based on wall time.
+
+    :param time_key: Metadata key to read the start times from.
+    :type time_key: str
+    :param offset_key: Metadata key to write offset samples to.
+    :type offset_key: str
+    :param key: The keys for reading from and writing to the state dict.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
+    """
+
+    def __init__(
+        self, time_key="trace_start_time", offset_key="trace_offset_sample", key="X"
+    ):
+        self.time_key = time_key
+        self.offset_key = offset_key
+        if isinstance(key, str):
+            self.key = (key, key)
+        else:
+            self.key = key
+
+    def __call__(self, state_dict):
+        x, metadata = state_dict[self.key[0]]
+
+        if not isinstance(x, list):
+            raise ValueError("UTCOffsets can only be applied to group samples.")
+
+        if self.key[0] != self.key[1]:
+            # Ensure metadata is not modified inplace unless input and output key are anyhow identical
+            metadata = copy.deepcopy(metadata)
+
+        times = [UTCDateTime(t) for t in metadata[self.time_key]]
+        min_time = min(times)
+
+        offsets = [
+            (t - min_time) * sampling_rate
+            for t, sampling_rate in zip(times, metadata["trace_sampling_rate_hz"])
+        ]
+
+        metadata[self.offset_key] = np.array(offsets)
+
+        state_dict[self.key[1]] = x, metadata
+
+    def __str__(self):
+        return f"UTCOffsets (time_key={self.time_key}, offset_key={self.offset_key}, key={self.key})"
+
+
+class SelectOrPadAlongAxis:
+    """
+    Changes the length of an axis from `m` to `n` by:
+    - padding/repeating data if `m` < `n`
+    - random selection if `m` > `n`
+
+    In addition, can adjust the length of the metadata arrays accordingly. This augmentation is primarily intended to
+    apply to grouped data. The input data must be an array.
+
+    Data is padded with zeros, metadata with values depending on the dtype (NaN for float, 0 for int, empty string for str).
+
+    :param n: Length of output
+    :type n: int
+    :param adjust_metadata: If true, adjusts metadata. Otherwise, leaves metadata unaltered.
+    :type adjust_metadata: None
+    :param repeat: If true, repeat data instead of padding
+    :type repeat: bool
+    :param axis: Axis along which reshaping should be applied
+    :type axis: int
+    :param key: The keys for reading from and writing to the state dict.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
+    """
+
+    def __init__(self, n, adjust_metadata=True, repeat=True, axis=0, key="X"):
+        self.n = n
+        self.adjust_metadata = adjust_metadata
+        self.repeat = repeat
+        self.axis = axis
+
+        if isinstance(key, str):
+            self.key = (key, key)
+        else:
+            self.key = key
+
+    def __call__(self, state_dict):
+        x, metadata = state_dict[self.key[0]]
+
+        if self.key[0] != self.key[1]:
+            # Ensure metadata is not modified inplace unless input and output key are anyhow identical
+            metadata = copy.deepcopy(metadata)
+
+        output_shape = list(x.shape)
+        output_shape[self.axis] = self.n
+
+        if x.shape[self.axis] <= self.n:
+            idx = np.arange(x.shape[self.axis])
+            if self.repeat:
+                idx = np.tile(idx, self.n)[: self.n]
+        else:
+            idx = np.arange(x.shape[self.axis])
+            np.random.shuffle(idx)
+            idx = np.sort(idx[: self.n])
+
+        output = np.zeros_like(x, shape=output_shape)
+
+        for target_idx, source_idx in enumerate(idx):
+            self._place_trace_in_array(output, x, source_idx, target_idx)
+
+        if self.adjust_metadata:
+            for key in metadata.keys():
+                new_value = np.asarray(metadata[key])[idx]
+                new_value = np.pad(
+                    new_value,
+                    (0, self.n - len(idx)),
+                    mode="constant",
+                    constant_values=self._get_pad_value(new_value),
+                )
+                metadata[key] = new_value
+
+        state_dict[self.key[1]] = output, metadata
+
+    @staticmethod
+    def _get_pad_value(x):
+        if x.dtype.kind == "f":
+            return np.nan
+        elif x.dtype.kind in ["i", "u"]:
+            return 0
+        elif x.dtype.kind == "b":
+            return False
+        elif x.dtype.kind == "S":
+            return ""
+        else:
+            return None
+
+    def _place_trace_in_array(self, output, x, source_idx, target_idx):
+        """
+        Places data x in the output array at positions p0 to p1 along self.sample_axis
+        """
+        axis = self.axis
+        if axis < 0:
+            axis += x.ndim
+
+        data = np.take(x, source_idx, axis)
+        data = np.expand_dims(data, axis)
+
+        ind = np.array([target_idx])
+        for _ in range(axis):
+            ind = np.expand_dims(ind, 0)
+        for _ in range(axis + 1, x.ndim):
+            ind = np.expand_dims(ind, -1)
+        np.put_along_axis(output, ind, data, axis)
+
+    def __str__(self):
+        return f"SelectOrPadAlongAxis (n={self.n}, key={self.key})"
