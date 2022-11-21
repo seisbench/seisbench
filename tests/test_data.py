@@ -1427,3 +1427,13 @@ def test_grouping_filter(grouping_test_data):
     mask = data.metadata["event"] == "b"
     data.filter(mask, inplace=True)
     assert len(data.groups) == 1
+
+
+def test_chunk_validation():
+    # Requesting a non-existent chunk should raise a ValueError
+    seisbench.data.ChunkedDummyDataset(chunks=["0"])  # Passes
+
+    with pytest.raises(ValueError) as e:
+        seisbench.data.ChunkedDummyDataset(chunks=["not_a_chunk"])  # Fails
+
+    assert "not_a_chunk" in str(e)
