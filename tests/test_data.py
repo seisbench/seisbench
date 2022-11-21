@@ -1349,3 +1349,13 @@ def test_component_mapping_fix_for_implicit_int_casts(tmp_path: Path):
             writer.add_trace(trace, np.zeros((3, 100)))
         with pytest.raises(ValueError):
             seisbench.data.WaveformDataset(data_path, component_order="Z12")
+
+
+def test_chunk_validation():
+    # Requesting a non-existent chunk should raise a ValueError
+    seisbench.data.ChunkedDummyDataset(chunks=["0"])  # Passes
+
+    with pytest.raises(ValueError) as e:
+        seisbench.data.ChunkedDummyDataset(chunks=["not_a_chunk"])  # Fails
+
+    assert "not_a_chunk" in str(e)

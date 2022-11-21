@@ -101,6 +101,11 @@ class WaveformDataset:
         if chunks is not None:
             self._chunks = sorted(chunks)
 
+            available_chunks = self.available_chunks(path)
+            for chunk in self._chunks:
+                if chunk not in available_chunks:
+                    raise ValueError(f"Dataset does not contain the chunk '{chunk}'.")
+
         self._missing_components = None
 
         self._trace_identification_warning_issued = (
