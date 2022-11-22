@@ -1937,6 +1937,52 @@ def test_verify_argdict(caplog):
     assert "Unknown argument" in caplog.text
 
 
+def test_annotate_filter():
+    model = seisbench.models.GPD()
+
+    # Nothing happens
+    stream_org = obspy.read()
+    stream = stream_org.copy()
+    model.filter_args = None
+    model.filter_kwargs = None
+    model._filter_stream(stream)
+
+    for trace_a, trace_b in zip(stream_org, stream):
+        assert np.allclose(trace_a.data, trace_b.data)
+
+    # Filter all
+    stream_org = obspy.read()
+    stream = stream_org.copy()
+    model.filter_args = ["highpass"]
+    model.filter_kwargs = {"freq": 1}
+    model._filter_stream(stream)
+
+    for trace_a, trace_b in zip(stream_org, stream):
+        assert not np.allclose(trace_a.data, trace_b.data)
+
+    # Filter Z only
+    stream_org = obspy.read()
+    stream = stream_org.copy()
+    model.filter_args = {"??Z": ["highpass"]}
+    model.filter_kwargs = {"??Z": {"freq": 1}}
+    model._filter_stream(stream)
+
+    for trace_a, trace_b in zip(stream_org, stream):
+        if trace_a.stats.channel[-1] == "Z":
+            assert not np.allclose(trace_a.data, trace_b.data)
+        else:
+            assert np.allclose(trace_a.data, trace_b.data)
+
+    # Invalid filter
+    model.filter_args = {"??Z": ["highpass"]}
+    model.filter_kwargs = {"??Y": {"freq": 1}}
+
+    with pytest.raises(ValueError) as e:
+        model._filter_stream(stream)
+
+    assert "Invalid filter definition" in str(e)
+
+
 def test_phasenet_forward():
     model = seisbench.models.PhaseNet()
     x = torch.rand((2, 3, 3001))

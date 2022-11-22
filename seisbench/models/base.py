@@ -1892,23 +1892,47 @@ class WaveformModel(SeisBenchModel, ABC):
         :param argdict: Dictionary of arguments
         :return: Preprocessed stream
         """
-        # TODO: This should check for gaps and ensure that these are zeroed at the end of processing
-        if self.filter_args is not None or self.filter_kwargs is not None:
-            if self.filter_args is None:
-                filter_args = ()
-            else:
-                filter_args = self.filter_args
-
-            if self.filter_kwargs is None:
-                filter_kwargs = {}
-            else:
-                filter_kwargs = self.filter_kwargs
-
-            stream.filter(*filter_args, **filter_kwargs)
+        self._filter_stream(stream)
 
         if self.sampling_rate is not None:
             self.resample(stream, self.sampling_rate)
         return stream
+
+    def _filter_stream(self, stream):
+        """
+        Filters stream according to filter_args and filter_kwargs.
+        By default, these are directly passed to `obspy.stream.filter(*filter_arg, **filter_kwargs)`.
+        In addition, separate filtering for different channels can be defined.
+        This is done by making `filter_args` a dict from channel regex to the actual filter arguments.
+        In this case, `filter_kwargs` is expected to be a dict with the same keys.
+        For example, `filter_args = {"??Z": ("highpass",)}` and `filter_kwargs = {"??Z": {"freq": 1}}`
+        would high-pass filter only the vertical components at 1 Hz.
+        """
+        # TODO: This should check for gaps and ensure that these are zeroed at the end of processing
+        if self.filter_args is not None or self.filter_kwargs is not None:
+            if isinstance(self.filter_args, dict):
+                for key, filter_args in self.filter_args.items():
+                    print(filter_args)
+                    substream = stream.select(channel=key)
+                    if key not in self.filter_kwargs:
+                        raise ValueError(
+                            f"Invalid filter definition. Key '{key}' in args but not in kwargs."
+                        )
+                    self._filter_stream_single(
+                        filter_args, self.filter_kwargs[key], substream
+                    )
+
+            else:
+                self._filter_stream_single(self.filter_args, self.filter_kwargs, stream)
+
+    @staticmethod
+    def _filter_stream_single(filter_args, filter_kwargs, stream):
+        if filter_args is None:
+            filter_args = ()
+        if filter_kwargs is None:
+            filter_kwargs = {}
+
+        stream.filter(*filter_args, **filter_kwargs)
 
     def annotate_stream_validate(self, stream, argdict):
         """

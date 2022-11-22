@@ -64,8 +64,6 @@ class EQTransformer(WaveformModel):
         drop_rate=0.1,
         original_compatible=False,
         sampling_rate=100,
-        highpass_axis=None,
-        highpass_freq_hz=None,
         norm_amp_per_comp=False,
         norm_detrend=False,
         blinding=500,
@@ -97,8 +95,6 @@ class EQTransformer(WaveformModel):
         self.drop_rate = drop_rate
 
         # PickBlue options
-        self.highpass_axis = highpass_axis
-        self.highpass_freq_hz = highpass_freq_hz
         self.norm_amp_per_comp = norm_amp_per_comp
         self.norm_detrend = norm_detrend
 
@@ -279,15 +275,6 @@ class EQTransformer(WaveformModel):
         return pred
 
     def annotate_window_pre(self, window, argdict):
-
-        if self.highpass_axis is not None:
-            # Apply a highpass filter to the hydrophone component
-            filt_args = (1, self.highpass_freq_hz, "highpass", False)
-            sos = scipy.signal.butter(*filt_args, output="sos", fs=self.sampling_rate)
-            window[self.highpass_axis] = scipy.signal.sosfilt(
-                sos, window[self.highpass_axis], axis=self.highpass_axis
-            )
-
         # Add a demean and an amplitude normalization step to the preprocessing
         window = window - np.mean(window, axis=-1, keepdims=True)
         detrended = np.zeros(window.shape)
