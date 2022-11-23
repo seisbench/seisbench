@@ -1923,3 +1923,76 @@ def test_phasenet_forward():
     with torch.no_grad():
         pred = model(x, logits=True).numpy()
     assert not np.allclose(np.sum(pred, axis=1), 1)
+
+
+def test_basicphaseae_forward():
+    model = seisbench.models.BasicPhaseAE()
+    x = torch.rand((2, 3, 600))
+
+    with torch.no_grad():
+        pred = model(x).numpy()
+    assert np.allclose(np.sum(pred, axis=1), 1)
+
+    with torch.no_grad():
+        pred = model(x, logits=True).numpy()
+    assert not np.allclose(np.sum(pred, axis=1), 1)
+
+
+def test_gpd_forward():
+    model = seisbench.models.GPD()
+    x = torch.rand((2, 3, 400))
+
+    with torch.no_grad():
+        pred = model(x).numpy()
+    assert np.allclose(np.sum(pred, axis=1), 1)
+
+    with torch.no_grad():
+        pred = model(x, logits=True).numpy()
+    assert not np.allclose(np.sum(pred, axis=1), 1)
+
+
+def test_dpp_forward():
+    model = seisbench.models.DPPDetector()
+    x = torch.rand((2, 3, 500))
+
+    with torch.no_grad():
+        pred = model(x).numpy()
+    assert np.allclose(np.sum(pred, axis=1), 1)
+
+    with torch.no_grad():
+        pred = model(x, logits=True).numpy()
+    assert not np.allclose(np.sum(pred, axis=1), 1)
+
+
+def test_eqtransformer_forward():
+    model = seisbench.models.EQTransformer()
+    x = torch.rand((2, 3, 6000))
+
+    with torch.no_grad():
+        pred = [p.numpy() for p in model(x)]
+
+    for p in pred:
+        assert np.all(np.logical_and(0 <= p, p <= 1))
+
+    with torch.no_grad():
+        pred_logit = [p.numpy() for p in model(x, logits=True)]
+
+    for p, pl in zip(pred, pred_logit):
+        assert not np.allclose(p, pl)
+
+
+def test_cred_forward():
+    model = seisbench.models.CRED()
+    x = np.random.rand(3, 3000)
+    x = np.expand_dims(model.waveforms_to_spectrogram(x), 0).astype(np.float32)
+    x = torch.from_numpy(x)
+
+    with torch.no_grad():
+        pred = model(x).numpy()
+
+    assert np.all(np.logical_and(0 <= pred, pred <= 1))
+
+    with torch.no_grad():
+        pred_logit = model(x, logits=True).numpy()
+
+    assert not np.allclose(pred, pred_logit)

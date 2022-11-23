@@ -124,7 +124,7 @@ class DPPDetector(WaveformModel):
         self.activation2 = torch.sigmoid
         self.activation3 = torch.nn.Softmax(dim=1)
 
-    def forward(self, x):
+    def forward(self, x, logits=False):
 
         x = self.bn1(self.activation1((self.conv1(x))))
         x = self.pool(x)
@@ -151,9 +151,11 @@ class DPPDetector(WaveformModel):
         x = self.bn6(self.activation1(self.fc1(x)))
         x = self.dropout6(x)
         x = self.fc2(x)
-        x = self.activation3(x)
 
-        return x
+        if logits:
+            return x
+        else:
+            return self.activation3(x)
 
 
 class DPPPicker(WaveformModel):
