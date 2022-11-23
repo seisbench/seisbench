@@ -69,7 +69,7 @@ class GPD(WaveformModel):
 
         self.pool = nn.MaxPool1d(2, 2)
 
-    def forward(self, x):
+    def forward(self, x, logits=False):
         # Max normalization
         x = x / (
             torch.max(
@@ -91,10 +91,13 @@ class GPD(WaveformModel):
         x = self.activation(self.bn6(self.fc2(x)))
         x = self.fc3(x)
 
-        if self.classes == 1:
-            return torch.sigmoid(x)
+        if logits:
+            return x
         else:
-            return torch.softmax(x, -1)
+            if self.classes == 1:
+                return torch.sigmoid(x)
+            else:
+                return torch.softmax(x, -1)
 
     @property
     def phases(self):

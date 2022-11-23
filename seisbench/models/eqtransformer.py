@@ -201,7 +201,7 @@ class EQTransformer(WaveformModel):
         self.pick_decoders = nn.ModuleList(self.pick_decoders)
         self.pick_convs = nn.ModuleList(self.pick_convs)
 
-    def forward(self, x):
+    def forward(self, x, logits=False):
         assert x.ndim == 3
         assert x.shape[1:] == (self.in_channels, self.in_samples)
 
@@ -214,7 +214,10 @@ class EQTransformer(WaveformModel):
 
         # Detection part
         detection = self.decoder_d(x)
-        detection = torch.sigmoid(self.conv_d(detection))
+        if logits:
+            detection = self.conv_d(detection)
+        else:
+            detection = torch.sigmoid(self.conv_d(detection))
         detection = torch.squeeze(detection, dim=1)  # Remove channel dimension
 
         outputs = [detection]
@@ -233,7 +236,10 @@ class EQTransformer(WaveformModel):
             )  # From sequence, batch, channels to batch, channels, sequence
             px, _ = attention(px)
             px = decoder(px)
-            pred = torch.sigmoid(conv(px))
+            if logits:
+                pred = conv(px)
+            else:
+                pred = torch.sigmoid(conv(px))
             pred = torch.squeeze(pred, dim=1)  # Remove channel dimension
 
             outputs.append(pred)

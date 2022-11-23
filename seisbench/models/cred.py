@@ -58,7 +58,7 @@ class CRED(WaveformModel):
         self.norm2 = nn.BatchNorm1d(64, eps=1e-3)
         self.fc2 = nn.Linear(64, 1)
 
-    def forward(self, x):
+    def forward(self, x, logits=False):
         x = torch.relu(self.conv1(x))
         x = self.cnn_block1(x) + x
 
@@ -97,10 +97,16 @@ class CRED(WaveformModel):
         shape_save = x.shape
         x = x.reshape((-1,) + x.shape[2:])
         x = self.dropout(x)
-        x = torch.sigmoid(self.fc2(x))
-        x = x.reshape(shape_save[:2] + (1,))
 
-        return x
+        if logits:
+            x = self.fc2(x)
+            x = x.reshape(shape_save[:2] + (1,))
+            return x
+
+        else:
+            x = torch.sigmoid(self.fc2(x))
+            x = x.reshape(shape_save[:2] + (1,))
+            return x
 
     @staticmethod
     def waveforms_to_spectrogram(wv):
