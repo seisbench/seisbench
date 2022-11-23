@@ -81,7 +81,7 @@ class PhaseNet(WaveformModel):
         self.out = nn.ConvTranspose1d(16, self.classes, 1)
         self.softmax = torch.nn.Softmax(dim=1)
 
-    def forward(self, x):
+    def forward(self, x, logits=False):
         x_in = self.activation(self.in_bn(self.inc(x)))
 
         x1 = self.activation(self.bnd1(self.conv1(x_in)))
@@ -95,9 +95,10 @@ class PhaseNet(WaveformModel):
         x = torch.cat([self.activation(self.bnu4(self.up4(x))), x_in], dim=1)
 
         x = self.out(x)
-        x = self.softmax(x)
-
-        return x
+        if logits:
+            return x
+        else:
+            return self.softmax(x)
 
     def annotate_window_pre(self, window, argdict):
         # Add a demean and normalize step to the preprocessing
