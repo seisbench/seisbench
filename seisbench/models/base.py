@@ -602,6 +602,13 @@ class SeisBenchModel(nn.Module):
         self._weights_version = self._weights_metadata.get("version", "1")
 
         # Check version requirement
+        self._check_version_requirement()
+
+        # Parse default args - Config default_args supersede constructor args
+        default_args = self._weights_metadata.get("default_args", {})
+        self.default_args.update(default_args)
+
+    def _check_version_requirement(self):
         seisbench_requirement = self._weights_metadata.get(
             "seisbench_requirement", None
         )
@@ -614,10 +621,6 @@ class SeisBenchModel(nn.Module):
                     f"Weights require seisbench version at least {seisbench_requirement}, "
                     f"but the installed version is {seisbench.__version__}."
                 )
-
-        # Parse default args - Config default_args supersede constructor args
-        default_args = self._weights_metadata.get("default_args", {})
-        self.default_args.update(default_args)
 
     @abstractmethod
     def get_model_args(self):
@@ -1912,7 +1915,6 @@ class WaveformModel(SeisBenchModel, ABC):
         if self.filter_args is not None or self.filter_kwargs is not None:
             if isinstance(self.filter_args, dict):
                 for key, filter_args in self.filter_args.items():
-                    print(filter_args)
                     substream = stream.select(channel=key)
                     if key not in self.filter_kwargs:
                         raise ValueError(

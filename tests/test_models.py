@@ -1090,7 +1090,10 @@ def test_annotate_eqtransformer(parallelism):
 )
 def test_annotate_pickblue(parallelism, model):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
-    model = seisbench.models.PickBlue(base=model)
+    with patch(
+        "seisbench.models.SeisBenchModel._check_version_requirement"
+    ):  # Ignore version requirement
+        model = seisbench.models.PickBlue(base=model)
 
     model.sampling_rate = 400  # Higher sampling rate ensures trace is long enough
 
