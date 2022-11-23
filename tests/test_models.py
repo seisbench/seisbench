@@ -1910,3 +1910,16 @@ def test_verify_argdict(caplog):
     with caplog.at_level(logging.WARNING):
         model._verify_argdict({"my_var": 3})
     assert "Unknown argument" in caplog.text
+
+
+def test_phasenet_forward():
+    model = seisbench.models.PhaseNet()
+    x = torch.rand((2, 3, 3001))
+
+    with torch.no_grad():
+        pred = model(x).numpy()
+    assert np.allclose(np.sum(pred, axis=1), 1)
+
+    with torch.no_grad():
+        pred = model(x, logits=True).numpy()
+    assert not np.allclose(np.sum(pred, axis=1), 1)
