@@ -138,6 +138,9 @@ class WaveformDataset:
             tmp_metadata["trace_chunk"] = chunk
             metadatas.append(tmp_metadata)
         self._metadata = pd.concat(metadatas)
+        self._metadata.reset_index(
+            inplace=True
+        )  # Required because grouping of chunked datasets breaks otherwise
 
         self._data_format = self._read_data_format()
 

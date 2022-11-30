@@ -1437,3 +1437,13 @@ def test_chunk_validation():
         seisbench.data.ChunkedDummyDataset(chunks=["not_a_chunk"])  # Fails
 
     assert "not_a_chunk" in str(e)
+
+
+def test_grouping_chunked_dataset():
+    data = seisbench.data.ChunkedDummyDataset()
+    data.grouping = "trace_name"
+
+    # Check that actually the index was reset and the group keys are indices now
+    assert any(
+        len(data) - 1 in group_keys for group_keys in data._groups_to_trace_idx.values()
+    )
