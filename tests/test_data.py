@@ -1444,6 +1444,18 @@ def test_grouping_chunked_dataset():
     data.grouping = "trace_name"
 
     # Check that actually the index was reset and the group keys are indices now
-    assert any(
-        len(data) - 1 in group_keys for group_keys in data._groups_to_trace_idx.values()
-    )
+    for i in range(len(data)):
+        assert any(i in group_keys for group_keys in data._groups_to_trace_idx.values())
+
+
+def test_grouping_index_filter():
+    data = seisbench.data.DummyDataset()
+    mask = np.ones(len(data), dtype=bool)
+    mask[:10] = False  # Remove the first 10 entries
+
+    data.grouping = "trace_name"
+
+    data.filter(mask, inplace=True)
+    # Check that actually the index was reset and the group keys are indices now
+    for i in range(len(data)):
+        assert any(i in group_keys for group_keys in data._groups_to_trace_idx.values())

@@ -312,10 +312,14 @@ class WaveformDataset:
     @grouping.setter
     def grouping(self, value):
         self._grouping = value
+
         if value is None:
             self._groups = None
             self._groups_to_trace_idx = None
         else:
+            self._metadata.reset_index(
+                inplace=True, drop=True
+            )  # Make sure the indices are correct
             self._groups_to_trace_idx = self.metadata.groupby(value).groups
             self._groups = list(self._groups_to_trace_idx.keys())
             self._groups_to_group_idx = {
