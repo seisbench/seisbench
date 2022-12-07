@@ -1098,7 +1098,7 @@ class WaveformDataset:
         :rtype: int
         """
         self._verify_grouping_defined()
-        group = self.groups[idx]
+        group = self._groups[idx]
         idx = self._groups_to_trace_idx[group]
         return len(idx)
 
@@ -1129,7 +1129,7 @@ class WaveformDataset:
     def _get_group_internal(self, idx, return_metadata, **kwargs):
         self._verify_grouping_defined()
 
-        group = self.groups[idx]
+        group = self._groups[idx]
         idx = self._groups_to_trace_idx[group]
 
         waveforms = []
