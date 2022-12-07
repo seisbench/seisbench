@@ -494,7 +494,7 @@ def test_unify_component_order(caplog):
 
 
 def test_resample():
-    dummy = seisbench.data.DummyDataset()
+    dummy = seisbench.data.DummyDataset(metadata_cache=False)
     dummy._metadata["trace_sampling_rate_hz"] = 20.0
     dummy._metadata["trace_sampling_rate_hz"].values[0] = np.nan
 
@@ -543,15 +543,20 @@ def test_resample_empty_trace(caplog):
     assert "Trying to resample empty trace, skipping resampling." in caplog.text
 
 
-def test_get_sample():
+@pytest.mark.parametrize(
+    "metadata_cache",
+    [True, False],
+)
+def test_get_sample(metadata_cache):
     # Checks that the parameters are correctly overwritten, when the sampling_rate is changed
-    dummy = seisbench.data.DummyDataset()
+    dummy = seisbench.data.DummyDataset(metadata_cache=metadata_cache)
     dummy.sampling_rate = None
 
     base_sampling_rate = dummy.metadata.iloc[0]["trace_sampling_rate_hz"]
     base_arrival_sample = 500
     dummy._metadata["trace_p_arrival_sample"] = base_arrival_sample
     dummy._metadata["trace_dt_s"] = 1 / dummy._metadata["trace_sampling_rate_hz"]
+    dummy._rebuild_metadata_cache()
 
     # No resampling
     waveforms, metadata = dummy.get_sample(0, sampling_rate=None)
@@ -860,6 +865,7 @@ def test_get_waveforms_component_orders():
     assert (wv_org == wv).all()
 
     dummy._metadata["trace_component_order"].values[1] = "NEZ"
+    dummy._rebuild_metadata_cache()
     dummy.component_order = "ZNE"
     dummy.missing_components = "ignore"
 
@@ -876,6 +882,7 @@ def test_get_waveform_component_order_mismatching():
     # Tests different strategies for mismatching traces
     dummy = seisbench.data.DummyDataset(component_order="ZNE", dimension_order="NCW")
     dummy._metadata["trace_component_order"].values[1] = "Z"
+    dummy._rebuild_metadata_cache()
 
     dummy.missing_components = "pad"
     wv = dummy.get_waveforms([0, 1])
@@ -1459,3 +1466,32 @@ def test_grouping_index_filter():
     # Check that actually the index was reset and the group keys are indices now
     for i in range(len(data)):
         assert any(i in group_keys for group_keys in data._groups_to_trace_idx.values())
+
+
+def test_metadata_lookup():
+    data = seisbench.data.DummyDataset(metadata_cache=False)
+    assert data._metadata_lookup is None
+
+    data = seisbench.data.DummyDataset(metadata_cache=True)
+    assert len(data._metadata_lookup) == len(data.metadata)
+
+    mask = np.zeros(len(data), dtype=bool)
+    mask[:20] = True
+
+    data.filter(mask, inplace=True)
+    assert len(data._metadata_lookup) == len(data.metadata)
+
+    for i in range(len(data)):
+        meta_lookup = data._metadata_lookup[i]
+        meta_direct = data.metadata.iloc[i].to_dict()
+
+        for key in meta_lookup.keys():
+            assert meta_direct[key] == meta_lookup[key]
+
+
+def test_chunks_with_paths_cache():
+    data = seisbench.data.DummyDataset()
+
+    data._chunks_with_paths_cache = None
+    data._chunks_with_paths()
+    assert data._chunks_with_paths_cache is not None

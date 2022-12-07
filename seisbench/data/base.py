@@ -75,6 +75,12 @@ class WaveformDataset:
                                   but ignore missing ones. This will raise an error if traces with different
                                   numbers of components are requested together.
     :type missing_components: str
+    :param metadata_cache: If true, metadata is cached in a lookup table.
+                           This significantly speeds up access to metadata and thereby access to samples.
+                           On the downside, this requires storing two copies of the metadata in memory.
+                           The second copy usually consumes more memory due to the less space-efficient format.
+                           Runtime differences are particularly big for large datasets.
+    :type bool:
     :param kwargs:
     """
 
@@ -88,6 +94,7 @@ class WaveformDataset:
         cache=None,
         chunks=None,
         missing_components="pad",
+        metadata_cache=False,
         **kwargs,
     ):
         if name is None:
@@ -117,6 +124,8 @@ class WaveformDataset:
         self._component_order = None  # Target component order
         # Dict [source_component_order -> list for reordering source to target components]
         self._component_mapping = None
+        self._metadata_lookup = None
+        self._chunks_with_paths_cache = None
         self.sampling_rate = sampling_rate
 
         self._verify_dataset()
@@ -151,6 +160,7 @@ class WaveformDataset:
         self.dimension_order = dimension_order
         self.component_order = component_order
         self.missing_components = missing_components
+        self.metadata_cache = metadata_cache
 
         self._waveform_cache = defaultdict(dict)
 
@@ -218,6 +228,15 @@ class WaveformDataset:
             )
 
         self._cache = cache
+
+    @property
+    def metadata_cache(self):
+        return self._metadata_cache
+
+    @metadata_cache.setter
+    def metadata_cache(self, val):
+        self._metadata_cache = val
+        self._rebuild_metadata_cache()
 
     @property
     def path(self):
@@ -404,6 +423,14 @@ class WaveformDataset:
 
         return sorted(chunks)
 
+    def _rebuild_metadata_cache(self):
+        if self.metadata_cache:
+            self._metadata_lookup = list(
+                self._metadata.apply(lambda x: x.to_dict(), axis=1)
+            )
+        else:
+            self._metadata_lookup = None
+
     def _unify_sampling_rate(self, eps=1e-4):
         """
         Unify sampling rate to common base. Operation is performed inplace. The sampling rate can be
@@ -560,10 +587,21 @@ class WaveformDataset:
 
         :return: List of chunks, list of metadata paths, list of waveform paths
         """
-        metadata_paths = [self.path / f"metadata{chunk}.csv" for chunk in self.chunks]
-        waveform_paths = [self.path / f"waveforms{chunk}.hdf5" for chunk in self.chunks]
+        if self._chunks_with_paths_cache is None:
+            metadata_paths = [
+                self.path / f"metadata{chunk}.csv" for chunk in self.chunks
+            ]
+            waveform_paths = [
+                self.path / f"waveforms{chunk}.hdf5" for chunk in self.chunks
+            ]
 
-        return self.chunks, metadata_paths, waveform_paths
+            self._chunks_with_paths_cache = (
+                self.chunks,
+                metadata_paths,
+                waveform_paths,
+            )
+
+        return self._chunks_with_paths_cache
 
     def _verify_dataset(self):
         """
@@ -788,6 +826,7 @@ class WaveformDataset:
             self._metadata = self._metadata[mask]
             self._evict_cache()
             self._build_trace_name_to_idx_dict()
+            self._rebuild_metadata_cache()
             self.grouping = self.grouping  # Recalculate grouping
         else:
             other = self.copy()
@@ -945,7 +984,10 @@ class WaveformDataset:
         :param sampling_rate: Target sampling rate, overwrites sampling rate for dataset.
         :return: Tuple with the waveforms and the metadata of the sample.
         """
-        metadata = self.metadata.iloc[idx].to_dict()
+        if self._metadata_lookup is None:
+            metadata = self.metadata.iloc[idx].to_dict()
+        else:
+            metadata = copy.deepcopy(self._metadata_lookup[idx])
 
         if sampling_rate is None:
             sampling_rate = self.sampling_rate
@@ -1003,7 +1045,11 @@ class WaveformDataset:
                 idx = [idx]
                 squeeze = True
 
-            load_metadata = self._metadata.iloc[idx]
+            if self._metadata_lookup is None:
+                load_metadata = self._metadata.iloc[idx]
+            else:
+                load_metadata = [self._metadata_lookup[i] for i in idx]
+                load_metadata = self._pack_metadata(load_metadata)
         else:
             if mask is not None:
                 load_metadata = self._metadata[mask]
@@ -1064,7 +1110,7 @@ class WaveformDataset:
         :rtype: int
         """
         self._verify_grouping_defined()
-        group = self.groups[idx]
+        group = self._groups[idx]
         idx = self._groups_to_trace_idx[group]
         return len(idx)
 
@@ -1095,7 +1141,7 @@ class WaveformDataset:
     def _get_group_internal(self, idx, return_metadata, **kwargs):
         self._verify_grouping_defined()
 
-        group = self.groups[idx]
+        group = self._groups[idx]
         idx = self._groups_to_trace_idx[group]
 
         waveforms = []
