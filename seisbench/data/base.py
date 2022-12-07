@@ -78,8 +78,8 @@ class WaveformDataset:
     :param metadata_cache: If true, metadata is cached in a lookup table.
                            This significantly speeds up access to metadata and thereby access to samples.
                            On the downside, this requires storing two copies of the metadata in memory.
-                           When short on memory, this option can be deactivated but at the cost of
-                           increased runtime. Runtime differences are particularly big for large datasets.
+                           The second copy usually consumes more memory due to the less space-efficient format.
+                           Runtime differences are particularly big for large datasets.
     :type bool:
     :param kwargs:
     """
@@ -94,7 +94,7 @@ class WaveformDataset:
         cache=None,
         chunks=None,
         missing_components="pad",
-        metadata_cache=True,
+        metadata_cache=False,
         **kwargs,
     ):
         if name is None:
