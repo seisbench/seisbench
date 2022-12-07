@@ -1487,3 +1487,11 @@ def test_metadata_lookup():
 
         for key in meta_lookup.keys():
             assert meta_direct[key] == meta_lookup[key]
+
+
+def test_chunks_with_paths_cache():
+    data = seisbench.data.DummyDataset()
+
+    data._chunks_with_paths_cache = None
+    data._chunks_with_paths()
+    assert data._chunks_with_paths_cache is not None
