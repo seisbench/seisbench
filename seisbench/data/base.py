@@ -125,6 +125,7 @@ class WaveformDataset:
         # Dict [source_component_order -> list for reordering source to target components]
         self._component_mapping = None
         self._metadata_lookup = None
+        self._chunks_with_paths_cache = None
         self.sampling_rate = sampling_rate
 
         self._verify_dataset()
@@ -586,10 +587,21 @@ class WaveformDataset:
 
         :return: List of chunks, list of metadata paths, list of waveform paths
         """
-        metadata_paths = [self.path / f"metadata{chunk}.csv" for chunk in self.chunks]
-        waveform_paths = [self.path / f"waveforms{chunk}.hdf5" for chunk in self.chunks]
+        if self._chunks_with_paths_cache is None:
+            metadata_paths = [
+                self.path / f"metadata{chunk}.csv" for chunk in self.chunks
+            ]
+            waveform_paths = [
+                self.path / f"waveforms{chunk}.hdf5" for chunk in self.chunks
+            ]
 
-        return self.chunks, metadata_paths, waveform_paths
+            self._chunks_with_paths_cache = (
+                self.chunks,
+                metadata_paths,
+                waveform_paths,
+            )
+
+        return self._chunks_with_paths_cache
 
     def _verify_dataset(self):
         """
