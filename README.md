@@ -82,6 +82,10 @@ Check out the [contribution guidelines](https://github.com/seisbench/seisbench/b
   You can also contact your network administrator to allow access to port 2443 on our server.
   Otherwise, reach out to us, and we will work on finding a solution.
 - EQTransformer model weights "original" in version 1 and 2 are incompatible with SeisBench >=0.2.3. Simply use `from_pretrained("original", version="3")` or `from_pretrained("original", update=True)`. The weights will not differ in their predictions.
+- Our PhaseNet implementation was changed between v0.2 and v0.3.
+  This makes the weights incompatible and will lead to issues loading any PhaseNet weights from the remote repository with SeisBench v0.2.
+  Please update to v0.3 to fix this issue.
+  Our previous version of PhaseNet with all weights is available as PhaseNetLight from v0.3 onwards. 
 
 ## References
 Reference publications for SeisBench:
