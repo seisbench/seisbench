@@ -139,7 +139,7 @@ class SteeredGenerator(GenericGenerator):
     def _clean_state_dict(self, state_dict):
         # Remove control information
         del state_dict["_control_"]
-        super()._clean_state_dict(state_dict)
+        return super()._clean_state_dict(state_dict)
 
 
 class GroupGenerator(GenericGenerator):

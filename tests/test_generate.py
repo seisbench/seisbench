@@ -1564,6 +1564,12 @@ def test_steered_generator():
     metadata = pd.DataFrame(metadata)
 
     generator = seisbench.generate.SteeredGenerator(dummy, metadata)
+
+    sample = generator[0]
+    assert len(sample.keys()) == 1
+    assert "X" in sample.keys()
+
+    # Test that augmentations are called
     generator.augmentation(augmentation)
 
     assert len(generator) == 50
