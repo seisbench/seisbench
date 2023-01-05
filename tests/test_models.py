@@ -1101,6 +1101,24 @@ def test_annotate_gpd(parallelism):
     "parallelism",
     [None, 1],
 )
+def test_annotate_phasenetlight(parallelism):
+    # Tests that the annotate/classify functions run without crashes and annotate produces an output
+    model = seisbench.models.PhaseNetLight(
+        sampling_rate=400
+    )  # Higher sampling rate ensures trace is long enough
+    stream = obspy.read()
+
+    annotations = model.annotate(stream, parallelism=parallelism)
+    assert len(annotations) > 0
+    model.classify(
+        stream, parallelism=parallelism
+    )  # Ensures classify succeeds even though labels are unknown
+
+
+@pytest.mark.parametrize(
+    "parallelism",
+    [None, 1],
+)
 def test_annotate_phasenet(parallelism):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.PhaseNet(
@@ -1267,6 +1285,30 @@ def test_save_load_phasenet(tmp_path):
 
     # Test model loading
     model_load = seisbench.models.PhaseNet.load(tmp_path / "phasenet")
+    model_load_args = get_input_args(model_orig.__class__)
+
+    # Test no changes to weights
+    pred_orig = model_orig.annotate(stream, sampling_rate=400)
+    pred_load = model_load.annotate(stream, sampling_rate=400)
+
+    for i in range(len(pred_orig)):
+        assert np.allclose(pred_orig[i].data, pred_load[i].data)
+    assert model_orig_args == model_load_args
+
+
+def test_save_load_phasenetlight(tmp_path):
+    model_orig = seisbench.models.PhaseNetLight()
+    model_orig_args = get_input_args(model_orig.__class__)
+
+    # Test model saving
+    model_orig.save(tmp_path / "phasenet")
+    assert (tmp_path / "phasenet.json").exists()
+    assert (tmp_path / "phasenet.pt").exists()
+
+    stream = obspy.read()
+
+    # Test model loading
+    model_load = seisbench.models.PhaseNetLight.load(tmp_path / "phasenet")
     model_load_args = get_input_args(model_orig.__class__)
 
     # Test no changes to weights
@@ -1916,6 +1958,19 @@ def test_verify_argdict(caplog):
 
 def test_phasenet_forward():
     model = seisbench.models.PhaseNet()
+    x = torch.rand((2, 3, 3001))
+
+    with torch.no_grad():
+        pred = model(x).numpy()
+    assert np.allclose(np.sum(pred, axis=1), 1)
+
+    with torch.no_grad():
+        pred = model(x, logits=True).numpy()
+    assert not np.allclose(np.sum(pred, axis=1), 1)
+
+
+def test_phasenetlight_forward():
+    model = seisbench.models.PhaseNetLight()
     x = torch.rand((2, 3, 3001))
 
     with torch.no_grad():
