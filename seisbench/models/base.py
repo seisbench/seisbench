@@ -564,7 +564,7 @@ class SeisBenchModel(nn.Module):
         model_metadata = {
             "docstring": weights_docstring,
             "model_args": parsed_model_args,
-            "seisbench-requirements": seisbench.__version__,
+            "seisbench_requirement": seisbench.__version__,
             "default_args": self.__dict__.get("default_args", ""),
         }
 
@@ -572,7 +572,7 @@ class SeisBenchModel(nn.Module):
         torch.save(self.state_dict(), path_pt)
         # Save model metadata
         with open(path_json, "w") as json_fp:
-            json.dump(model_metadata, json_fp)
+            json.dump(model_metadata, json_fp, indent=4)
 
         seisbench.logger.debug(f"Saved {self.name} model at {path}")
 
