@@ -44,6 +44,12 @@ class EQTransformer(WaveformModel):
         "Number of prediction samples to discard on each side of each window prediction",
         (0, 0),
     )
+    # Overwrite default stacking method
+    _annotate_args["stacking"] = (
+        "Stacking method for overlapping windows (only for window prediction models). "
+        "Options are 'max' and 'avg'. ",
+        "max",
+    )
 
     def __init__(
         self,

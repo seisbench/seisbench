@@ -700,7 +700,7 @@ class WaveformModel(SeisBenchModel, ABC):
         "stacking": (
             "Stacking method for overlapping windows (only for window prediction models). "
             "Options are 'max' and 'avg'. ",
-            "max",
+            "avg",
         ),
         "stride": ("Stride in samples (only for point prediction models)", 1),
     }
