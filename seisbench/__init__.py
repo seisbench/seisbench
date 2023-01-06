@@ -4,15 +4,31 @@ import os as _os
 from pathlib import Path as _Path
 
 import pkg_resources
+from urllib.parse import urljoin as _urljoin
 
-__all__ = ["cache_root", "__version__", "config"]
+__all__ = [
+    "cache_root",
+    "cache_data_root",
+    "cache_model_root",
+    "remote_root",
+    "remote_data_root",
+    "remote_model_root",
+    "__version__",
+    "config",
+]
 
 # global variable: cache_root
 cache_root = _Path(
     _os.getenv("SEISBENCH_CACHE_ROOT", _Path(_Path.home(), ".seisbench"))
 )
 
+cache_data_root = cache_root / "datasets"
+cache_model_root = cache_root / "models" / "v3"
+
 remote_root = "https://dcache-demo.desy.de:2443/Helmholtz/HelmholtzAI/SeisBench/"
+
+remote_data_root = _urljoin(remote_root, "datasets/")
+remote_model_root = _urljoin(remote_root, "models/v3/")
 
 if not cache_root.is_dir():
     cache_root.mkdir(parents=True, exist_ok=True)

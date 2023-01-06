@@ -195,19 +195,6 @@ class PhaseNet(WaveformModel):
 
         return model_args
 
-    @classmethod
-    def from_pretrained(cls, *args, **kwargs):
-        try:
-            return super().from_pretrained(*args, **kwargs)
-        except RuntimeError:
-            raise RuntimeError(
-                "Could not load model. "
-                "This is most likely due to an invalid cache due to a change between v0.2 and v0.3. "
-                "Please delete your PhaseNet model cache at "
-                f"{seisbench.cache_root / 'models' / 'phasenet'} "
-                "and retry."
-            )
-
 
 class PhaseNetLight(PhaseNet):
     """

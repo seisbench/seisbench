@@ -4,6 +4,7 @@ import shutil
 from abc import ABC
 
 import pandas as pd
+from urllib.parse import urljoin
 
 import seisbench
 import seisbench.util
@@ -73,7 +74,7 @@ class InstanceTypeDataset(BenchmarkDataset, ABC):
 
     @staticmethod
     def _add_split(metadata_path):
-        split_url = os.path.join(seisbench.remote_root, "auxiliary/instance_split.csv")
+        split_url = urljoin(seisbench.remote_root, "auxiliary/instance_split.csv")
         split_path = seisbench.cache_root / "auxiliary" / "instance_split.csv"
 
         split_path.parent.mkdir(parents=True, exist_ok=True)
