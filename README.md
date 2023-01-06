@@ -5,7 +5,7 @@
 ---
 
 [![PyPI - License](https://img.shields.io/pypi/l/seisbench)](https://github.com/seisbench/seisbench/blob/main/LICENSE)
-[![GitHub Workflow Status](https://img.shields.io/github/workflow/status/seisbench/seisbench/main_push_action)](https://github.com/seisbench/seisbench)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/seisbench/seisbench/main_push.yml?branch=main)](https://github.com/seisbench/seisbench)
 [![Read the Docs](https://img.shields.io/readthedocs/seisbench)](https://seisbench.readthedocs.io/en/latest/)
 [![PyPI](https://img.shields.io/pypi/v/seisbench)](https://pypi.org/project/seisbench/)
 [![Python 3.7](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/release/python-360/)
