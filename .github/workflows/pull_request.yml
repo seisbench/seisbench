@@ -33,23 +33,13 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-      
-      - name: Cache pip
-        uses: actions/cache@v3
-        with:
-          # This path is specific to Ubuntu
-          path: seisbench_cache
-          # Look to see if there is a cache hit for the corresponding requirements file
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-            ${{ runner.os }}-
+          cache: pip
       
       # Load SeisBench cache to ensure data sets are always locally available
       - name: Cache SeisBench
         uses: actions/cache@v3
         with:
-          path: ~/.seisbench
+          path: seisbench_cache
           key: seisbench-cache-v2
           restore-keys: |
             seisbench-cache-v2
