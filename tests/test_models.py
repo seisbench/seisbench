@@ -1221,6 +1221,36 @@ def test_eqtransformer_annotate_window_post():
     assert np.isnan(blinded[900:]).all()
 
 
+def test_phasenet_annotate_window_post():
+    model = seisbench.models.PhaseNet()
+
+    pred = np.ones((3, 1000))
+
+    # Default: No blinding
+    blinded = model.annotate_window_post(pred.copy(), argdict={})
+    assert (blinded == 1).all()
+
+    # No blinding
+    blinded = model.annotate_window_post(pred.copy(), argdict={"blinding": (0, 0)})
+    assert (blinded == 1).all()
+
+    # Front blinding
+    blinded = model.annotate_window_post(pred.copy(), argdict={"blinding": (100, 0)})
+    assert np.isnan(blinded[:100]).all()
+    assert (blinded[100:] == 1).all()
+
+    # End blinding
+    blinded = model.annotate_window_post(pred.copy(), argdict={"blinding": (0, 100)})
+    assert (blinded[:900] == 1).all()
+    assert np.isnan(blinded[900:]).all()
+
+    # Two sided blinding
+    blinded = model.annotate_window_post(pred.copy(), argdict={"blinding": (100, 100)})
+    assert np.isnan(blinded[:100]).all()
+    assert (blinded[100:900] == 1).all()
+    assert np.isnan(blinded[900:]).all()
+
+
 def test_save_load_gpd(tmp_path):
     model_orig = seisbench.models.GPD()
     model_orig_args = get_input_args(model_orig.__class__)

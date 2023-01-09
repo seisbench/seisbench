@@ -14,6 +14,10 @@ class PhaseNet(WaveformModel):
 
     _annotate_args = WaveformModel._annotate_args.copy()
     _annotate_args["*_threshold"] = ("Detection threshold for the provided phase", 0.3)
+    _annotate_args["blinding"] = (
+        "Number of prediction samples to discard on each side of each window prediction",
+        (0, 0),
+    )
 
     def __init__(
         self, in_channels=3, classes=3, phases="NPS", sampling_rate=100, **kwargs
@@ -29,7 +33,7 @@ class PhaseNet(WaveformModel):
             citation=citation,
             in_samples=3001,
             output_type="array",
-            default_args={"overlap": 250},
+            default_args={"overlap": 500},
             pred_sample=(0, 3001),
             labels=phases,
             sampling_rate=sampling_rate,
@@ -147,7 +151,15 @@ class PhaseNet(WaveformModel):
 
     def annotate_window_post(self, pred, piggyback=None, argdict=None):
         # Transpose predictions to correct shape
-        return pred.T
+        pred = pred.T
+        prenan, postnan = argdict.get(
+            "blinding", self._annotate_args.get("blinding")[1]
+        )
+        if prenan > 0:
+            pred[:prenan] = np.nan
+        if postnan > 0:
+            pred[-postnan:] = np.nan
+        return pred
 
     def classify_aggregate(self, annotations, argdict):
         """
