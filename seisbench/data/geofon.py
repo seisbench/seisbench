@@ -1,19 +1,21 @@
+import copy
+from collections import defaultdict
+from pathlib import Path
+
+import numpy as np
+import obspy
+import pandas as pd
+from obspy.geodetics import gps2dist_azimuth
+from obspy.io.mseed import InternalMSEEDError
+
 import seisbench
-from .base import BenchmarkDataset
 from seisbench.util.trace_ops import (
     rotate_stream_to_zne,
     stream_to_array,
     trace_has_spikes,
 )
 
-from pathlib import Path
-import obspy
-from obspy.io.mseed import InternalMSEEDError
-from obspy.geodetics import gps2dist_azimuth
-import copy
-from collections import defaultdict
-import numpy as np
-import pandas as pd
+from .base import BenchmarkDataset
 
 
 class GEOFON(BenchmarkDataset):

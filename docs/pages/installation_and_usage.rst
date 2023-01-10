@@ -26,5 +26,3 @@ Alternatively, you can install the latest version from source. For this approach
     pip install .
 
 This will install SeisBench in your current python environment from source.
-
-

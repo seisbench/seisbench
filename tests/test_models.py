@@ -1,17 +1,18 @@
-import seisbench
-import seisbench.models
-from seisbench.models.base import ActivationLSTMCell, CustomLSTM
+import inspect
+import logging
+from collections import defaultdict
+from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import obspy
-from obspy import UTCDateTime
-import torch
-from unittest.mock import patch
-import logging
 import pytest
-import inspect
-from collections import defaultdict
-from pathlib import Path
+import torch
+from obspy import UTCDateTime
+
+import seisbench
+import seisbench.models
+from seisbench.models.base import ActivationLSTMCell, CustomLSTM
 
 
 def get_input_args(obj):

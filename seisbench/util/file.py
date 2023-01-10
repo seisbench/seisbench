@@ -1,12 +1,13 @@
-import seisbench
+import ftplib
+import os
+import time
+from pathlib import Path
 
 import requests
-import ftplib
-from tqdm import tqdm
-from pathlib import Path
-import time
-import os
 from lxml import etree
+from tqdm import tqdm
+
+import seisbench
 
 
 def download_http(

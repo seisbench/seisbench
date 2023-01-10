@@ -1,12 +1,11 @@
-from .base import WaveformModel
-
+import numpy as np
+import scipy.signal
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-import numpy as np
-import scipy.signal
 from scipy.interpolate import interp1d
+
+from .base import WaveformModel
 
 
 class DeepDenoiser(WaveformModel):

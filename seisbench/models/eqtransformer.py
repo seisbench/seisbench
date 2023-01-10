@@ -1,10 +1,11 @@
-from .base import WaveformModel, ActivationLSTMCell, CustomLSTM
+import warnings
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-import warnings
+
+from .base import ActivationLSTMCell, CustomLSTM, WaveformModel
 
 
 # For implementation, potentially follow: https://medium.com/huggingface/from-tensorflow-to-pytorch-265f40ef2a28

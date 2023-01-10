@@ -1,0 +1,49 @@
+[build-system]
+requires = ["wheel", "setuptools >= 61.0.0", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seisbench"
+dynamic = ["version"]
+description = "The seismological machine learning benchmark collection"
+readme = "README.md"
+license = {text = "GPLv3"}
+requires-python = ">=3.7"
+authors = [
+    {name = "Jack Woolam", email = "jack.woollam@kit.edu"},
+    {name = "Jannes Münchmeyer", email = "munchmej@gfz-potsdam.de"}
+]
+maintainers = [
+    {name = "Jack Woolam", email = "jack.woollam@kit.edu"},
+    {name = "Jannes Münchmeyer", email = "munchmej@gfz-potsdam.de"}
+]
+keywords = ["seismology", "machine learning", "signal processing", "earthquake"]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Programming Language :: Python :: 3.7",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)"
+]
+dependencies = [
+    "numpy>=1.21.6",
+    "pandas>=1.1",
+    "h5py>=3.1",
+    "obspy>=1.2",
+    "tqdm>=4.52",
+    "torch>=1.7.0",
+    "scipy>=1.5",
+    "nest_asyncio>=1.5.3"
+]
+
+[tool.setuptools.packages.find]
+include = ["seisbench"]
+
+[project.optional-dependencies]
+development = ["flake8", "black", "isort", "pre-commit"]
+tests = ["pytest", "pytest-asyncio"]
+
+[project.urls]
+GitHub = "https://github.com/seisbench/seisbench"
+Documentation = "https://seisbench.readthedocs.io/en/latest/"
+Issues = "https://github.com/seisbench/seisbench/issues"

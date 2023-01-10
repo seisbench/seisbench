@@ -1,17 +1,17 @@
 from .base import (
-    WaveformDataset,
-    MultiWaveformDataset,
     BenchmarkDataset,
-    WaveformDataWriter,
     Bucketer,
     GeometricBucketer,
+    MultiWaveformDataset,
+    WaveformDataset,
+    WaveformDataWriter,
 )
-from .dummy import DummyDataset, ChunkedDummyDataset
-from .stead import STEAD
+from .dummy import ChunkedDummyDataset, DummyDataset
+from .ethz import ETHZ
 from .geofon import GEOFON
+from .instance import InstanceCounts, InstanceCountsCombined, InstanceGM, InstanceNoise
+from .iquique import Iquique
 from .lendb import LenDB
 from .neic import NEIC
-from .scedc import SCEDC, Ross2018JGRFM, Ross2018JGRPick, Ross2018GPD, Meier2019JGR
-from .ethz import ETHZ
-from .instance import InstanceNoise, InstanceCounts, InstanceGM, InstanceCountsCombined
-from .iquique import Iquique
+from .scedc import SCEDC, Meier2019JGR, Ross2018GPD, Ross2018JGRFM, Ross2018JGRPick
+from .stead import STEAD

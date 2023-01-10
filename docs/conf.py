@@ -6,12 +6,15 @@
 
 # -- Path setup --------------------------------------------------------------
 
+import os
+import sys
+
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-import os
-import sys
+from datetime import datetime
+from importlib.metadata import version
 
 sys.path.insert(0, os.path.abspath("../"))
 sys.path.append(os.path.abspath("_ext"))
@@ -19,11 +22,11 @@ sys.path.append(os.path.abspath("_ext"))
 # -- Project information -----------------------------------------------------
 
 project = "SeisBench"
-copyright = "2021, Jannes Münchmeyer, Jack Woollam"
+copyright = f"{datetime.now().year}, Jannes Münchmeyer, Jack Woollam"
 author = "Jannes Münchmeyer, Jack Woollam"
 
 # The full version, including alpha/beta/rc tags
-release = "0.2.3"
+release = version("seisbench")
 
 
 # -- General configuration ---------------------------------------------------

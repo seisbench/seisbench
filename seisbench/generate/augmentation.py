@@ -1,6 +1,7 @@
+import copy
+
 import numpy as np
 import scipy.signal
-import copy
 
 
 class Normalize:

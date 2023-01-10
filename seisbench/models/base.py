@@ -1,27 +1,28 @@
+import asyncio
+import json
+import logging
+import math
+import os
+import re
+import warnings
+from abc import ABC, abstractmethod
+from collections import defaultdict
+from pathlib import Path
+from queue import PriorityQueue
+
+import nest_asyncio
+import numpy as np
+import obspy
+import torch
+import torch.multiprocessing as torchmp
+import torch.nn as nn
+import torch.nn.functional as F
+from obspy.signal.trigger import trigger_onset
+from packaging import version
+
 import seisbench
 import seisbench.util as util
 from seisbench.util import log_lifecycle
-
-from abc import abstractmethod, ABC
-from pathlib import Path
-import os
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from collections import defaultdict
-from queue import PriorityQueue
-import json
-import math
-import numpy as np
-import obspy
-import warnings
-from obspy.signal.trigger import trigger_onset
-import asyncio
-import nest_asyncio
-from packaging import version
-import torch.multiprocessing as torchmp
-import logging
-import re
 
 
 @log_lifecycle(logging.DEBUG)

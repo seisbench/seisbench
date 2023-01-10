@@ -1,13 +1,14 @@
+import json
+import shutil
+import tarfile
+from collections import defaultdict
+
+import numpy as np
+
 import seisbench
 import seisbench.util
+
 from .base import BenchmarkDataset
-
-import json
-import tarfile
-import numpy as np
-from collections import defaultdict
-import shutil
-
 
 # Conversion from earth radius
 DEG2KM = 2 * np.pi * 6371 / 360

@@ -1,10 +1,10 @@
+import copy
 import warnings
 
-import seisbench
-
-import copy
 import numpy as np
 from obspy import UTCDateTime
+
+import seisbench
 
 
 class FixedWindow:
