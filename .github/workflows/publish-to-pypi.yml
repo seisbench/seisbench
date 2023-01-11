@@ -1,4 +1,7 @@
-name: publish_action
+# following
+# https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/
+
+name: Publish to PyPI
 on:
   push:
     tags:
@@ -17,11 +20,11 @@ jobs:
           python-version: 3.9
 
       - name: Install setuptools
-        run: pip install setuptools wheel
+        run: pip install build  --user
 
       - name: Build binary wheel and source tarball
         run: |
-          python setup.py sdist bdist_wheel
+          python -m build --sdist --wheel --outdir dist/
 
       - name: Publish package
         uses: pypa/gh-action-pypi-publish@release/v1
