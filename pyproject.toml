@@ -37,11 +37,13 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["seisbench"]
+include = ["seisbench*"]
 
 [project.optional-dependencies]
 development = ["flake8", "black", "isort", "pre-commit"]
 tests = ["pytest", "pytest-asyncio"]
+
+[tool.setuptools_scm]
 
 [project.urls]
 GitHub = "https://github.com/seisbench/seisbench"
