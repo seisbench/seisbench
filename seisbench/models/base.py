@@ -606,7 +606,7 @@ class SeisBenchModel(nn.Module):
         seisbench_requirement = self._weights_metadata.get(
             "seisbench_requirement", None
         )
-        if seisbench_requirement is not None:
+        if seisbench_requirement is not None and seisbench.__version__ != "0.0.0":
             if version.parse(seisbench_requirement) > version.parse(
                 seisbench.__version__
             ):
