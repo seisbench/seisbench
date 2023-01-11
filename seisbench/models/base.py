@@ -607,7 +607,7 @@ class SeisBenchModel(nn.Module):
             "seisbench_requirement", None
         )
         # Ignore version requirements when in dev branch
-        if seisbench_requirement is not None and "dev" not in seisbench.__version__:
+        if seisbench_requirement is not None:
             if version.parse(seisbench_requirement) > version.parse(
                 seisbench.__version__
             ):
