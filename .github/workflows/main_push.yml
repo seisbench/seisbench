@@ -17,11 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-      with:
-        fetch-depth: 0  # Fetched tags too
-
     - uses: actions/setup-python@v3
-
     - uses: pre-commit/action@v3.0.0
 
   run_tests:
@@ -34,6 +30,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetched tags too
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
