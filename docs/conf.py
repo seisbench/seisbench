@@ -14,7 +14,10 @@ import sys
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 from datetime import datetime
-from importlib.metadata import version
+
+# The rename is necessary to avoid namespace collision with the version attribute for RTD
+# See: https://github.com/sphinx-doc/sphinx/issues/10904
+from importlib.metadata import version as _version
 
 sys.path.insert(0, os.path.abspath("../"))
 sys.path.append(os.path.abspath("_ext"))
@@ -26,7 +29,7 @@ copyright = f"{datetime.now().year}, Jannes Münchmeyer, Jack Woollam"
 author = "Jannes Münchmeyer, Jack Woollam"
 
 # The full version, including alpha/beta/rc tags
-release = version("seisbench")
+release = _version("seisbench")
 
 
 # -- General configuration ---------------------------------------------------
