@@ -1,34 +1,34 @@
+import copy
+import logging
 import warnings
-
-import seisbench.generate
-import seisbench.generate.labeling
-from seisbench.generate import (
-    Normalize,
-    Filter,
-    FixedWindow,
-    SlidingWindow,
-    FilterKeys,
-    WindowAroundSample,
-    RandomWindow,
-    SteeredWindow,
-    ChangeDtype,
-    ProbabilisticLabeller,
-    ProbabilisticPointLabeller,
-    StandardLabeller,
-    DetectionLabeller,
-    StepLabeller,
-    Copy,
-)
-from seisbench.data import DummyDataset
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
-import copy
-import scipy.signal
-import logging
 import pytest
-from unittest.mock import patch, MagicMock
+import scipy.signal
 from obspy import UTCDateTime
+
+import seisbench.generate
+import seisbench.generate.labeling
+from seisbench.data import DummyDataset
+from seisbench.generate import (
+    ChangeDtype,
+    Copy,
+    DetectionLabeller,
+    Filter,
+    FilterKeys,
+    FixedWindow,
+    Normalize,
+    ProbabilisticLabeller,
+    ProbabilisticPointLabeller,
+    RandomWindow,
+    SlidingWindow,
+    StandardLabeller,
+    SteeredWindow,
+    StepLabeller,
+    WindowAroundSample,
+)
 
 
 def test_normalize():

@@ -1,7 +1,9 @@
-import os as _os
-from pathlib import Path as _Path
 import json as _json
 import logging as _logging
+import os as _os
+from pathlib import Path as _Path
+
+import pkg_resources
 
 __all__ = ["cache_root", "__version__", "config"]
 
@@ -25,7 +27,7 @@ else:
         config = _json.load(_fconfig)
 
 # Version number
-__version__ = "0.2.3"
+__version__ = pkg_resources.get_distribution("seisbench").version
 
 logger = _logging.getLogger("seisbench")
 _ch = _logging.StreamHandler()

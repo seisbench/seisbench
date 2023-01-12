@@ -1,12 +1,14 @@
+import bz2
+import os
+import shutil
+from abc import ABC
+
+import pandas as pd
+
 import seisbench
 import seisbench.util
-from .base import BenchmarkDataset, MultiWaveformDataset
 
-import shutil
-import bz2
-from abc import ABC
-import os
-import pandas as pd
+from .base import BenchmarkDataset, MultiWaveformDataset
 
 
 class InstanceTypeDataset(BenchmarkDataset, ABC):

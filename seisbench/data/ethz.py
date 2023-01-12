@@ -1,3 +1,16 @@
+import random
+import string
+import sys
+from collections import defaultdict
+
+import numpy as np
+import obspy
+import requests
+from obspy.clients.fdsn import Client
+from obspy.clients.fdsn.header import FDSNNoDataException
+from obspy.geodetics import gps2dist_azimuth
+from tqdm import tqdm
+
 import seisbench
 from seisbench.data.base import BenchmarkDataset
 from seisbench.util.trace_ops import (
@@ -6,19 +19,6 @@ from seisbench.util.trace_ops import (
     trace_has_spikes,
     waveform_id_to_network_station_location,
 )
-
-import random
-import string
-import requests
-import sys
-import numpy as np
-from tqdm import tqdm
-from collections import defaultdict
-
-import obspy
-from obspy.clients.fdsn.header import FDSNNoDataException
-from obspy.geodetics import gps2dist_azimuth
-from obspy.clients.fdsn import Client
 
 
 class ETHZ(BenchmarkDataset):

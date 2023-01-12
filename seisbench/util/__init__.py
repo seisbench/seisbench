@@ -1,12 +1,13 @@
+from .annotations import Detection, Pick
+from .decorators import log_lifecycle
 from .file import (
-    download_http,
-    download_ftp,
     callback_if_uncached,
+    download_ftp,
+    download_http,
     ls_webdav,
     precheck_url,
     safe_extract_tar,
 )
-from .annotations import Pick, Detection
 from .torch_helpers import worker_seeding
 from .trace_ops import (
     rotate_stream_to_zne,
@@ -14,4 +15,3 @@ from .trace_ops import (
     trace_has_spikes,
     waveform_id_to_network_station_location,
 )
-from .decorators import log_lifecycle

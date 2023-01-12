@@ -25,7 +25,7 @@ Dataset contains 36,743 waveform examples.
     Dataset size: waveforms.hdf5 **~22Gb**, metadata.csv **~13Mb**.
 
 .. admonition:: Citation
-   
+
     Each individual network has its own DOI. From publicly available data:
 
     * CH: https://doi.org/10.12686/sed/networks/ch
@@ -86,11 +86,11 @@ and waveform examples as counts is also available :py:class:`~seisbench.data.ins
     * waveforms (ground motion units) **~310Gb**
 
 .. admonition:: Citation
-   
+
     Michelini, A., Cianetti, S., Gaviano, S., Giunchi, C., Jozinović, D., & Lauciani, V. (2021).
     INSTANCE - The Italian Seismic Dataset For Machine Learning.
     Istituto Nazionale di Geofisica e Vulcanologia (INGV).
-   
+
     https://doi.org/10.13127/INSTANCE
 
 
@@ -101,9 +101,9 @@ Iquique
    :align:   center
 
 
-The :py:class:`~seisbench.data.iquique.Iquique` dataset contains 13,400 examples of picked arrivals from 
-the aftershock sequence following the Mw=8.1 Iquique earthquake occuring in N. Chile in 2014. All stations 
-are 100Hz, 3-component stations. The waveforms contain examples of earthquakes only. 
+The :py:class:`~seisbench.data.iquique.Iquique` dataset contains 13,400 examples of picked arrivals from
+the aftershock sequence following the Mw=8.1 Iquique earthquake occuring in N. Chile in 2014. All stations
+are 100Hz, 3-component stations. The waveforms contain examples of earthquakes only.
 
 .. warning::
 
@@ -111,10 +111,10 @@ are 100Hz, 3-component stations. The waveforms contain examples of earthquakes o
 
 .. admonition:: Citation
 
-    Woollam, J., Rietbrock, A., Bueno, A. and De Angelis, S., 2019. 
-    Convolutional neural network for seismic phase classification, 
-    performance demonstration over a local seismic network. 
-    Seismological Research Letters, 90(2A), pp.491-502. 
+    Woollam, J., Rietbrock, A., Bueno, A. and De Angelis, S., 2019.
+    Convolutional neural network for seismic phase classification,
+    performance demonstration over a local seismic network.
+    Seismological Research Letters, 90(2A), pp.491-502.
     https://doi.org/10.1785/0220180312
 
 
@@ -146,8 +146,8 @@ below.
 NEIC
 ----
 
-The National Earthquake Information Centre (NEIC) benchmark dataset comprises ~1.3 million seismic phase arrivals with 
-global source-station paths. As information on the trace start-time and station information is missing for this dataset, 
+The National Earthquake Information Centre (NEIC) benchmark dataset comprises ~1.3 million seismic phase arrivals with
+global source-station paths. As information on the trace start-time and station information is missing for this dataset,
 it is stored in the SeisBench format, but without this normally required information
 
 
@@ -155,7 +155,7 @@ it is stored in the SeisBench format, but without this normally required informa
 
     Yeck, W. L., Patton, J. M., Ross, Z. E., Hayes, G. P., Guy, M. R., Ambruz, N. B., Shelly, D. R., Benz, H. M., Earle, P. S., (2021)
     Leveraging Deep Learning in Global 24/7 Real-Time Earthquake Monitoring at the National Earthquake Information Center.
-    
+
     https://doi.org/10.1785/0220200178
 
 
@@ -178,7 +178,7 @@ of seismic events in the Southern Californian Seismic Network, which were manual
 .. admonition:: Citation
 
    SCEDC (2013): Southern California Earthquake Center.
-   
+
    https://doi.org/10.7909/C3WD3xH1
 
 STEAD
@@ -199,7 +199,5 @@ are noise examples and the remaining contain seismic arrivals. 450,000 earthquak
 
     Mousavi, S. M., Sheng, Y., Zhu, W., Beroza G.C., (2019). STanford EArthquake Dataset (STEAD):
     A Global Data Set of Seismic Signals for AI, IEEE Access.
-   
+
     https://doi.org/10.1109/ACCESS.2019.2947848
-
-

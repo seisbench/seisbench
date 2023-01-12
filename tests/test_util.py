@@ -1,12 +1,13 @@
+import logging
+import os
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+import requests
+
 import seisbench.util
 from seisbench.util.trace_ops import waveform_id_to_network_station_location
-
-from pathlib import Path
-import pytest
-from unittest.mock import patch, MagicMock
-import os
-import requests
-import logging
 
 
 def test_callback_if_uncached(tmp_path: Path):

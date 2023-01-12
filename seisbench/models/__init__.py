@@ -1,8 +1,8 @@
-from .base import SeisBenchModel, WaveformModel, WaveformPipeline
-from .gpd import GPD
-from .eqtransformer import EQTransformer
-from .phasenet import PhaseNet
-from .cred import CRED
-from .dpp import DeepPhasePick, DPPDetector, DPPPicker
 from .aepicker import BasicPhaseAE
+from .base import SeisBenchModel, WaveformModel, WaveformPipeline
+from .cred import CRED
 from .deepdenoiser import DeepDenoiser
+from .dpp import DeepPhasePick, DPPDetector, DPPPicker
+from .eqtransformer import EQTransformer
+from .gpd import GPD
+from .phasenet import PhaseNet

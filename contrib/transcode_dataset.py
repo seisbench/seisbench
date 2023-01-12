@@ -1,10 +1,11 @@
-import seisbench.data as sbd
-
 import argparse
 import os
 from pathlib import Path
+
 import pandas as pd
 from tqdm import tqdm
+
+import seisbench.data as sbd
 
 
 def transcode(data_in, data_out):

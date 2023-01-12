@@ -1,11 +1,13 @@
+from pathlib import Path
+
+import h5py
+import numpy as np
+import pandas as pd
+
 import seisbench
 import seisbench.util
-from .base import BenchmarkDataset, WaveformDataWriter
 
-from pathlib import Path
-import h5py
-import pandas as pd
-import numpy as np
+from .base import BenchmarkDataset, WaveformDataWriter
 
 
 class STEAD(BenchmarkDataset):

@@ -1,8 +1,8 @@
-from .base import WaveformModel, Conv1dSame
-
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
+
+from .base import Conv1dSame, WaveformModel
 
 
 class PhaseNet(WaveformModel):

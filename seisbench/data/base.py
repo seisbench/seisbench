@@ -1,20 +1,21 @@
-import seisbench
-import seisbench.util
-
-from abc import abstractmethod, ABC
-from pathlib import Path
-import pandas as pd
-import h5py
-import numpy as np
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-import os
-import inspect
-import scipy.signal
 import copy
+import inspect
+import os
+import warnings
+from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Iterable
-import warnings
+from pathlib import Path
+
+import h5py
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import scipy.signal
+from tqdm import tqdm
+
+import seisbench
+import seisbench.util
 
 
 class WaveformDataset:
@@ -1377,8 +1378,8 @@ class WaveformDataset:
         fig = plt.figure(figsize=(15, 10))
         try:
             import cartopy.crs as ccrs
-            from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
             import cartopy.feature as cfeature
+            from cartopy.mpl.gridliner import LATITUDE_FORMATTER, LONGITUDE_FORMATTER
         except ModuleNotFoundError:
             raise ModuleNotFoundError(
                 "Plotting the data set requires cartopy. "

@@ -1,8 +1,8 @@
-from .base import WaveformModel
-
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
+
+from .base import WaveformModel
 
 
 class BasicPhaseAE(WaveformModel):

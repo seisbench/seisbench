@@ -1,17 +1,18 @@
-import seisbench
-import seisbench.models
-from seisbench.models.base import ActivationLSTMCell, CustomLSTM
+import inspect
+import logging
+from collections import defaultdict
+from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import obspy
-from obspy import UTCDateTime
-import torch
-from unittest.mock import patch
-import logging
 import pytest
-import inspect
-from collections import defaultdict
-from pathlib import Path
+import torch
+from obspy import UTCDateTime
+
+import seisbench
+import seisbench.models
+from seisbench.models.base import ActivationLSTMCell, CustomLSTM
 
 
 def get_input_args(obj):
@@ -999,20 +1000,21 @@ def test_resample():
 def test_parse_seisbench_requirements():
     model = seisbench.models.GPD()
 
-    # Minimum version
-    model._weights_metadata = {"seisbench_requirement": seisbench.__version__}
-    model._parse_metadata()
-
-    # Newer version
-    model._weights_metadata = {"seisbench_requirement": seisbench.__version__ + "1"}
-    with pytest.raises(ValueError):
+    with patch("seisbench.__version__", "1.2.3"):
+        # Minimum version
+        model._weights_metadata = {"seisbench_requirement": seisbench.__version__}
         model._parse_metadata()
 
-    # Older version
-    version = seisbench.__version__
-    version = version[:-1] + chr(ord(version[-1]) - 1)
-    model._weights_metadata = {"seisbench_requirement": version}
-    model._parse_metadata()
+        # Newer version
+        model._weights_metadata = {"seisbench_requirement": seisbench.__version__ + "1"}
+        with pytest.raises(ValueError):
+            model._parse_metadata()
+
+        # Older version
+        version = seisbench.__version__
+        version = version[:-1] + chr(ord(version[-1]) - 1)
+        model._weights_metadata = {"seisbench_requirement": version}
+        model._parse_metadata()
 
 
 def test_parse_default_args():

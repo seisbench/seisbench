@@ -1,14 +1,15 @@
-import seisbench.data
-import seisbench.util.region as region
-import seisbench
-
-import numpy as np
-import pytest
 import logging
 from pathlib import Path
-import h5py
-import pandas as pd
 from unittest.mock import patch
+
+import h5py
+import numpy as np
+import pandas as pd
+import pytest
+
+import seisbench
+import seisbench.data
+import seisbench.util.region as region
 
 
 def test_get_dimension_mapping():

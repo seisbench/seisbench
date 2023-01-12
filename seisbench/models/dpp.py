@@ -1,7 +1,7 @@
-from .base import WaveformPipeline, WaveformModel, CustomLSTM, ActivationLSTMCell
-
 import torch
 import torch.nn as nn
+
+from .base import ActivationLSTMCell, CustomLSTM, WaveformModel, WaveformPipeline
 
 
 class DeepPhasePick(WaveformPipeline):

@@ -3,7 +3,7 @@
 Examples
 ========
 
-Below are links to a variety of example workflows help you get started with using 
+Below are links to a variety of example workflows help you get started with using
 SeisBench to optimise your ML workflows.
 
 .. _dataset_basics:
@@ -18,7 +18,7 @@ Dataset basics
         </a>
     </embed>
 
-An introduction to the SeisBench dataset API. 
+An introduction to the SeisBench dataset API.
 
 
 .. _model_basics:
@@ -63,7 +63,7 @@ Deploy ML pickers
         </a>
     </embed>
 
-Rapidly deploy ML models integrated in SeisBench to seismic streams. 
+Rapidly deploy ML models integrated in SeisBench to seismic streams.
 
 
 .. _using_deep_denoiser:
@@ -121,4 +121,3 @@ Building an event catalog
     </embed>
 
 Learn how to create an event catalog from raw waveforms and the metadata using SeisBench and the GaMMA associator.
-

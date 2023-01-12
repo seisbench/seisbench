@@ -1,11 +1,13 @@
-import seisbench
-import seisbench.util
-from .base import BenchmarkDataset
+import shutil
+from collections import defaultdict
 
 import h5py
-from collections import defaultdict
 import numpy as np
-import shutil
+
+import seisbench
+import seisbench.util
+
+from .base import BenchmarkDataset
 
 
 class SCEDC(BenchmarkDataset):
