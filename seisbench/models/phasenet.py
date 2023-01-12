@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import seisbench
 from .base import Conv1dSame, WaveformModel
 
 

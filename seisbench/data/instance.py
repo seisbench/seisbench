@@ -2,9 +2,9 @@ import bz2
 import os
 import shutil
 from abc import ABC
+from urllib.parse import urljoin
 
 import pandas as pd
-from urllib.parse import urljoin
 
 import seisbench
 import seisbench.util

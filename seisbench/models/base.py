@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
 from queue import PriorityQueue
+from urllib.parse import urljoin
 
 import nest_asyncio
 import numpy as np
@@ -23,9 +24,6 @@ from packaging import version
 import seisbench
 import seisbench.util as util
 from seisbench.util import log_lifecycle
-import logging
-import re
-from urllib.parse import urljoin
 
 
 def _cache_migration_v0_v3():

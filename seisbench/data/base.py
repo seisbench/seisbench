@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
+from urllib.parse import urljoin
 
 import h5py
 import matplotlib.pyplot as plt
@@ -16,11 +17,6 @@ from tqdm import tqdm
 
 import seisbench
 import seisbench.util
-import copy
-from collections import defaultdict
-from collections.abc import Iterable
-import warnings
-from urllib.parse import urljoin
 
 
 class WaveformDataset:
