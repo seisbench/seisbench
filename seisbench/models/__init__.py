@@ -6,4 +6,4 @@ from .dpp import DeepPhasePick, DPPDetector, DPPPicker
 from .eqtransformer import EQTransformer
 from .gpd import GPD
 from .phasenet import PhaseNet
-from .pickblue import  PickBlue
+from .pickblue import PickBlue

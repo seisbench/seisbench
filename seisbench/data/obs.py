@@ -1,5 +1,5 @@
-from seisbench.data.base import BenchmarkDataset
 import seisbench.util
+from seisbench.data.base import BenchmarkDataset
 
 
 class OBS(BenchmarkDataset):

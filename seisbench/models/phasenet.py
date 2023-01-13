@@ -1,8 +1,7 @@
-import torch
 import numpy as np
-import torch.nn as nn
 import scipy.signal
-
+import torch
+import torch.nn as nn
 
 from .base import Conv1dSame, WaveformModel
 

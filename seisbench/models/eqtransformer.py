@@ -1,13 +1,12 @@
 import warnings
 
 import numpy as np
+import scipy.signal
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from .base import ActivationLSTMCell, CustomLSTM, WaveformModel
-import warnings
-import scipy.signal
 
 
 # For implementation, potentially follow: https://medium.com/huggingface/from-tensorflow-to-pytorch-265f40ef2a28
