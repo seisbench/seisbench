@@ -1,9 +1,9 @@
-from .base import WaveformModel, Conv1dSame
-
-import torch
-import torch.nn as nn
 import numpy as np
 import scipy.signal
+import torch
+import torch.nn as nn
+
+from .base import Conv1dSame, WaveformModel
 
 class PhaseNet(WaveformModel):
     """
@@ -14,7 +14,11 @@ class PhaseNet(WaveformModel):
     _annotate_args["*_threshold"] = ("Detection threshold for the provided phase", 0.3)
 
     def __init__(
-        self, in_channels=3, classes=3, phases="NPS", sampling_rate=100,
+        self,
+        in_channels=3,
+        classes=3,
+        phases="NPS",
+        sampling_rate=100,
         highpass_axis=None,
         highpass_freq_hz=None,
         norm_amp_per_comp=False,
@@ -92,7 +96,7 @@ class PhaseNet(WaveformModel):
         self.out = nn.ConvTranspose1d(16, self.classes, 1)
         self.softmax = torch.nn.Softmax(dim=1)
 
-    def forward(self, x):
+    def forward(self, x, logits=False):
         x_in = self.activation(self.in_bn(self.inc(x)))
 
         x1 = self.activation(self.bnd1(self.conv1(x_in)))
@@ -106,11 +110,13 @@ class PhaseNet(WaveformModel):
         x = torch.cat([self.activation(self.bnu4(self.up4(x))), x_in], dim=1)
 
         x = self.out(x)
-        x = self.softmax(x)
-
-        return x
+        if logits:
+            return x
+        else:
+            return self.softmax(x)
 
     def annotate_window_pre(self, window, argdict):
+        # Add a demean and an amplitude normalization step to the preprocessing
 
         if self.highpass_axis is not None:
             # Apply a highpass filter to the hydrophone component
@@ -128,7 +134,7 @@ class PhaseNet(WaveformModel):
         if self.norm_amp_per_comp:
             amp_normed = np.zeros(window.shape)
             for i, a in enumerate(window):
-                amp =  a / (np.max(np.abs(a)) + 1e-10)
+                amp = a / (np.max(np.abs(a)) + 1e-10)
                 amp[amp == 0] = 1  # Avoid NaN errors
                 amp_normed[i, :] = amp
             window = amp_normed

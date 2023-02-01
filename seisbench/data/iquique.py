@@ -1,4 +1,5 @@
 import seisbench
+
 from .base import BenchmarkDataset
 
 

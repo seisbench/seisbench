@@ -1,20 +1,21 @@
-import seisbench
-import seisbench.util
-
-from abc import abstractmethod, ABC
-from pathlib import Path
-import pandas as pd
-import h5py
-import numpy as np
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-import os
-import inspect
-import scipy.signal
 import copy
+import inspect
+import os
+import warnings
+from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Iterable
-import warnings
+from pathlib import Path
+
+import h5py
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import scipy.signal
+from tqdm import tqdm
+
+import seisbench
+import seisbench.util
 
 
 class WaveformDataset:
@@ -75,6 +76,12 @@ class WaveformDataset:
                                   but ignore missing ones. This will raise an error if traces with different
                                   numbers of components are requested together.
     :type missing_components: str
+    :param metadata_cache: If true, metadata is cached in a lookup table.
+                           This significantly speeds up access to metadata and thereby access to samples.
+                           On the downside, this requires storing two copies of the metadata in memory.
+                           The second copy usually consumes more memory due to the less space-efficient format.
+                           Runtime differences are particularly big for large datasets.
+    :type bool:
     :param kwargs:
     """
 
@@ -88,6 +95,7 @@ class WaveformDataset:
         cache=None,
         chunks=None,
         missing_components="pad",
+        metadata_cache=False,
         **kwargs,
     ):
         if name is None:
@@ -101,6 +109,11 @@ class WaveformDataset:
         if chunks is not None:
             self._chunks = sorted(chunks)
 
+            available_chunks = self.available_chunks(path)
+            for chunk in self._chunks:
+                if chunk not in available_chunks:
+                    raise ValueError(f"Dataset does not contain the chunk '{chunk}'.")
+
         self._missing_components = None
 
         self._trace_identification_warning_issued = (
@@ -112,6 +125,8 @@ class WaveformDataset:
         self._component_order = None  # Target component order
         # Dict [source_component_order -> list for reordering source to target components]
         self._component_mapping = None
+        self._metadata_lookup = None
+        self._chunks_with_paths_cache = None
         self.sampling_rate = sampling_rate
 
         self._verify_dataset()
@@ -133,6 +148,9 @@ class WaveformDataset:
             tmp_metadata["trace_chunk"] = chunk
             metadatas.append(tmp_metadata)
         self._metadata = pd.concat(metadatas)
+        self._metadata.reset_index(
+            inplace=True
+        )  # Required because grouping of chunked datasets breaks otherwise
 
         self._data_format = self._read_data_format()
 
@@ -143,8 +161,11 @@ class WaveformDataset:
         self.dimension_order = dimension_order
         self.component_order = component_order
         self.missing_components = missing_components
+        self.metadata_cache = metadata_cache
 
         self._waveform_cache = defaultdict(dict)
+
+        self.grouping = None
 
     def __str__(self):
         return f"{self._name} - {len(self)} traces"
@@ -208,6 +229,15 @@ class WaveformDataset:
             )
 
         self._cache = cache
+
+    @property
+    def metadata_cache(self):
+        return self._metadata_cache
+
+    @metadata_cache.setter
+    def metadata_cache(self, val):
+        self._metadata_cache = val
+        self._rebuild_metadata_cache()
 
     @property
     def path(self):
@@ -289,6 +319,43 @@ class WaveformDataset:
         self._component_order = value
 
     @property
+    def grouping(self):
+        """
+        The grouping parameters for the dataset. These parameters are used to determine the
+        :py:attr:`~groups` and for the associated methods.
+        `grouping` can be either a single string or a list of strings.
+        Each string must be a column in the metadata.
+        By default, the grouping is None.
+        """
+        return self._grouping
+
+    @grouping.setter
+    def grouping(self, value):
+        self._grouping = value
+
+        if value is None:
+            self._groups = None
+            self._groups_to_trace_idx = None
+        else:
+            self._metadata.reset_index(
+                inplace=True, drop=True
+            )  # Make sure the indices are correct
+            self._groups_to_trace_idx = self.metadata.groupby(value).groups
+            self._groups = list(self._groups_to_trace_idx.keys())
+            self._groups_to_group_idx = {
+                group: i for i, group in enumerate(self._groups)
+            }
+
+    @property
+    def groups(self):
+        """
+        The list of groups as defined by the :py:attr:`~grouping` or `None` if :py:attr:`~grouping` is `None`.
+        """
+        return copy.copy(
+            self._groups
+        )  # Return a copy to make the internal groups immutable
+
+    @property
     def chunks(self):
         """
         Returns a list of chunks. If dataset is not chunked, returns an empty list.
@@ -356,6 +423,14 @@ class WaveformDataset:
                 chunks = list(chunks)
 
         return sorted(chunks)
+
+    def _rebuild_metadata_cache(self):
+        if self.metadata_cache:
+            self._metadata_lookup = list(
+                self._metadata.apply(lambda x: x.to_dict(), axis=1)
+            )
+        else:
+            self._metadata_lookup = None
 
     def _unify_sampling_rate(self, eps=1e-4):
         """
@@ -513,10 +588,21 @@ class WaveformDataset:
 
         :return: List of chunks, list of metadata paths, list of waveform paths
         """
-        metadata_paths = [self.path / f"metadata{chunk}.csv" for chunk in self.chunks]
-        waveform_paths = [self.path / f"waveforms{chunk}.hdf5" for chunk in self.chunks]
+        if self._chunks_with_paths_cache is None:
+            metadata_paths = [
+                self.path / f"metadata{chunk}.csv" for chunk in self.chunks
+            ]
+            waveform_paths = [
+                self.path / f"waveforms{chunk}.hdf5" for chunk in self.chunks
+            ]
 
-        return self.chunks, metadata_paths, waveform_paths
+            self._chunks_with_paths_cache = (
+                self.chunks,
+                metadata_paths,
+                waveform_paths,
+            )
+
+        return self._chunks_with_paths_cache
 
     def _verify_dataset(self):
         """
@@ -599,6 +685,22 @@ class WaveformDataset:
                     "Component order not specified in data set. "
                     "Keeping original components."
                 )
+
+    def get_group_idx_from_params(self, params):
+        """
+        Returns the index of the group identified by the params.
+
+        :param params: The parameters identifying the group. For a single grouping parameter, this argument will be a
+                       single value. Otherwise this argument needs to be a tuple of keys.
+        :return: Index of the group
+        :rtype: int
+        """
+        self._verify_grouping_defined()
+
+        if params in self._groups_to_group_idx:
+            return self._groups_to_group_idx[params]
+        else:
+            raise KeyError("The dataset does not contain the requested group.")
 
     def get_idx_from_trace_name(self, trace_name, chunk=None, dataset=None):
         """
@@ -725,6 +827,8 @@ class WaveformDataset:
             self._metadata = self._metadata[mask]
             self._evict_cache()
             self._build_trace_name_to_idx_dict()
+            self._rebuild_metadata_cache()
+            self.grouping = self.grouping  # Recalculate grouping
         else:
             other = self.copy()
             other.filter(mask, inplace=True)
@@ -881,7 +985,10 @@ class WaveformDataset:
         :param sampling_rate: Target sampling rate, overwrites sampling rate for dataset.
         :return: Tuple with the waveforms and the metadata of the sample.
         """
-        metadata = self.metadata.iloc[idx].to_dict()
+        if self._metadata_lookup is None:
+            metadata = self.metadata.iloc[idx].to_dict()
+        else:
+            metadata = copy.deepcopy(self._metadata_lookup[idx])
 
         if sampling_rate is None:
             sampling_rate = self.sampling_rate
@@ -939,7 +1046,11 @@ class WaveformDataset:
                 idx = [idx]
                 squeeze = True
 
-            load_metadata = self._metadata.iloc[idx]
+            if self._metadata_lookup is None:
+                load_metadata = self._metadata.iloc[idx]
+            else:
+                load_metadata = [self._metadata_lookup[i] for i in idx]
+                load_metadata = self._pack_metadata(load_metadata)
         else:
             if mask is not None:
                 load_metadata = self._metadata[mask]
@@ -989,6 +1100,80 @@ class WaveformDataset:
             waveforms = np.squeeze(waveforms, axis=batch_dimension)
 
         return waveforms
+
+    def get_group_size(self, idx):
+        """
+        Returns the number of samples in a group
+
+        :param idx: Group index
+        :type idx: int
+        :return: Size of the group
+        :rtype: int
+        """
+        self._verify_grouping_defined()
+        group = self._groups[idx]
+        idx = self._groups_to_trace_idx[group]
+        return len(idx)
+
+    def get_group_samples(self, idx, **kwargs):
+        """
+        Returns the waveforms and metadata for each member of a group.
+        For details see :py:func:`get_sample`.
+
+        :param idx: Group index
+        :type idx: int
+        :param kwargs: Kwargs passed to :py:func:`get_sample`
+        :return: List of waveforms, list of metadata dicts
+        """
+        return self._get_group_internal(idx, return_metadata=True, **kwargs)
+
+    def get_group_waveforms(self, idx, **kwargs):
+        """
+        Returns the waveforms for each member of a group.
+        For details see :py:func:`get_sample`.
+
+        :param idx: Group index
+        :type idx: int
+        :param kwargs: Kwargs passed to :py:func:`get_sample`
+        :return: List of waveforms
+        """
+        return self._get_group_internal(idx, return_metadata=False, **kwargs)
+
+    def _get_group_internal(self, idx, return_metadata, **kwargs):
+        self._verify_grouping_defined()
+
+        group = self._groups[idx]
+        idx = self._groups_to_trace_idx[group]
+
+        waveforms = []
+        metadata = []
+
+        for trace_idx in idx:
+            trace_wv, trace_meta = self.get_sample(trace_idx, **kwargs)
+            waveforms.append(trace_wv)
+            metadata.append(trace_meta)
+
+        if return_metadata:
+            return waveforms, WaveformDataset._pack_metadata(metadata)
+        else:
+            return waveforms
+
+    @staticmethod
+    def _pack_metadata(metadata):
+        """
+        Reformats a list of dict into a dict of lists. Assumes identical keys in all dicts!
+        """
+
+        return {key: [m[key] for m in metadata] for key in metadata[0].keys()}
+
+    def _verify_grouping_defined(self):
+        """
+        Check if grouping is defined and raises and error otherwise
+        """
+        if self.grouping is None:
+            raise ValueError(
+                "Groups need to be defined first by assigning a value to grouping."
+            )
 
     def _get_single_waveform(
         self,
@@ -1193,8 +1378,8 @@ class WaveformDataset:
         fig = plt.figure(figsize=(15, 10))
         try:
             import cartopy.crs as ccrs
-            from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
             import cartopy.feature as cfeature
+            from cartopy.mpl.gridliner import LATITUDE_FORMATTER, LONGITUDE_FORMATTER
         except ModuleNotFoundError:
             raise ModuleNotFoundError(
                 "Plotting the data set requires cartopy. "
@@ -1323,6 +1508,8 @@ class MultiWaveformDataset:
         )
 
         self._homogenize_dataformat(datasets)
+        self._grouping = None
+        self._homogenize_grouping(datasets)
         self._build_trace_name_to_idx_dict()
 
     def __add__(self, other):
@@ -1392,6 +1579,54 @@ class MultiWaveformDataset:
                 f"Using missing_components from first dataset ({self.datasets[0].missing_components})."
             )
             self.missing_components = self.datasets[0].missing_components
+
+    def _homogenize_grouping(self, datasets):
+        groupings = [dataset.grouping for dataset in datasets]
+        if any(grouping != groupings[0] for grouping in groupings):
+            seisbench.logger.warning(
+                "Found inconsistent groupings. Setting grouping to None."
+            )
+            self.grouping = None
+        else:
+            self.grouping = groupings[0]
+
+    @property
+    def grouping(self):
+        """
+        The grouping parameters for the dataset.
+        Grouping allows to access metadata and waveforms
+        jointly from a set of traces with a common metadata parameter.
+        This can for example be used to access all waveforms belong to one event
+        and building event based models.
+        Setting the grouping parameter defines the output of
+        :py:attr:`~groups` and the associated methods.
+        `grouping` can be either a single string or a list of strings.
+        Each string must be a column in the metadata.
+        By default, the grouping is None.
+        """
+        return self._grouping
+
+    @grouping.setter
+    def grouping(self, value):
+        self._grouping = value
+        if value is None:
+            self._groups = None
+            self._groups_to_trace_idx = None
+        else:
+            self._groups_to_trace_idx = self.metadata.groupby(value).groups
+            self._groups = list(self._groups_to_trace_idx.keys())
+            self._groups_to_group_idx = {
+                group: i for i, group in enumerate(self._groups)
+            }
+
+    @property
+    def groups(self):
+        """
+        The list of groups as defined by the :py:attr:`~grouping` or `None` if :py:attr:`~grouping` is `None`.
+        """
+        return copy.copy(
+            self._groups
+        )  # Return a copy to make the internal groups immutable
 
     @property
     def datasets(self):
@@ -1605,6 +1840,7 @@ class MultiWaveformDataset:
             # Calculate new metadata
             self._metadata = pd.concat(x.metadata for x in self.datasets)
             self._build_trace_name_to_idx_dict()
+            self.grouping = self.grouping  # Rebuild groups
 
         else:
             return MultiWaveformDataset(
@@ -1672,6 +1908,12 @@ class MultiWaveformDataset:
     train_dev_test = WaveformDataset.train_dev_test
     _build_trace_name_to_idx_dict = WaveformDataset._build_trace_name_to_idx_dict
     get_idx_from_trace_name = WaveformDataset.get_idx_from_trace_name
+    get_group_idx_from_params = WaveformDataset.get_group_idx_from_params
+    _verify_grouping_defined = WaveformDataset._verify_grouping_defined
+    get_group_waveforms = WaveformDataset.get_group_waveforms
+    get_group_samples = WaveformDataset.get_group_samples
+    get_group_size = WaveformDataset.get_group_size
+    _get_group_internal = WaveformDataset._get_group_internal
 
 
 class LoadingContext:

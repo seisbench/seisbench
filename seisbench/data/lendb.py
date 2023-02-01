@@ -1,10 +1,12 @@
-import seisbench
-import seisbench.util
-from .base import BenchmarkDataset
-
 import os
+
 import h5py
 from obspy import UTCDateTime
+
+import seisbench
+import seisbench.util
+
+from .base import BenchmarkDataset
 
 
 class LenDB(BenchmarkDataset):

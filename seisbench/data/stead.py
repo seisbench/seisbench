@@ -1,11 +1,13 @@
+from pathlib import Path
+
+import h5py
+import numpy as np
+import pandas as pd
+
 import seisbench
 import seisbench.util
-from .base import BenchmarkDataset, WaveformDataWriter
 
-from pathlib import Path
-import h5py
-import pandas as pd
-import numpy as np
+from .base import BenchmarkDataset, WaveformDataWriter
 
 
 class STEAD(BenchmarkDataset):
@@ -22,7 +24,9 @@ class STEAD(BenchmarkDataset):
             "A Global Data Set of Seismic Signals for AI, IEEE Access, doi:10.1109/ACCESS.2019.2947848"
         )
         license = "CC BY 4.0"
-        super().__init__(citation=citation, license=license, **kwargs)
+        super().__init__(
+            citation=citation, license=license, repository_lookup=True, **kwargs
+        )
 
     def _download_dataset(self, writer: WaveformDataWriter, basepath=None, **kwargs):
         download_instructions = (

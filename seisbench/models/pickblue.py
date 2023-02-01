@@ -2,14 +2,17 @@ from .eqtransformer import EQTransformer
 from .phasenet import PhaseNet
 
 
-class PickBlue:
+def PickBlue(base: str = "eqtransformer", **kwargs):
+    """
+    Initialize a PickBlue model. All `kwargs` are passed to `from_pretrained`.
 
-    def __new__(cls, *args, base='eqtransformer', **kwargs):
-        if base.lower() == 'eqtransformer':
-            eqt_model = EQTransformer.from_pretrained("obs")
-            return eqt_model
-        elif base.lower() == 'phasenet':
-            pn_model = PhaseNet.from_pretrained("obs")
-            return pn_model
-        else:
-            raise ValueError(f"'{base}' is no valid base class of PickBlue. Choose 'EQTransformer' or 'PhaseNet'!")
+    :param base: Base model to use. Currently, supports either `eqtransformer` or `phasenet`.
+    """
+    if base.lower() == "eqtransformer":
+        return EQTransformer.from_pretrained("obs", **kwargs)
+    elif base.lower() == "phasenet":
+        return PhaseNet.from_pretrained("obs", **kwargs)
+    else:
+        raise ValueError(
+            f"'{base}' is no valid base class of PickBlue. Choose 'EQTransformer' or 'PhaseNet'!"
+        )

@@ -5,13 +5,13 @@
 ---
 
 [![PyPI - License](https://img.shields.io/pypi/l/seisbench)](https://github.com/seisbench/seisbench/blob/main/LICENSE)
-[![GitHub Workflow Status](https://img.shields.io/github/workflow/status/seisbench/seisbench/main_push_action)](https://github.com/seisbench/seisbench)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/seisbench/seisbench/main_push.yml?branch=main)](https://github.com/seisbench/seisbench)
 [![Read the Docs](https://img.shields.io/readthedocs/seisbench)](https://seisbench.readthedocs.io/en/latest/)
 [![PyPI](https://img.shields.io/pypi/v/seisbench)](https://pypi.org/project/seisbench/)
 [![Python 3.7](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/release/python-360/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5568813.svg)](https://doi.org/10.5281/zenodo.5568813)
 
-The Seismology Benchmark collection (*SeisBench*) is an open-source python toolbox for 
+The Seismology Benchmark collection (*SeisBench*) is an open-source python toolbox for
 machine learning in seismology.
 It provides a unified API for accessing seismic datasets and both training and applying machine learning algorithms to seismic data.
 SeisBench has been built to reduce the overhead when applying or developing machine learning techniques for seismological tasks.
@@ -52,6 +52,15 @@ Simply run:
 ```
 pip install seisbench
 ```
+
+SeisBench is build on pytorch.
+As of pytorch 1.13.0, pytorch is by default shipped with CUDA dependencies which increases the size of the installation considerably.
+If you want to install a pure CPU version, the easiest workaround for now is to use:
+```
+pip install torch==1.12.1 seisbench
+```
+We are working on a [more permanent solution](https://github.com/seisbench/seisbench/issues/141) that allows to use the latest pytorch version in a pure CPU context.
+
 Alternatively, you can install the latest version from source.
 For this approach, clone the repository, switch to the repository root and run:
 ```
@@ -91,3 +100,7 @@ Reference publications for SeisBench:
 
 ---
 
+## Acknowledgement
+
+The initial version of SeisBench has been developed at [GFZ Potsdam](https://www.gfz-potsdam.de/) and [KIT](https://www.gpi.kit.edu/) with funding from [Helmholtz AI](https://www.helmholtz.ai/).
+The SeisBench repository is hosted by [HIFIS - Helmholtz Federated IT Services](https://www.hifis.net/).

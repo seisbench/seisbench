@@ -1,17 +1,18 @@
-import seisbench
-import seisbench.models
-from seisbench.models.base import ActivationLSTMCell, CustomLSTM
+import inspect
+import logging
+from collections import defaultdict
+from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import obspy
-from obspy import UTCDateTime
-import torch
-from unittest.mock import patch
-import logging
 import pytest
-import inspect
-from collections import defaultdict
-from pathlib import Path
+import torch
+from obspy import UTCDateTime
+
+import seisbench
+import seisbench.models
+from seisbench.models.base import ActivationLSTMCell, CustomLSTM
 
 
 def get_input_args(obj):
@@ -999,20 +1000,21 @@ def test_resample():
 def test_parse_seisbench_requirements():
     model = seisbench.models.GPD()
 
-    # Minimum version
-    model._weights_metadata = {"seisbench_requirement": seisbench.__version__}
-    model._parse_metadata()
-
-    # Newer version
-    model._weights_metadata = {"seisbench_requirement": seisbench.__version__ + "1"}
-    with pytest.raises(ValueError):
+    with patch("seisbench.__version__", "1.2.3"):
+        # Minimum version
+        model._weights_metadata = {"seisbench_requirement": seisbench.__version__}
         model._parse_metadata()
 
-    # Older version
-    version = seisbench.__version__
-    version = version[:-1] + chr(ord(version[-1]) - 1)
-    model._weights_metadata = {"seisbench_requirement": version}
-    model._parse_metadata()
+        # Newer version
+        model._weights_metadata = {"seisbench_requirement": seisbench.__version__ + "1"}
+        with pytest.raises(ValueError):
+            model._parse_metadata()
+
+        # Older version
+        version = seisbench.__version__
+        version = version[:-1] + chr(ord(version[-1]) - 1)
+        model._weights_metadata = {"seisbench_requirement": version}
+        model._parse_metadata()
 
 
 def test_parse_default_args():
@@ -1088,9 +1090,12 @@ def test_annotate_eqtransformer(parallelism):
 )
 def test_annotate_pickblue(parallelism, model):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
-    model = seisbench.models.PickBlue(
-        base=model, sampling_rate=400
-    )  # Higher sampling rate ensures trace is long enough
+    with patch(
+        "seisbench.models.SeisBenchModel._check_version_requirement"
+    ):  # Ignore version requirement
+        model = seisbench.models.PickBlue(base=model)
+
+    model.sampling_rate = 400  # Higher sampling rate ensures trace is long enough
 
     stream = obspy.read("./tests/examples/OBS*")
     annotations = model.annotate(stream, parallelism=parallelism)
@@ -1933,3 +1938,135 @@ def test_verify_argdict(caplog):
     with caplog.at_level(logging.WARNING):
         model._verify_argdict({"my_var": 3})
     assert "Unknown argument" in caplog.text
+
+
+def test_annotate_filter():
+    model = seisbench.models.GPD()
+
+    # Nothing happens
+    stream_org = obspy.read()
+    stream = stream_org.copy()
+    model.filter_args = None
+    model.filter_kwargs = None
+    model._filter_stream(stream)
+
+    for trace_a, trace_b in zip(stream_org, stream):
+        assert np.allclose(trace_a.data, trace_b.data)
+
+    # Filter all
+    stream_org = obspy.read()
+    stream = stream_org.copy()
+    model.filter_args = ["highpass"]
+    model.filter_kwargs = {"freq": 1}
+    model._filter_stream(stream)
+
+    for trace_a, trace_b in zip(stream_org, stream):
+        assert not np.allclose(trace_a.data, trace_b.data)
+
+    # Filter Z only
+    stream_org = obspy.read()
+    stream = stream_org.copy()
+    model.filter_args = {"??Z": ["highpass"]}
+    model.filter_kwargs = {"??Z": {"freq": 1}}
+    model._filter_stream(stream)
+
+    for trace_a, trace_b in zip(stream_org, stream):
+        if trace_a.stats.channel[-1] == "Z":
+            assert not np.allclose(trace_a.data, trace_b.data)
+        else:
+            assert np.allclose(trace_a.data, trace_b.data)
+
+    # Invalid filter
+    model.filter_args = {"??Z": ["highpass"]}
+    model.filter_kwargs = {"??Y": {"freq": 1}}
+
+    with pytest.raises(ValueError) as e:
+        model._filter_stream(stream)
+
+    assert "Invalid filter definition" in str(e)
+
+
+def test_phasenet_forward():
+    model = seisbench.models.PhaseNet()
+    x = torch.rand((2, 3, 3001))
+
+    with torch.no_grad():
+        pred = model(x).numpy()
+    assert np.allclose(np.sum(pred, axis=1), 1)
+
+    with torch.no_grad():
+        pred = model(x, logits=True).numpy()
+    assert not np.allclose(np.sum(pred, axis=1), 1)
+
+
+def test_basicphaseae_forward():
+    model = seisbench.models.BasicPhaseAE()
+    x = torch.rand((2, 3, 600))
+
+    with torch.no_grad():
+        pred = model(x).numpy()
+    assert np.allclose(np.sum(pred, axis=1), 1)
+
+    with torch.no_grad():
+        pred = model(x, logits=True).numpy()
+    assert not np.allclose(np.sum(pred, axis=1), 1)
+
+
+def test_gpd_forward():
+    model = seisbench.models.GPD()
+    x = torch.rand((2, 3, 400))
+
+    with torch.no_grad():
+        pred = model(x).numpy()
+    assert np.allclose(np.sum(pred, axis=1), 1)
+
+    with torch.no_grad():
+        pred = model(x, logits=True).numpy()
+    assert not np.allclose(np.sum(pred, axis=1), 1)
+
+
+def test_dpp_forward():
+    model = seisbench.models.DPPDetector()
+    x = torch.rand((2, 3, 500))
+
+    with torch.no_grad():
+        pred = model(x).numpy()
+    assert np.allclose(np.sum(pred, axis=1), 1)
+
+    with torch.no_grad():
+        pred = model(x, logits=True).numpy()
+    assert not np.allclose(np.sum(pred, axis=1), 1)
+
+
+def test_eqtransformer_forward():
+    model = seisbench.models.EQTransformer()
+    x = torch.rand((2, 3, 6000))
+
+    with torch.no_grad():
+        pred = [p.numpy() for p in model(x)]
+
+    for p in pred:
+        assert np.all(np.logical_and(0 <= p, p <= 1))
+
+    with torch.no_grad():
+        pred_logit = [p.numpy() for p in model(x, logits=True)]
+
+    for p, pl in zip(pred, pred_logit):
+        assert not np.allclose(p, pl)
+
+
+def test_cred_forward():
+    model = seisbench.models.CRED()
+    x = np.random.rand(3, 3000)
+    x = np.expand_dims(model.waveforms_to_spectrogram(x), 0).astype(np.float32)
+    x = torch.from_numpy(x)
+
+    with torch.no_grad():
+        pred = model(x).numpy()
+
+    assert np.all(np.logical_and(0 <= pred, pred <= 1))
+
+    with torch.no_grad():
+        pred_logit = model(x, logits=True).numpy()
+
+    assert not np.allclose(pred, pred_logit)

@@ -1,12 +1,13 @@
-import seisbench
+import ftplib
+import os
+import time
+from pathlib import Path
 
 import requests
-import ftplib
-from tqdm import tqdm
-from pathlib import Path
-import time
-import os
 from lxml import etree
+from tqdm import tqdm
+
+import seisbench
 
 
 def download_http(
@@ -265,3 +266,28 @@ def callback_if_uncached(
         for partial_file, file in zip(partial_files, files):
             if partial_file.is_file():
                 partial_file.rename(file)
+
+
+def safe_extract_tar(tar, path=".", members=None, *, numeric_owner=False):
+    """
+    A safe extract function for tar archives avoiding CVE-2007-4559
+    (extraction of files with absolute path)
+    See https://github.com/seisbench/seisbench/pull/134
+
+    Parameters as for `tar.extractall`
+    """
+
+    def is_within_directory(directory, target):
+        abs_directory = os.path.abspath(directory)
+        abs_target = os.path.abspath(target)
+
+        prefix = os.path.commonprefix([abs_directory, abs_target])
+
+        return prefix == abs_directory
+
+    for member in tar.getmembers():
+        member_path = os.path.join(path, member.name)
+        if not is_within_directory(path, member_path):
+            raise Exception("Attempted Path Traversal in Tar File")
+
+    tar.extractall(path, members, numeric_owner=numeric_owner)

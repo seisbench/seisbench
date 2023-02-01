@@ -1,27 +1,28 @@
+import asyncio
+import json
+import logging
+import math
+import os
+import re
+import warnings
+from abc import ABC, abstractmethod
+from collections import defaultdict
+from pathlib import Path
+from queue import PriorityQueue
+
+import nest_asyncio
+import numpy as np
+import obspy
+import torch
+import torch.multiprocessing as torchmp
+import torch.nn as nn
+import torch.nn.functional as F
+from obspy.signal.trigger import trigger_onset
+from packaging import version
+
 import seisbench
 import seisbench.util as util
 from seisbench.util import log_lifecycle
-
-from abc import abstractmethod, ABC
-from pathlib import Path
-import os
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from collections import defaultdict
-from queue import PriorityQueue
-import json
-import math
-import numpy as np
-import obspy
-import warnings
-from obspy.signal.trigger import trigger_onset
-import asyncio
-import nest_asyncio
-from packaging import version
-import torch.multiprocessing as torchmp
-import logging
-import re
 
 
 @log_lifecycle(logging.DEBUG)
@@ -564,7 +565,7 @@ class SeisBenchModel(nn.Module):
         model_metadata = {
             "docstring": weights_docstring,
             "model_args": parsed_model_args,
-            "seisbench-requirements": seisbench.__version__,
+            "seisbench_requirement": seisbench.__version__,
             "default_args": self.__dict__.get("default_args", ""),
         }
 
@@ -572,7 +573,7 @@ class SeisBenchModel(nn.Module):
         torch.save(self.state_dict(), path_pt)
         # Save model metadata
         with open(path_json, "w") as json_fp:
-            json.dump(model_metadata, json_fp)
+            json.dump(model_metadata, json_fp, indent=4)
 
         seisbench.logger.debug(f"Saved {self.name} model at {path}")
 
@@ -601,9 +602,17 @@ class SeisBenchModel(nn.Module):
         self._weights_version = self._weights_metadata.get("version", "1")
 
         # Check version requirement
+        self._check_version_requirement()
+
+        # Parse default args - Config default_args supersede constructor args
+        default_args = self._weights_metadata.get("default_args", {})
+        self.default_args.update(default_args)
+
+    def _check_version_requirement(self):
         seisbench_requirement = self._weights_metadata.get(
             "seisbench_requirement", None
         )
+        # Ignore version requirements when in dev branch
         if seisbench_requirement is not None:
             if version.parse(seisbench_requirement) > version.parse(
                 seisbench.__version__
@@ -612,10 +621,6 @@ class SeisBenchModel(nn.Module):
                     f"Weights require seisbench version at least {seisbench_requirement}, "
                     f"but the installed version is {seisbench.__version__}."
                 )
-
-        # Parse default args - Config default_args supersede constructor args
-        default_args = self._weights_metadata.get("default_args", {})
-        self.default_args.update(default_args)
 
     @abstractmethod
     def get_model_args(self):
@@ -699,7 +704,7 @@ class WaveformModel(SeisBenchModel, ABC):
         "stacking": (
             "Stacking method for overlapping windows (only for window prediction models). "
             "Options are 'max' and 'avg'. ",
-            "max",
+            "avg",
         ),
         "stride": ("Stride in samples (only for point prediction models)", 1),
     }
@@ -1890,23 +1895,46 @@ class WaveformModel(SeisBenchModel, ABC):
         :param argdict: Dictionary of arguments
         :return: Preprocessed stream
         """
-        # TODO: This should check for gaps and ensure that these are zeroed at the end of processing
-        if self.filter_args is not None or self.filter_kwargs is not None:
-            if self.filter_args is None:
-                filter_args = ()
-            else:
-                filter_args = self.filter_args
-
-            if self.filter_kwargs is None:
-                filter_kwargs = {}
-            else:
-                filter_kwargs = self.filter_kwargs
-
-            stream.filter(*filter_args, **filter_kwargs)
+        self._filter_stream(stream)
 
         if self.sampling_rate is not None:
             self.resample(stream, self.sampling_rate)
         return stream
+
+    def _filter_stream(self, stream):
+        """
+        Filters stream according to filter_args and filter_kwargs.
+        By default, these are directly passed to `obspy.stream.filter(*filter_arg, **filter_kwargs)`.
+        In addition, separate filtering for different channels can be defined.
+        This is done by making `filter_args` a dict from channel regex to the actual filter arguments.
+        In this case, `filter_kwargs` is expected to be a dict with the same keys.
+        For example, `filter_args = {"??Z": ("highpass",)}` and `filter_kwargs = {"??Z": {"freq": 1}}`
+        would high-pass filter only the vertical components at 1 Hz.
+        """
+        # TODO: This should check for gaps and ensure that these are zeroed at the end of processing
+        if self.filter_args is not None or self.filter_kwargs is not None:
+            if isinstance(self.filter_args, dict):
+                for key, filter_args in self.filter_args.items():
+                    substream = stream.select(channel=key)
+                    if key not in self.filter_kwargs:
+                        raise ValueError(
+                            f"Invalid filter definition. Key '{key}' in args but not in kwargs."
+                        )
+                    self._filter_stream_single(
+                        filter_args, self.filter_kwargs[key], substream
+                    )
+
+            else:
+                self._filter_stream_single(self.filter_args, self.filter_kwargs, stream)
+
+    @staticmethod
+    def _filter_stream_single(filter_args, filter_kwargs, stream):
+        if filter_args is None:
+            filter_args = ()
+        if filter_kwargs is None:
+            filter_kwargs = {}
+
+        stream.filter(*filter_args, **filter_kwargs)
 
     def annotate_stream_validate(self, stream, argdict):
         """

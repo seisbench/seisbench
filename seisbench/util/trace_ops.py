@@ -1,7 +1,7 @@
-import seisbench
-
 import numpy as np
 from obspy import ObsPyException
+
+import seisbench
 
 
 def trace_has_spikes(data, factor=25, quantile=0.975):

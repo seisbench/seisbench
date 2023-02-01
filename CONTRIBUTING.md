@@ -12,7 +12,7 @@ There are multiple ways in which you can contribute:
 
 - *Report a bug:* To report a suspected bug, please raise an issue on Github. Please try to give a short but complete description of the issue.
 - *Suggest a feature:* To suggest a new feature, please raise an issue on Github. Please describe the feature and the intended use case.
-- *Adding a dataset or model:* We are always happy to extend SeisBench with new datasets or models. 
+- *Adding a dataset or model:* We are always happy to extend SeisBench with new datasets or models.
   If you would like to contribute a dataset or model, please open a pull request following the steps outlined below.
   As a general rule of thumb regarding whether we will add a dataset or model, we typically require a peer-reviewed publication accompanying the dataset or model.
   However, this is not fixed, and we might deviate from the rule on a case-by-case basis. Feel free to raise an issue if unsure.
@@ -20,7 +20,7 @@ There are multiple ways in which you can contribute:
   Note that you can also implement models and datasets using SeisBench without including them in the SeisBench repository.
   To this end, simply include `seisbench.data.BenchmarkDataset` or `seisbench.models.WaveformModel` and make your class inherit from it.
   Doing so will also ease the process of adding a dataset or model to SeisBench.
-  
+
   SeisBench makes some dataset and pretrained model weights available through its data repository.
   If you are contributing a new dataset or model and would like to make it available through the SeisBench data repository,
   please raise an issue or mention this in the pull request.
@@ -30,7 +30,7 @@ When contributing, please include the appropriate label with the issue submissio
 
 - Bug --> **'bug'**
 - Feature request --> **'enhancement'**
-- For dataset or model addition 
+- For dataset or model addition
   - dataset addition --> **'dataset extension'**
   - model addition --> **'model extension'**
 

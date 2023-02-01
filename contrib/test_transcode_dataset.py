@@ -1,7 +1,7 @@
-import seisbench.data as sbd
-
 import pytest
 from transcode_dataset import get_component_order_mapping
+
+import seisbench.data as sbd
 
 
 def test_get_component_order_mapping():

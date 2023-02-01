@@ -1,6 +1,6 @@
 from obspy.clients.fdsn.mass_downloader.domain import (
-    Domain,
     CircularDomain,
+    Domain,
     RectangularDomain,
 )
 from obspy.geodetics.base import locations2degrees

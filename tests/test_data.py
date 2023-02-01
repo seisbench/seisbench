@@ -1,14 +1,15 @@
-import seisbench.data
-import seisbench.util.region as region
-import seisbench
-
-import numpy as np
-import pytest
 import logging
 from pathlib import Path
-import h5py
-import pandas as pd
 from unittest.mock import patch
+
+import h5py
+import numpy as np
+import pandas as pd
+import pytest
+
+import seisbench
+import seisbench.data
+import seisbench.util.region as region
 
 
 def test_get_dimension_mapping():
@@ -494,7 +495,7 @@ def test_unify_component_order(caplog):
 
 
 def test_resample():
-    dummy = seisbench.data.DummyDataset()
+    dummy = seisbench.data.DummyDataset(metadata_cache=False)
     dummy._metadata["trace_sampling_rate_hz"] = 20.0
     dummy._metadata["trace_sampling_rate_hz"].values[0] = np.nan
 
@@ -543,15 +544,20 @@ def test_resample_empty_trace(caplog):
     assert "Trying to resample empty trace, skipping resampling." in caplog.text
 
 
-def test_get_sample():
+@pytest.mark.parametrize(
+    "metadata_cache",
+    [True, False],
+)
+def test_get_sample(metadata_cache):
     # Checks that the parameters are correctly overwritten, when the sampling_rate is changed
-    dummy = seisbench.data.DummyDataset()
+    dummy = seisbench.data.DummyDataset(metadata_cache=metadata_cache)
     dummy.sampling_rate = None
 
     base_sampling_rate = dummy.metadata.iloc[0]["trace_sampling_rate_hz"]
     base_arrival_sample = 500
     dummy._metadata["trace_p_arrival_sample"] = base_arrival_sample
     dummy._metadata["trace_dt_s"] = 1 / dummy._metadata["trace_sampling_rate_hz"]
+    dummy._rebuild_metadata_cache()
 
     # No resampling
     waveforms, metadata = dummy.get_sample(0, sampling_rate=None)
@@ -860,6 +866,7 @@ def test_get_waveforms_component_orders():
     assert (wv_org == wv).all()
 
     dummy._metadata["trace_component_order"].values[1] = "NEZ"
+    dummy._rebuild_metadata_cache()
     dummy.component_order = "ZNE"
     dummy.missing_components = "ignore"
 
@@ -876,6 +883,7 @@ def test_get_waveform_component_order_mismatching():
     # Tests different strategies for mismatching traces
     dummy = seisbench.data.DummyDataset(component_order="ZNE", dimension_order="NCW")
     dummy._metadata["trace_component_order"].values[1] = "Z"
+    dummy._rebuild_metadata_cache()
 
     dummy.missing_components = "pad"
     wv = dummy.get_waveforms([0, 1])
@@ -1309,43 +1317,182 @@ def test_chunked_datasets_key_collision(tmp_path):
     assert (data.get_waveforms(1) == 1).all()
 
 
-def test_component_mapping_fix_for_implicit_int_casts(tmp_path: Path):
+def test_verify_grouping():
+    data = seisbench.data.DummyDataset()
 
-    # The following implicit calls of seisbench.data.WaveformDataset._get_component_mapping() no longer raise
+    data.grouping = None
+    with pytest.raises(ValueError):
+        data.get_group_idx_from_params("dummy")
 
-    # Example values to combine
-    check_co_vals = ["ZNE", "Z12", "12", "Z12", "Z12H"]
-    for source_co in check_co_vals:
-        for target_co in check_co_vals:
-            data_path = tmp_path / "writer_a"
-            with seisbench.data.WaveformDataWriter(
-                data_path / "metadata.csv", data_path / "waveforms.hdf5"
-            ) as writer:
-                trace = {"trace_name": "dummy"}
-                writer.add_trace(trace, np.zeros((3, 100)))
-                writer.data_format["component_order"] = source_co
-            # Seisbench will call _get_component_mapping() in order to calculate possibly missing components
-            seisbench.data.WaveformDataset(data_path, component_order=target_co)
+    with pytest.raises(ValueError):
+        data.get_group_size(0)
 
-    # None of these test values should should be a problem
-    for test_val in [1, 12, "1", "12", "12H", "Z12H"]:
-        data_path = tmp_path / "writer_b"
-        with seisbench.data.WaveformDataWriter(
-            data_path / "metadata.csv", data_path / "waveforms.hdf5"
-        ) as writer:
-            # A trace with component order different to the one passed to the dataset init call
-            trace = {"trace_name": "dummy", "trace_component_order": test_val}
-            writer.add_trace(trace, np.zeros((3, 100)))
-        # Seisbench will check each trace for missing components compared with the passed component order
-        seisbench.data.WaveformDataset(data_path, component_order="Z12")
+    with pytest.raises(ValueError):
+        data.get_group_samples(0)
 
-    # Missing trace_component_order entries should raise
-    for test_val in ["", np.nan]:
-        data_path = tmp_path / "writer_c"
-        with seisbench.data.WaveformDataWriter(
-            data_path / "metadata.csv", data_path / "waveforms.hdf5"
-        ) as writer:
-            trace = {"trace_name": "dummy", "trace_component_order": test_val}
-            writer.add_trace(trace, np.zeros((3, 100)))
-        with pytest.raises(ValueError):
-            seisbench.data.WaveformDataset(data_path, component_order="Z12")
+    with pytest.raises(ValueError):
+        data.get_group_waveforms(0)
+
+
+@pytest.fixture
+def grouping_test_data():
+    data = seisbench.data.DummyDataset()
+
+    data._metadata = pd.DataFrame(
+        [
+            {
+                "event": "a",
+                "station": "A",
+                "part": 0,
+                "trace_name": "a1",
+                "trace_chunk": "",
+            },
+            {
+                "event": "b",
+                "station": "A",
+                "part": 0,
+                "trace_name": "b1",
+                "trace_chunk": "",
+            },
+            {
+                "event": "b",
+                "station": "B",
+                "part": 0,
+                "trace_name": "b2",
+                "trace_chunk": "",
+            },
+            {
+                "event": "b",
+                "station": "C",
+                "part": 0,
+                "trace_name": "b3",
+                "trace_chunk": "",
+            },
+            {
+                "event": "b",
+                "station": "C",
+                "part": 1,
+                "trace_name": "b4",
+                "trace_chunk": "",
+            },
+        ]
+    )
+    return data
+
+
+def test_get_group_size(grouping_test_data):
+    data = grouping_test_data
+
+    data.grouping = "event"
+    assert len(data.groups) == 2
+    assert data.get_group_size(data.get_group_idx_from_params("a")) == 1
+    assert data.get_group_size(data.get_group_idx_from_params("b")) == 4
+
+    data.grouping = ["event", "station"]
+    assert len(data.groups) == 4
+    assert data.get_group_size(data.get_group_idx_from_params(("a", "A"))) == 1
+    assert data.get_group_size(data.get_group_idx_from_params(("b", "A"))) == 1
+    assert data.get_group_size(data.get_group_idx_from_params(("b", "B"))) == 1
+    assert data.get_group_size(data.get_group_idx_from_params(("b", "C"))) == 2
+
+
+def test_get_group_sample_waveforms(grouping_test_data):
+    data = grouping_test_data
+
+    data.grouping = "event"
+    idx = data.get_group_idx_from_params("b")
+
+    with patch("seisbench.data.WaveformDataset.get_sample") as get_sample:
+        get_sample.return_value = (np.zeros(5), {"a": 1})
+
+        waveforms, metadata = data.get_group_samples(idx)
+        assert len(waveforms) == len(metadata["a"]) == 4
+        assert metadata == {"a": [1, 1, 1, 1]}
+        assert isinstance(waveforms[0], np.ndarray)
+
+        waveforms = data.get_group_waveforms(idx)
+        assert len(waveforms) == 4
+        assert isinstance(waveforms[0], np.ndarray)
+
+
+def test_multiwaveformdataset_grouping():
+    # Mostly checks that nothing crashes
+    data = seisbench.data.DummyDataset() + seisbench.data.DummyDataset()
+
+    data.grouping = "source_magnitude"
+
+    assert len(data.groups) == 97
+    assert data.get_group_size(0) == 2
+    data.get_group_waveforms(0)
+    data.get_group_samples(0)
+    data.get_group_idx_from_params(data.metadata.iloc[0]["source_magnitude"])
+
+
+def test_grouping_filter(grouping_test_data):
+    data = grouping_test_data
+
+    data.grouping = "event"
+    mask = data.metadata["event"] == "b"
+    data.filter(mask, inplace=True)
+    assert len(data.groups) == 1
+
+
+def test_chunk_validation():
+    # Requesting a non-existent chunk should raise a ValueError
+    seisbench.data.ChunkedDummyDataset(chunks=["0"])  # Passes
+
+    with pytest.raises(ValueError) as e:
+        seisbench.data.ChunkedDummyDataset(chunks=["not_a_chunk"])  # Fails
+
+    assert "not_a_chunk" in str(e)
+
+
+def test_grouping_chunked_dataset():
+    data = seisbench.data.ChunkedDummyDataset()
+    data.grouping = "trace_name"
+
+    # Check that actually the index was reset and the group keys are indices now
+    for i in range(len(data)):
+        assert any(i in group_keys for group_keys in data._groups_to_trace_idx.values())
+
+
+def test_grouping_index_filter():
+    data = seisbench.data.DummyDataset()
+    mask = np.ones(len(data), dtype=bool)
+    mask[:10] = False  # Remove the first 10 entries
+
+    data.grouping = "trace_name"
+
+    data.filter(mask, inplace=True)
+    # Check that actually the index was reset and the group keys are indices now
+    for i in range(len(data)):
+        assert any(i in group_keys for group_keys in data._groups_to_trace_idx.values())
+
+
+def test_metadata_lookup():
+    data = seisbench.data.DummyDataset(metadata_cache=False)
+    assert data._metadata_lookup is None
+
+    data = seisbench.data.DummyDataset(metadata_cache=True)
+    assert len(data._metadata_lookup) == len(data.metadata)
+
+    mask = np.zeros(len(data), dtype=bool)
+    mask[:20] = True
+
+    data.filter(mask, inplace=True)
+    assert len(data._metadata_lookup) == len(data.metadata)
+
+    for i in range(len(data)):
+        meta_lookup = data._metadata_lookup[i]
+        meta_direct = data.metadata.iloc[i].to_dict()
+
+        for key in meta_lookup.keys():
+            assert meta_direct[key] == meta_lookup[key]
+
+
+def test_chunks_with_paths_cache():
+    data = seisbench.data.DummyDataset()
+
+    data._chunks_with_paths_cache = None
+    data._chunks_with_paths()
+    assert data._chunks_with_paths_cache is not None

@@ -1,5 +1,6 @@
-import seisbench
 import functools
+
+import seisbench
 
 
 def log_lifecycle(level):

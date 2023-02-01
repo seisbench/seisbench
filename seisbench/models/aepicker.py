@@ -1,8 +1,8 @@
-from .base import WaveformModel
-
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
+
+from .base import WaveformModel
 
 
 class BasicPhaseAE(WaveformModel):
@@ -81,7 +81,7 @@ class BasicPhaseAE(WaveformModel):
         self.out = nn.ConvTranspose1d(12, self.classes, self.kernel_size, padding=2)
         self.softmax = torch.nn.Softmax(dim=1)
 
-    def forward(self, x):
+    def forward(self, x, logits=False):
 
         x_l1 = self.activation(self.conv2(self.activation(self.conv1(x))))
         x_l2 = self.drop1(self.activation(self.conv3(x_l1)))
@@ -91,9 +91,12 @@ class BasicPhaseAE(WaveformModel):
         x_r2 = self.upsample3(self.activation(self.conv6(x_r3)))
         x_r1 = self.upsample4(self.activation(self.conv7(x_r2)))
 
-        x_out = self.softmax(self.out(x_r1))
+        x_out = self.out(x_r1)
 
-        return x_out
+        if logits:
+            return x_out
+        else:
+            return self.softmax(x_out)
 
     def annotate_window_pre(self, window, argdict):
         # Add a demean and normalize step to the preprocessing

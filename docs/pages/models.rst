@@ -79,4 +79,4 @@ method. For a more in-depth explanation, see the :ref:`examples`.
 +-----------------------------------------------------------+---------------------------------------+--------------------------------------------------+
 
 Currently integrated models are limited to picking and detection works, but you can build ML models in SeisBench to perform general seismic tasks such as:
-magnitude and source parameter estimation, hypocentre determination etc.  
+magnitude and source parameter estimation, hypocentre determination etc.

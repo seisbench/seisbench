@@ -1,11 +1,12 @@
-from .base import WaveformModel, ActivationLSTMCell, CustomLSTM
+import warnings
 
+import numpy as np
+import scipy.signal
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-import warnings
-import scipy.signal
+
+from .base import ActivationLSTMCell, CustomLSTM, WaveformModel
 
 
 # For implementation, potentially follow: https://medium.com/huggingface/from-tensorflow-to-pytorch-265f40ef2a28
@@ -45,6 +46,12 @@ class EQTransformer(WaveformModel):
         "Number of prediction samples to discard on each side of each window prediction",
         (0, 0),
     )
+    # Overwrite default stacking method
+    _annotate_args["stacking"] = (
+        "Stacking method for overlapping windows (only for window prediction models). "
+        "Options are 'max' and 'avg'. ",
+        "max",
+    )
 
     def __init__(
         self,
@@ -56,10 +63,10 @@ class EQTransformer(WaveformModel):
         drop_rate=0.1,
         original_compatible=False,
         sampling_rate=100,
-        highpass_axis=None,
-        highpass_freq_hz=None,
         norm_amp_per_comp=False,
         norm_detrend=False,
+        highpass_axis=None,
+        highpass_freq_hz=None,
         blinding=500,
         **kwargs,
     ):
@@ -87,6 +94,10 @@ class EQTransformer(WaveformModel):
         self.classes = classes
         self.lstm_blocks = lstm_blocks
         self.drop_rate = drop_rate
+
+        # PickBlue options
+        self.norm_amp_per_comp = norm_amp_per_comp
+        self.norm_detrend = norm_detrend
 
         # PickBlue options
         self.highpass_axis = highpass_axis
@@ -213,7 +224,7 @@ class EQTransformer(WaveformModel):
         self.pick_decoders = nn.ModuleList(self.pick_decoders)
         self.pick_convs = nn.ModuleList(self.pick_convs)
 
-    def forward(self, x):
+    def forward(self, x, logits=False):
         assert x.ndim == 3
         assert x.shape[1:] == (self.in_channels, self.in_samples)
 
@@ -226,7 +237,10 @@ class EQTransformer(WaveformModel):
 
         # Detection part
         detection = self.decoder_d(x)
-        detection = torch.sigmoid(self.conv_d(detection))
+        if logits:
+            detection = self.conv_d(detection)
+        else:
+            detection = torch.sigmoid(self.conv_d(detection))
         detection = torch.squeeze(detection, dim=1)  # Remove channel dimension
 
         outputs = [detection]
@@ -245,7 +259,10 @@ class EQTransformer(WaveformModel):
             )  # From sequence, batch, channels to batch, channels, sequence
             px, _ = attention(px)
             px = decoder(px)
-            pred = torch.sigmoid(conv(px))
+            if logits:
+                pred = conv(px)
+            else:
+                pred = torch.sigmoid(conv(px))
             pred = torch.squeeze(pred, dim=1)  # Remove channel dimension
 
             outputs.append(pred)

@@ -2,9 +2,10 @@
 Directive for documenting optional arguments of WaveformModels
 """
 
-from docutils.parsers.rst import Directive
-from docutils import nodes
 from importlib import import_module
+
+from docutils import nodes
+from docutils.parsers.rst import Directive
 
 
 class ArgsDirective(Directive):

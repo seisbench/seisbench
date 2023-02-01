@@ -1,11 +1,12 @@
-import seisbench
-import seisbench.util
-from .base import BenchmarkDataset
-
-import pandas as pd
 import numpy as np
+import pandas as pd
 from obspy import UTCDateTime
 from obspy.clients.fdsn import Client
+
+import seisbench
+import seisbench.util
+
+from .base import BenchmarkDataset
 
 
 class DummyDataset(BenchmarkDataset):
