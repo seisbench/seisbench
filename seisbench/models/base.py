@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
 from queue import PriorityQueue
+from urllib.parse import urljoin
 
 import nest_asyncio
 import numpy as np
@@ -23,6 +24,33 @@ from packaging import version
 import seisbench
 import seisbench.util as util
 from seisbench.util import log_lifecycle
+
+
+def _cache_migration_v0_v3():
+    """
+    Migrates model cache from v0 to v3 if necessary
+    """
+    if seisbench.cache_model_root.is_dir():
+        return  # Migration already done
+
+    if not (seisbench.cache_root / "models").is_dir():
+        return  # No legacy cache
+
+    seisbench.logger.info("Migrating model cache to version 3")
+
+    # Move cache
+    seisbench.cache_model_root.mkdir(parents=True)
+    for path in (seisbench.cache_root / "models").iterdir():
+        if path.name == "v3":
+            continue
+
+        path.rename(seisbench.cache_model_root / path.name)
+
+    if (seisbench.cache_model_root / "phasenet").is_dir():
+        # Rename phasenet to phasenetlight
+        (seisbench.cache_model_root / "phasenet").rename(
+            seisbench.cache_model_root / "phasenetlight"
+        )
 
 
 @log_lifecycle(logging.DEBUG)
@@ -109,11 +137,11 @@ class SeisBenchModel(nn.Module):
 
     @classmethod
     def _model_path(cls):
-        return Path(seisbench.cache_root, "models", cls._name_internal().lower())
+        return Path(seisbench.cache_model_root, cls._name_internal().lower())
 
     @classmethod
     def _remote_path(cls):
-        return "/".join((seisbench.remote_root, "models", cls._name_internal().lower()))
+        return urljoin(seisbench.remote_model_root, cls._name_internal().lower())
 
     @classmethod
     def _pretrained_path(cls, name, version_str=""):
@@ -165,6 +193,8 @@ class SeisBenchModel(nn.Module):
         :rtype: SeisBenchModel
         """
         cls._cleanup_local_repository()
+        _cache_migration_v0_v3()
+
         if version_str == "latest":
             versions = cls.list_versions(name, remote=update)
             # Always query remote versions if cache is empty
@@ -293,6 +323,7 @@ class SeisBenchModel(nn.Module):
         :rtype: list or dict
         """
         cls._cleanup_local_repository()
+        _cache_migration_v0_v3()
 
         # Idea: If details, copy all "latest" configs to a temp directory
 
@@ -395,6 +426,7 @@ class SeisBenchModel(nn.Module):
         :rtype: list[str]
         """
         cls._cleanup_local_repository()
+        _cache_migration_v0_v3()
 
         if cls._model_path().is_dir():
             files = [x.name for x in cls._model_path().iterdir()]
@@ -612,7 +644,6 @@ class SeisBenchModel(nn.Module):
         seisbench_requirement = self._weights_metadata.get(
             "seisbench_requirement", None
         )
-        # Ignore version requirements when in dev branch
         if seisbench_requirement is not None:
             if version.parse(seisbench_requirement) > version.parse(
                 seisbench.__version__
@@ -2539,8 +2570,8 @@ class WaveformPipeline(ABC):
 
     @classmethod
     def _remote_path(cls):
-        return os.path.join(
-            seisbench.remote_root, "pipelines", cls._name_internal().lower()
+        return urljoin(
+            seisbench.remote_root, "pipelines/" + cls._name_internal().lower()
         )
 
     @classmethod

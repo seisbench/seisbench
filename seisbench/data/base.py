@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
+from urllib.parse import urljoin
 
 import h5py
 import matplotlib.pyplot as plt
@@ -2058,7 +2059,7 @@ class BenchmarkDataset(WaveformDataset, ABC):
         """
         Path to the dataset location in the SeisBench cache. This class method is required for technical reasons.
         """
-        return Path(seisbench.cache_root, "datasets", cls._name_internal().lower())
+        return Path(seisbench.cache_data_root, cls._name_internal().lower())
 
     @property
     def path(self):
@@ -2087,9 +2088,7 @@ class BenchmarkDataset(WaveformDataset, ABC):
         Path within the remote repository. Does only generate the pass without checking actual availability.
         Can be overwritten for datasets stored in the correct format but at a different location.
         """
-        return os.path.join(
-            seisbench.remote_root, "datasets", cls._name_internal().lower()
-        )
+        return urljoin(seisbench.remote_data_root, cls._name_internal().lower())
 
     @classmethod
     def available_chunks(cls, force=False, wait_for_file=False):
