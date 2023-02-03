@@ -14,7 +14,7 @@ class EQTransformer(WaveformModel):
     """
     The EQTransformer from Mousavi et al. (2020)
 
-    Implementation adapted from the Github repository https://github.com/smousavi05/EQTransformer
+    Implementation adapted from the GitHub repository https://github.com/smousavi05/EQTransformer
     Assumes padding="same" and activation="relu" as in the pretrained EQTransformer models
 
     By instantiating the model with `from_pretrained("original")` a binary compatible version of the original
@@ -94,10 +94,6 @@ class EQTransformer(WaveformModel):
         self.classes = classes
         self.lstm_blocks = lstm_blocks
         self.drop_rate = drop_rate
-
-        # PickBlue options
-        self.norm_amp_per_comp = norm_amp_per_comp
-        self.norm_detrend = norm_detrend
 
         # PickBlue options
         self.highpass_axis = highpass_axis

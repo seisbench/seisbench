@@ -6,6 +6,7 @@ import torch.nn.functional as F
 
 from .base import Conv1dSame, WaveformModel
 
+
 class PhaseNet(WaveformModel):
     """
     .. document_args:: seisbench.models PhaseNet
