@@ -76,7 +76,7 @@ class EQTransformer(WaveformModel):
         super().__init__(
             citation=citation,
             output_type="array",
-            default_args={"overlap": 1800, "blinding": (500, 500)},
+            default_args={"overlap": 3000, "blinding": (500, 500)},
             in_samples=in_samples,
             pred_sample=(0, in_samples),
             labels=["Detection"] + list(phases),
