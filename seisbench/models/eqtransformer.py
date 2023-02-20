@@ -43,7 +43,7 @@ class EQTransformer(WaveformModel):
     _annotate_args["detection_threshold"] = ("Detection threshold", 0.3)
     _annotate_args["blinding"] = (
         "Number of prediction samples to discard on each side of each window prediction",
-        (0, 0),
+        (500, 500),
     )
     # Overwrite default stacking method
     _annotate_args["stacking"] = (
@@ -51,6 +51,7 @@ class EQTransformer(WaveformModel):
         "Options are 'max' and 'avg'. ",
         "max",
     )
+    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 3000)
 
     def __init__(
         self,
@@ -76,7 +77,6 @@ class EQTransformer(WaveformModel):
         super().__init__(
             citation=citation,
             output_type="array",
-            default_args={"overlap": 3000, "blinding": (500, 500)},
             in_samples=in_samples,
             pred_sample=(0, in_samples),
             labels=["Detection"] + list(phases),

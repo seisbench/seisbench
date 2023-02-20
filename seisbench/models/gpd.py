@@ -12,6 +12,7 @@ class GPD(WaveformModel):
 
     _annotate_args = WaveformModel._annotate_args.copy()
     _annotate_args["*_threshold"] = ("Detection threshold for the provided phase", 0.7)
+    _annotate_args["stride"] = (_annotate_args["stride"][0], 10)
 
     def __init__(
         self,
@@ -36,7 +37,6 @@ class GPD(WaveformModel):
             pred_sample=pred_sample,
             labels=phases,
             sampling_rate=sampling_rate,
-            default_args={"stride": 10},
             **kwargs,
         )
 

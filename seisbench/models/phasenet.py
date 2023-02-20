@@ -17,6 +17,7 @@ class PhaseNet(WaveformModel):
         "Number of prediction samples to discard on each side of each window prediction",
         (0, 0),
     )
+    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 1500)
 
     def __init__(
         self, in_channels=3, classes=3, phases="NPS", sampling_rate=100, **kwargs
@@ -32,7 +33,6 @@ class PhaseNet(WaveformModel):
             citation=citation,
             in_samples=3001,
             output_type="array",
-            default_args={"overlap": 1500},
             pred_sample=(0, 3001),
             labels=phases,
             sampling_rate=sampling_rate,
@@ -231,7 +231,6 @@ class PhaseNetLight(PhaseNet):
             citation=citation,
             in_samples=3001,
             output_type="array",
-            default_args={"overlap": 1500},
             pred_sample=(0, 3001),
             labels=phases,
             sampling_rate=sampling_rate,

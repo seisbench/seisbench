@@ -9,6 +9,9 @@ from .base import WaveformModel
 
 
 class DeepDenoiser(WaveformModel):
+    _annotate_args = WaveformModel._annotate_args.copy()
+    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 1500)
+
     def __init__(self, sampling_rate=100, **kwargs):
         citation = (
             "Zhu, W., Mousavi, S. M., & Beroza, G. C. (2019). "
@@ -21,7 +24,6 @@ class DeepDenoiser(WaveformModel):
             citation=citation,
             in_samples=3000,
             output_type="array",
-            default_args={"overlap": 1000},
             pred_sample=(0, 3000),
             labels=self.generate_label,
             sampling_rate=sampling_rate,
