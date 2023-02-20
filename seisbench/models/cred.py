@@ -39,7 +39,7 @@ class CRED(WaveformModel):
             in_samples=in_samples,
             output_type="array",
             pred_sample=(0, in_samples),
-            default_args={"overlap": 500},
+            default_args={"overlap": 1500},
             **kwargs,
         )
 
