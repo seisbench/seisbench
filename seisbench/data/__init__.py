@@ -11,6 +11,7 @@ from .ethz import ETHZ
 from .geofon import GEOFON
 from .instance import InstanceCounts, InstanceCountsCombined, InstanceGM, InstanceNoise
 from .iquique import Iquique
+from .isc_ehb import ISC_EHB_DepthPhases
 from .lendb import LenDB
 from .neic import NEIC
 from .obs import OBS
