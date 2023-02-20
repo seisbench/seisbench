@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .base import Conv1dSame, WaveformModel, _cache_migration_v0_v3
+from packaging import version
 
 
 class PhaseNet(WaveformModel):
