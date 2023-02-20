@@ -736,6 +736,17 @@ class WaveformModel(SeisBenchModel, ABC):
             "avg",
         ),
         "stride": ("Stride in samples (only for point prediction models)", 1),
+        "strict": (
+            "If true, only annotate if recordings for all components are available, "
+            "otherwise impute missing data with zeros.",
+            False,
+        ),
+        "flexible_horizontal_components": (
+            "If true, accepts traces with Z12 components as ZNE and vice versa. "
+            "This is usually acceptable for rotationally invariant models, "
+            "e.g., most picking models.",
+            True,
+        ),
     }
 
     _stack_options = {
@@ -833,11 +844,12 @@ class WaveformModel(SeisBenchModel, ABC):
     def component_order(self):
         return self._component_order
 
+    def _argdict_get_with_default(self, argdict, key):
+        return argdict.get(key, self._annotate_args.get(key)[1])
+
     def annotate(
         self,
         stream,
-        strict=True,
-        flexible_horizontal_components=True,
         parallelism=None,
         **kwargs,
     ):
@@ -882,13 +894,6 @@ class WaveformModel(SeisBenchModel, ABC):
 
         :param stream: Obspy stream to annotate
         :type stream: obspy.core.Stream
-        :param strict: If true, only annotate if recordings for all components are available,
-                       otherwise impute missing data with zeros.
-        :type strict: bool
-        :param flexible_horizontal_components: If true, accepts traces with Z12 components as ZNE and vice versa.
-                                               This is usually acceptable for rotationally invariant models,
-                                               e.g., most picking models.
-        :type flexible_horizontal_components: bool
         :param parallelism: If None, uses the `asyncio` implementation. Otherwise, defines the redundancy for each
                             subjob, i.e., parallelism=2 would start each subjob twice. See the warning above for a
                             discussion on parallelism for annotate.
@@ -905,15 +910,11 @@ class WaveformModel(SeisBenchModel, ABC):
 
         if parallelism is None:
             nest_asyncio.apply()
-            call = self._annotate_async(
-                stream, strict, flexible_horizontal_components, **kwargs
-            )
+            call = self._annotate_async(stream, **kwargs)
             return asyncio.run(call)
         else:
             return self._annotate_processes(
                 stream,
-                strict,
-                flexible_horizontal_components,
                 parallelism=parallelism,
                 **kwargs,
             )
@@ -958,9 +959,7 @@ class WaveformModel(SeisBenchModel, ABC):
             ):
                 seisbench.logger.warning(f"Unknown argument '{key}' will be ignored.")
 
-    async def _annotate_async(
-        self, stream, strict=True, flexible_horizontal_components=True, **kwargs
-    ):
+    async def _annotate_async(self, stream, **kwargs):
         """
         `annotate` implementation based on asyncio
         Parameters as for :py:func:`annotate`.
@@ -991,7 +990,7 @@ class WaveformModel(SeisBenchModel, ABC):
         argdict["sampling_rate"] = groups[0][0].stats.sampling_rate
 
         # Queues for multiprocessing
-        batch_size = argdict.get("batch_size", self._annotate_args.get("batch_size")[1])
+        batch_size = self._argdict_get_with_default(argdict, "batch_size")
         queue_groups = asyncio.Queue()  # Waveform groups
         queue_raw_blocks = (
             asyncio.Queue()
@@ -1011,7 +1010,9 @@ class WaveformModel(SeisBenchModel, ABC):
 
         process_streams_to_arrays = asyncio.create_task(
             self._async_streams_to_arrays(
-                queue_groups, queue_raw_blocks, strict, flexible_horizontal_components
+                queue_groups,
+                queue_raw_blocks,
+                argdict,
             )
         )
         process_cut_fragments = asyncio.create_task(
@@ -1074,8 +1075,6 @@ class WaveformModel(SeisBenchModel, ABC):
     def _annotate_processes(
         self,
         stream,
-        strict=True,
-        flexible_horizontal_components=True,
         parallelism=1,
         **kwargs,
     ):
@@ -1113,7 +1112,7 @@ class WaveformModel(SeisBenchModel, ABC):
         self.cpu()
 
         # Queues for multiprocessing
-        batch_size = argdict.get("batch_size", self._annotate_args.get("batch_size")[1])
+        batch_size = self._argdict_get_with_default(argdict, "batch_size")
 
         queue_groups = torchmp.JoinableQueue()  # Waveform groups
         queue_raw_blocks = (
@@ -1181,8 +1180,7 @@ class WaveformModel(SeisBenchModel, ABC):
                 queue_watchdog,
                 queue_groups,
                 queue_raw_blocks,
-                strict,
-                flexible_horizontal_components,
+                argdict,
             ),
         )
         cut_processes = []
@@ -1277,22 +1275,22 @@ class WaveformModel(SeisBenchModel, ABC):
         return output
 
     async def _async_streams_to_arrays(
-        self, queue_in, queue_out, strict, flexible_horizontal_components
+        self,
+        queue_in,
+        queue_out,
+        argdict,
     ):
         """
         Wrapper around :py:func:`stream_to_arrays`, adding the functionality to read from and write to queues.
         :param queue_in: Input queue
         :param queue_out: Output queue
-        :param strict: See :py:func:`stream_to_arrays`
-        :param flexible_horizontal_components: See :py:func:`stream_to_arrays`
         :return: None
         """
         group = await queue_in.get()
         while group is not None:
             times, data = self.stream_to_arrays(
                 group,
-                strict=strict,
-                flexible_horizontal_components=flexible_horizontal_components,
+                argdict,
             )
             for t0, block in zip(times, data):
                 await queue_out.put((t0, block, group[0].stats))
@@ -1326,7 +1324,7 @@ class WaveformModel(SeisBenchModel, ABC):
         :return: None
         """
         buffer = []
-        batch_size = argdict.get("batch_size", self._annotate_args.get("batch_size")[1])
+        batch_size = self._argdict_get_with_default(argdict, "batch_size")
 
         elem = await queue_in.get()
         while True:
@@ -1384,8 +1382,7 @@ class WaveformModel(SeisBenchModel, ABC):
         queue_watchdog,
         queue_in,
         queue_out,
-        strict,
-        flexible_horizontal_components,
+        argdict,
     ):
         """
         Wrapper around :py:func:`stream_to_arrays`, adding the functionality to read from and write to queues.
@@ -1393,8 +1390,6 @@ class WaveformModel(SeisBenchModel, ABC):
         :param queue_watchdog: Signal queue for watchdog
         :param queue_in: Input queue
         :param queue_out: Output queue
-        :param strict: See :py:func:`stream_to_arrays`
-        :param flexible_horizontal_components: See :py:func:`stream_to_arrays`
         :return: None
         """
         while True:
@@ -1406,8 +1401,7 @@ class WaveformModel(SeisBenchModel, ABC):
 
             times, data = self.stream_to_arrays(
                 group,
-                strict=strict,
-                flexible_horizontal_components=flexible_horizontal_components,
+                argdict,
             )
             for t0, block in zip(times, data):
                 queue_out.put((t0, block, group[0].stats))
@@ -1460,7 +1454,7 @@ class WaveformModel(SeisBenchModel, ABC):
         :param argdict:
         :return:
         """
-        stride = argdict.get("stride", self._annotate_args.get("stride")[1])
+        stride = self._argdict_get_with_default(argdict, "stride")
         starts = np.arange(0, block.shape[1] - self.in_samples + 1, stride)
         if len(starts) == 0:
             seisbench.logger.warning(
@@ -1518,7 +1512,7 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         Reassembles point predictions into numpy arrays. Returns None except if a buffer was processed.
         """
-        stride = argdict.get("stride", self._annotate_args.get("stride")[1])
+        stride = self._argdict_get_with_default(argdict, "stride")
 
         window, metadata = elem
         t0, s, len_starts, trace_stats, bucket_id = metadata
@@ -1579,7 +1573,7 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         Cuts numpy arrays into fragments for array prediction models.
         """
-        overlap = argdict.get("overlap", self._annotate_args.get("overlap")[1])
+        overlap = self._argdict_get_with_default(argdict, "overlap")
 
         t0, block, trace_stats = elem
 
@@ -1654,9 +1648,9 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         Reassembles array predictions into numpy arrays.
         """
-        overlap = argdict.get("overlap", self._annotate_args.get("overlap")[1])
-        stack_method = argdict.get(
-            "stacking", self._annotate_args.get("stacking")[1]
+        overlap = self._argdict_get_with_default(argdict, "overlap")
+        stack_method = self._argdict_get_with_default(
+            argdict, "stacking"
         ).lower()  # This is a breaking change for v 0.3 - see PR#99
         assert (
             stack_method in self._stack_options
@@ -1767,7 +1761,7 @@ class WaveformModel(SeisBenchModel, ABC):
             self.to(device)
 
         buffer = []
-        batch_size = argdict.get("batch_size", self._annotate_args.get("batch_size")[1])
+        batch_size = self._argdict_get_with_default(argdict, "batch_size")
 
         while True:
             elem = queue_in.get()
@@ -2215,7 +2209,9 @@ class WaveformModel(SeisBenchModel, ABC):
         return stream
 
     def stream_to_arrays(
-        self, stream, strict=True, flexible_horizontal_components=True
+        self,
+        stream,
+        argdict,
     ):
         """
         Converts streams into a list of start times and numpy arrays.
@@ -2227,16 +2223,14 @@ class WaveformModel(SeisBenchModel, ABC):
 
         :param stream: Input stream
         :type stream: obspy.core.Stream
-        :param strict: If true, only if recordings for all components are available, otherwise impute missing
-                       data with zeros.
-        :type strict: bool, default True
-        :param flexible_horizontal_components: If true, accepts traces with Z12 components as ZNE and vice versa.
-                                               This is usually acceptable for rotationally invariant models,
-                                               e.g., most picking models.
-        :type flexible_horizontal_components: bool
+        :param argdict: Dictionary of arguments
         :return: output_times: Start times for each array
         :return: output_data: Arrays with waveforms
         """
+        strict = self._argdict_get_with_default(argdict, "strict")
+        flexible_horizontal_components = self._argdict_get_with_default(
+            argdict, "flexible_horizontal_components"
+        )
 
         # Obspy raises an error when trying to compare traces.
         # The seqnum hack guarantees that no two tuples reach comparison of the traces.

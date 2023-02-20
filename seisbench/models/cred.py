@@ -17,6 +17,7 @@ class CRED(WaveformModel):
 
     _annotate_args = WaveformModel._annotate_args.copy()
     _annotate_args["detection_threshold"] = ("Detection threshold", 0.5)
+    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 1500)
 
     def __init__(
         self,
@@ -39,7 +40,6 @@ class CRED(WaveformModel):
             in_samples=in_samples,
             output_type="array",
             pred_sample=(0, in_samples),
-            default_args={"overlap": 1500},
             **kwargs,
         )
 
