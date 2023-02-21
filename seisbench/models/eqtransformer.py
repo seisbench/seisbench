@@ -14,7 +14,7 @@ class EQTransformer(WaveformModel):
     """
     The EQTransformer from Mousavi et al. (2020)
 
-    Implementation adapted from the GitHub repository https://github.com/smousavi05/EQTransformer
+    Implementation adapted from the Github repository https://github.com/smousavi05/EQTransformer
     Assumes padding="same" and activation="relu" as in the pretrained EQTransformer models
 
     By instantiating the model with `from_pretrained("original")` a binary compatible version of the original
@@ -44,7 +44,7 @@ class EQTransformer(WaveformModel):
     _annotate_args["detection_threshold"] = ("Detection threshold", 0.3)
     _annotate_args["blinding"] = (
         "Number of prediction samples to discard on each side of each window prediction",
-        (0, 0),
+        (500, 500),
     )
     # Overwrite default stacking method
     _annotate_args["stacking"] = (
@@ -52,6 +52,7 @@ class EQTransformer(WaveformModel):
         "Options are 'max' and 'avg'. ",
         "max",
     )
+    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 3000)
 
     def __init__(
         self,
@@ -63,11 +64,6 @@ class EQTransformer(WaveformModel):
         drop_rate=0.1,
         original_compatible=False,
         sampling_rate=100,
-        norm_amp_per_comp=False,
-        norm_detrend=False,
-        highpass_axis=None,
-        highpass_freq_hz=None,
-        blinding=500,
         **kwargs,
     ):
         citation = (
@@ -76,13 +72,21 @@ class EQTransformer(WaveformModel):
             "detection and phase picking. Nat Commun 11, 3952 (2020). "
             "https://doi.org/10.1038/s41467-020-17591-w"
         )
+
+        # PickBlue options
+        for option in ("norm_amp_per_comp", 'norm_detrend'):
+            if option in kwargs:
+                setattr(self, option, kwargs[option])
+                del kwargs[option]
+            else:
+                setattr(self, option, False)
+
         # Blinding defines how many samples at beginning and end of the prediction should be ignored
         # This is usually required to mitigate prediction problems from training properties, e.g.,
         # if all picks in the training fall between seconds 5 and 55.
         super().__init__(
             citation=citation,
             output_type="array",
-            default_args={"overlap": 1800, "blinding": (blinding, blinding)},
             in_samples=in_samples,
             pred_sample=(0, in_samples),
             labels=["Detection"] + list(phases),
@@ -94,12 +98,6 @@ class EQTransformer(WaveformModel):
         self.classes = classes
         self.lstm_blocks = lstm_blocks
         self.drop_rate = drop_rate
-
-        # PickBlue options
-        self.highpass_axis = highpass_axis
-        self.highpass_freq_hz = highpass_freq_hz
-        self.norm_amp_per_comp = norm_amp_per_comp
-        self.norm_detrend = norm_detrend
 
         # Add options for conservative and the true original - see https://github.com/seisbench/seisbench/issues/96#issuecomment-1155158224
         if original_compatible == True:
@@ -278,19 +276,10 @@ class EQTransformer(WaveformModel):
         return pred
 
     def annotate_window_pre(self, window, argdict):
-
-        if self.highpass_axis is not None:
-            # Apply a highpass filter to the hydrophone component
-            filt_args = (1, self.highpass_freq_hz, "highpass", False)
-            sos = scipy.signal.butter(*filt_args, output="sos", fs=self.sampling_rate)
-            window[self.highpass_axis] = scipy.signal.sosfilt(
-                sos, window[self.highpass_axis], axis=self.highpass_axis
-            )
-
         # Add a demean and an amplitude normalization step to the preprocessing
         window = window - np.mean(window, axis=-1, keepdims=True)
-        detrended = np.zeros(window.shape)
         if self.norm_detrend:
+            detrended = np.zeros(window.shape)
             for i, a in enumerate(window):
                 detrended[i, :] = scipy.signal.detrend(a)
             window = detrended

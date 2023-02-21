@@ -109,11 +109,7 @@ class WaveformDataset:
         self._chunks = chunks
         if chunks is not None:
             self._chunks = sorted(chunks)
-
-            available_chunks = self.available_chunks(path)
-            for chunk in self._chunks:
-                if chunk not in available_chunks:
-                    raise ValueError(f"Dataset does not contain the chunk '{chunk}'.")
+            self._validate_chunks(path, self._chunks)
 
         self._missing_components = None
 
@@ -167,6 +163,12 @@ class WaveformDataset:
         self._waveform_cache = defaultdict(dict)
 
         self.grouping = None
+
+    def _validate_chunks(self, path, chunks):
+        available_chunks = self.available_chunks(path)
+        for chunk in chunks:
+            if chunk not in available_chunks:
+                raise ValueError(f"Dataset does not contain the chunk '{chunk}'.")
 
     def __str__(self):
         return f"{self._name} - {len(self)} traces"
@@ -1989,6 +1991,8 @@ class BenchmarkDataset(WaveformDataset, ABC):
 
         if chunks is None:
             chunks = self.available_chunks(force=force, wait_for_file=wait_for_file)
+        else:
+            self._validate_chunks(self.path, chunks)
 
         for chunk in chunks:
 

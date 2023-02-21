@@ -253,7 +253,7 @@ def test_stream_to_arrays_instrument():
 
     # Aligned strict
     stream = obspy.Stream([trace_z, trace_n, trace_e])
-    times, data = dummy.stream_to_arrays(stream, strict=True)
+    times, data = dummy.stream_to_arrays(stream, {"strict": True})
     assert len(times) == len(data) == 1
     assert times[0] == t0
     assert data[0].shape == (3, len(trace_z.data))
@@ -263,7 +263,7 @@ def test_stream_to_arrays_instrument():
 
     # Aligned non strict
     stream = obspy.Stream([trace_z, trace_n, trace_e])
-    times, data = dummy.stream_to_arrays(stream, strict=False)
+    times, data = dummy.stream_to_arrays(stream, {"strict": False})
     assert len(times) == len(data) == 1
     assert times[0] == t0
     assert data[0].shape == (3, len(trace_z.data))
@@ -273,7 +273,7 @@ def test_stream_to_arrays_instrument():
 
     # Covering strict
     stream = obspy.Stream([trace_z, trace_n, trace_e.slice(t0 + 1, t0 + 5)])
-    times, data = dummy.stream_to_arrays(stream, strict=True)
+    times, data = dummy.stream_to_arrays(stream, {"strict": True})
     assert len(times) == len(data) == 1
     assert times[0] == t0 + 1
     assert data[0].shape == (3, 401)
@@ -283,7 +283,7 @@ def test_stream_to_arrays_instrument():
 
     # Covering non-strict
     stream = obspy.Stream([trace_z, trace_n, trace_e.slice(t0 + 1, t0 + 5)])
-    times, data = dummy.stream_to_arrays(stream, strict=False)
+    times, data = dummy.stream_to_arrays(stream, {"strict": False})
     assert len(times) == len(data) == 1
     assert times[0] == t0
     assert data[0].shape == (3, len(trace_z.data))
@@ -297,7 +297,7 @@ def test_stream_to_arrays_instrument():
     stream = obspy.Stream(
         [trace_z, trace_n, trace_e.slice(t0 + 1, t0 + 5), trace_e.slice(t0 + 6, t0 + 8)]
     )
-    times, data = dummy.stream_to_arrays(stream, strict=True)
+    times, data = dummy.stream_to_arrays(stream, {"strict": True})
     assert len(times) == len(data) == 2
     assert times[0] == t0 + 1
     assert times[1] == t0 + 6
@@ -312,7 +312,7 @@ def test_stream_to_arrays_instrument():
     stream = obspy.Stream(
         [trace_z, trace_n, trace_e.slice(t0 + 1, t0 + 5), trace_e.slice(t0 + 6, t0 + 8)]
     )
-    times, data = dummy.stream_to_arrays(stream, strict=False)
+    times, data = dummy.stream_to_arrays(stream, {"strict": False})
     assert len(times) == len(data) == 1
     assert times[0] == t0
     assert data[0].shape == (3, len(trace_z.data))
@@ -328,7 +328,7 @@ def test_stream_to_arrays_instrument():
     stream = obspy.Stream(
         [trace_z, trace_n.slice(t0 + 1, t0 + 5), trace_e.slice(t0 + 3, t0 + 7)]
     )
-    times, data = dummy.stream_to_arrays(stream, strict=True)
+    times, data = dummy.stream_to_arrays(stream, {"strict": True})
     assert len(times) == len(data) == 1
     assert times[0] == t0 + 3
     assert data[0].shape == (3, 201)
@@ -340,7 +340,7 @@ def test_stream_to_arrays_instrument():
     stream = obspy.Stream(
         [trace_z, trace_n.slice(t0 + 1, t0 + 5), trace_e.slice(t0 + 3, t0 + 7)]
     )
-    times, data = dummy.stream_to_arrays(stream, strict=False)
+    times, data = dummy.stream_to_arrays(stream, {"strict": False})
     assert len(times) == len(data) == 1
     assert times[0] == t0
     assert data[0].shape == (3, len(trace_z.data))
@@ -360,7 +360,7 @@ def test_stream_to_arrays_instrument():
             trace_e.slice(t0 + 1, t0 + 2),
         ]
     )
-    times, data = dummy.stream_to_arrays(stream, strict=True)
+    times, data = dummy.stream_to_arrays(stream, {"strict": True})
     assert len(times) == len(data) == 0
 
     # No overlap non strict
@@ -371,7 +371,7 @@ def test_stream_to_arrays_instrument():
             trace_e.slice(t0 + 1, t0 + 2),
         ]
     )
-    times, data = dummy.stream_to_arrays(stream, strict=False)
+    times, data = dummy.stream_to_arrays(stream, {"strict": False})
     assert len(times) == len(data) == 1
     assert times[0] == t0
     assert data[0].shape == (3, 201)
@@ -393,7 +393,7 @@ def test_stream_to_arrays_instrument():
             trace_e.slice(t0 + 2, t0 + 3),
         ]
     )
-    times, data = dummy.stream_to_arrays(stream, strict=True)
+    times, data = dummy.stream_to_arrays(stream, {"strict": True})
     assert len(times) == len(data) == 2
     for i in range(2):
         assert times[i] == t0 + 2 * i
@@ -413,7 +413,7 @@ def test_stream_to_arrays_instrument():
             trace_e.slice(t0 + 2, t0 + 3),
         ]
     )
-    times, data = dummy.stream_to_arrays(stream, strict=False)
+    times, data = dummy.stream_to_arrays(stream, {"strict": False})
     assert len(times) == len(data) == 2
     for i in range(2):
         assert times[i] == t0 + 2 * i
@@ -438,9 +438,7 @@ def test_stream_to_arrays_channel():
 
     # Simple
     stream = obspy.Stream([trace_z])
-    times, data = dummy.stream_to_arrays(
-        stream,
-    )
+    times, data = dummy.stream_to_arrays(stream, {})
     assert len(times) == len(data) == 1
     assert times[0] == t0
     assert data[0].shape == (len(trace_z.data),)
@@ -448,7 +446,7 @@ def test_stream_to_arrays_channel():
 
     # Separate fragments
     stream = obspy.Stream([trace_z.slice(t0, t0 + 1), trace_z.slice(t0 + 2, t0 + 3)])
-    times, data = dummy.stream_to_arrays(stream, strict=True)
+    times, data = dummy.stream_to_arrays(stream, {"strict": True})
     assert len(times) == len(data) == 2
     for i in range(2):
         assert times[i] == t0 + 2 * i
@@ -511,14 +509,14 @@ def test_flexible_horizontal_components(caplog):
     # flexible_horizontal_components=False
     stream = obspy.Stream([trace_z, trace_1, trace_2])
     times, data = dummy.stream_to_arrays(
-        stream, strict=True, flexible_horizontal_components=False
+        stream, {"strict": True, "flexible_horizontal_components": False}
     )
     assert len(times) == len(data) == 0
 
     # flexible_horizontal_components=True
     stream = obspy.Stream([trace_z, trace_1, trace_2])
     times, data = dummy.stream_to_arrays(
-        stream, strict=True, flexible_horizontal_components=True
+        stream, {"strict": True, "flexible_horizontal_components": True}
     )
     assert len(times) == len(data) == 1
 
@@ -527,7 +525,7 @@ def test_flexible_horizontal_components(caplog):
     stream = obspy.Stream([trace_z, trace_n, trace_e, trace_1, trace_2])
     with caplog.at_level(logging.WARNING):
         times, data = dummy.stream_to_arrays(
-            stream, strict=True, flexible_horizontal_components=True
+            stream, {"strict": True, "flexible_horizontal_components": True}
         )
     assert "This might lead to undefined behavior." in caplog.text
     assert len(times) == len(data) == 1
@@ -536,7 +534,9 @@ def test_flexible_horizontal_components(caplog):
     caplog.clear()
     stream = obspy.Stream([trace_z, trace_n, trace_e, trace_2_test2])
     with caplog.at_level(logging.WARNING):
-        dummy.stream_to_arrays(stream, strict=True, flexible_horizontal_components=True)
+        dummy.stream_to_arrays(
+            stream, {"strict": True, "flexible_horizontal_components": True}
+        )
     assert "This might lead to undefined behavior." not in caplog.text
 
 
@@ -1221,10 +1221,6 @@ def test_eqtransformer_annotate_window_post():
     model = seisbench.models.EQTransformer()
 
     pred = 3 * [np.ones(1000)]
-
-    # Default: No blinding
-    blinded = model.annotate_window_post(pred, argdict={})
-    assert (blinded == 1).all()
 
     # No blinding
     blinded = model.annotate_window_post(pred, argdict={"blinding": (0, 0)})
@@ -2155,3 +2151,11 @@ def test_cred_forward():
         pred_logit = model(x, logits=True).numpy()
 
     assert not np.allclose(pred, pred_logit)
+
+
+def test_argdict_get_with_default():
+    model = seisbench.models.PhaseNet()
+    model._annotate_args["testarg"] = ("Test docstr", 1)
+
+    assert model._argdict_get_with_default({"testarg": 2}, "testarg") == 2
+    assert model._argdict_get_with_default({"not_testarg": 2}, "testarg") == 1

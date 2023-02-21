@@ -20,6 +20,7 @@ class PhaseNet(WaveformModel):
         "Number of prediction samples to discard on each side of each window prediction",
         (0, 0),
     )
+    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 1500)
 
     def __init__(
         self,
@@ -27,10 +28,6 @@ class PhaseNet(WaveformModel):
         classes=3,
         phases="NPS",
         sampling_rate=100,
-        highpass_axis=None,
-        highpass_freq_hz=None,
-        norm_amp_per_comp=False,
-        norm_detrend=False,
         **kwargs
     ):
         citation = (
@@ -40,22 +37,23 @@ class PhaseNet(WaveformModel):
             "https://doi.org/10.1093/gji/ggy423"
         )
 
+        # PickBlue options
+        for option in ("norm_amp_per_comp", 'norm_detrend'):
+            if option in kwargs:
+                setattr(self, option, kwargs[option])
+                del kwargs[option]
+            else:
+                setattr(self, option, False)
+
         super().__init__(
             citation=citation,
             in_samples=3001,
             output_type="array",
-            default_args={"overlap": 500},
             pred_sample=(0, 3001),
             labels=phases,
             sampling_rate=sampling_rate,
             **kwargs,
         )
-
-        # PickBlue options
-        self.highpass_axis = highpass_axis
-        self.highpass_freq_hz = highpass_freq_hz
-        self.norm_amp_per_comp = norm_amp_per_comp
-        self.norm_detrend = norm_detrend
 
         self.in_channels = in_channels
         self.classes = classes
@@ -160,17 +158,9 @@ class PhaseNet(WaveformModel):
 
     def annotate_window_pre(self, window, argdict):
         # Add a demean and an amplitude normalization step to the preprocessing
-
-        if self.highpass_axis is not None:
-            # Apply a highpass filter to the hydrophone component
-            filt_args = (1, self.highpass_freq_hz, "highpass", False)
-            sos = scipy.signal.butter(*filt_args, output="sos", fs=self.sampling_rate)
-            window[self.highpass_axis] = scipy.signal.sosfilt(sos, window[self.highpass_axis], axis=self.highpass_axis)
-
-        # Add a demean and an amplitude normalization step to the preprocessing
         window = window - np.mean(window, axis=-1, keepdims=True)
-        detrended = np.zeros(window.shape)
         if self.norm_detrend:
+            detrended = np.zeros(window.shape)
             for i, a in enumerate(window):
                 detrended[i, :] = scipy.signal.detrend(a)
             window = detrended
@@ -185,7 +175,6 @@ class PhaseNet(WaveformModel):
             std = np.std(window, axis=-1, keepdims=True)
             std[std == 0] = 1  # Avoid NaN errors
             window = window / std
-
         return window
 
     def annotate_window_post(self, pred, piggyback=None, argdict=None):
@@ -343,7 +332,6 @@ class PhaseNetLight(PhaseNet):
             citation=citation,
             in_samples=3001,
             output_type="array",
-            default_args={"overlap": 250},
             pred_sample=(0, 3001),
             labels=phases,
             sampling_rate=sampling_rate,
