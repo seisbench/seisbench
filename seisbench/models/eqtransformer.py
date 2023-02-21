@@ -74,7 +74,7 @@ class EQTransformer(WaveformModel):
         )
 
         # PickBlue options
-        for option in ("norm_amp_per_comp", 'norm_detrend'):
+        for option in ("norm_amp_per_comp", "norm_detrend"):
             if option in kwargs:
                 setattr(self, option, kwargs[option])
                 del kwargs[option]

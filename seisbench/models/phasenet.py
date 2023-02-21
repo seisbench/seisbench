@@ -1,12 +1,13 @@
+import json
+
 import numpy as np
 import scipy.signal
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from packaging import version
 
 from .base import Conv1dSame, WaveformModel, _cache_migration_v0_v3
-from packaging import version
-import json
 
 
 class PhaseNet(WaveformModel):
@@ -23,12 +24,7 @@ class PhaseNet(WaveformModel):
     _annotate_args["overlap"] = (_annotate_args["overlap"][0], 1500)
 
     def __init__(
-        self,
-        in_channels=3,
-        classes=3,
-        phases="NPS",
-        sampling_rate=100,
-        **kwargs
+        self, in_channels=3, classes=3, phases="NPS", sampling_rate=100, **kwargs
     ):
         citation = (
             "Zhu, W., & Beroza, G. C. (2019). "
@@ -38,7 +34,7 @@ class PhaseNet(WaveformModel):
         )
 
         # PickBlue options
-        for option in ("norm_amp_per_comp", 'norm_detrend'):
+        for option in ("norm_amp_per_comp", "norm_detrend"):
             if option in kwargs:
                 setattr(self, option, kwargs[option])
                 del kwargs[option]
@@ -237,7 +233,7 @@ class PhaseNet(WaveformModel):
 
     @classmethod
     def from_pretrained_expand(
-            cls, name, version_str="latest", update=False, force=False, wait_for_file=False
+        cls, name, version_str="latest", update=False, force=False, wait_for_file=False
     ):
         """
         Load pretrained model with weights and copy the input channel weights that match the Z component to a new,
@@ -282,28 +278,28 @@ class PhaseNet(WaveformModel):
             name, version_str, weight_path, metadata_path, force, wait_for_file
         )
 
-        path_json, path_pt = cls._get_weights_file_paths(weight_path.with_name(name), version_str)
+        path_json, path_pt = cls._get_weights_file_paths(
+            weight_path.with_name(name), version_str
+        )
         if metadata_path.is_file():
             with open(metadata_path, "r") as f:
                 weights_metadata = json.load(f)
         else:
             weights_metadata = {}
         model_args = weights_metadata.get("model_args", {})
-        model_args['in_channels'] = 4
+        model_args["in_channels"] = 4
         model = cls(**model_args)
 
         model._weights_metadata = weights_metadata
         model._parse_metadata()
 
         state_dict = torch.load(weight_path)
-        old_weight = state_dict['inc.weight']
-        state_dict['inc.weight'] = torch.zeros(
-            old_weight.shape[0],
-            old_weight.shape[1] + 1,
-            old_weight.shape[2]
+        old_weight = state_dict["inc.weight"]
+        state_dict["inc.weight"] = torch.zeros(
+            old_weight.shape[0], old_weight.shape[1] + 1, old_weight.shape[2]
         ).type_as(old_weight)
-        state_dict['inc.weight'][:, :3, ...] = old_weight
-        state_dict['inc.weight'][:, 3, ...] = old_weight[:, 0, ...]
+        state_dict["inc.weight"][:, :3, ...] = old_weight
+        state_dict["inc.weight"][:, 3, ...] = old_weight[:, 0, ...]
         model.load_state_dict(state_dict)
         return model
 
