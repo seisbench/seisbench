@@ -24,7 +24,14 @@ class PhaseNet(WaveformModel):
     _annotate_args["overlap"] = (_annotate_args["overlap"][0], 1500)
 
     def __init__(
-        self, in_channels=3, classes=3, phases="NPS", sampling_rate=100, **kwargs
+        self,
+        in_channels=3,
+        classes=3,
+        phases="NPS",
+        sampling_rate=100,
+        norm_amp_per_comp=False,
+        norm_detrend=False,
+        **kwargs,
     ):
         citation = (
             "Zhu, W., & Beroza, G. C. (2019). "
@@ -32,14 +39,6 @@ class PhaseNet(WaveformModel):
             "Geophysical Journal International, 216(1), 261-273. "
             "https://doi.org/10.1093/gji/ggy423"
         )
-
-        # PickBlue options
-        for option in ("norm_amp_per_comp", "norm_detrend"):
-            if option in kwargs:
-                setattr(self, option, kwargs[option])
-                del kwargs[option]
-            else:
-                setattr(self, option, False)
 
         super().__init__(
             citation=citation,
@@ -50,6 +49,10 @@ class PhaseNet(WaveformModel):
             sampling_rate=sampling_rate,
             **kwargs,
         )
+
+        # PickBlue options
+        self.norm_amp_per_comp = norm_amp_per_comp
+        self.norm_detrend = norm_detrend
 
         self.in_channels = in_channels
         self.classes = classes
@@ -313,7 +316,14 @@ class PhaseNetLight(PhaseNet):
     """
 
     def __init__(
-        self, in_channels=3, classes=3, phases="NPS", sampling_rate=100, **kwargs
+        self,
+        in_channels=3,
+        classes=3,
+        phases="NPS",
+        sampling_rate=100,
+        norm_amp_per_comp=False,
+        norm_detrend=False,
+        **kwargs,
     ):
         citation = (
             "Zhu, W., & Beroza, G. C. (2019). "
@@ -333,6 +343,10 @@ class PhaseNetLight(PhaseNet):
             sampling_rate=sampling_rate,
             **kwargs,
         )
+
+        # PickBlue options
+        self.norm_amp_per_comp = norm_amp_per_comp
+        self.norm_detrend = norm_detrend
 
         self.in_channels = in_channels
         self.classes = classes
