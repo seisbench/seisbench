@@ -338,7 +338,7 @@ def test_download_dataset_chunk_arg(tmp_path):
     Test ensures that datasets with/out chunking are accordingly called with/out chunks in _download_dataset
     """
     with patch(
-        "seisbench.cache_root", tmp_path
+        "seisbench.cache_data_root", tmp_path
     ):  # Ensure test does not modify SeisBench cache
 
         class MockDataset(seisbench.data.BenchmarkDataset):

@@ -1940,12 +1940,12 @@ def test_get_weights_file_paths():
 
 def test_list_pretrained_version_empty_cache(tmp_path):
     with patch(
-        "seisbench.cache_root", tmp_path / "list_pretrained"
+        "seisbench.cache_model_root", tmp_path / "list_pretrained"
     ):  # Ensure SeisBench cache is empty
         seisbench.models.GPD.list_pretrained(details=True, remote=False)
 
     with patch(
-        "seisbench.cache_root", tmp_path / "list_versions"
+        "seisbench.cache_model_root", tmp_path / "list_versions"
     ):  # Ensure SeisBench cache is empty
         seisbench.models.GPD.list_versions("original", remote=False)
 
