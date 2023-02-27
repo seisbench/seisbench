@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any, Optional
 from urllib.parse import urljoin
 
 import h5py
@@ -993,29 +994,13 @@ class WaveformDataset:
         else:
             metadata = copy.deepcopy(self._metadata_lookup[idx])
 
-        if sampling_rate is None:
-            sampling_rate = self.sampling_rate
-        if sampling_rate is not None:
-            source_sampling_rate = metadata["trace_sampling_rate_hz"]
-            if np.isnan(source_sampling_rate):
-                raise ValueError("Tried resampling trace with unknown sampling rate.")
-            else:
-                resampling_factor = sampling_rate / source_sampling_rate
-                # Rewrite all metadata keys in sample units to the new sampling rate
-                for key in metadata.keys():
-                    if key.endswith("_sample"):
-                        try:
-                            metadata[key] = metadata[key] * resampling_factor
-                        except TypeError:
-                            seisbench.logger.info(
-                                f"Failed to do sampling rate adjustment for column {key} "
-                                f"due to type error. "
-                            )
+        sampling_rate = self._get_sample_unify_sampling_rate(metadata, sampling_rate)
+        load_metadata = {k: [v] for k, v in metadata.items()}  # Add fake axis
+        waveforms = self._get_waveforms_from_load_metadata(load_metadata, sampling_rate)
 
-                metadata["trace_sampling_rate_hz"] = sampling_rate
-                metadata["trace_dt_s"] = 1.0 / sampling_rate
-
-        waveforms = self.get_waveforms(idx, sampling_rate=sampling_rate)
+        # Squeeze batch dimension
+        batch_dimension = list(self.dimension_order).index("N")
+        waveforms = np.squeeze(waveforms, axis=batch_dimension)
 
         # Find correct dimension, but ignore batch dimension as this will be squeezed in get_waveforms
         dimension_order = list(self.dimension_order)
@@ -1024,6 +1009,48 @@ class WaveformDataset:
         metadata["trace_npts"] = waveforms.shape[sample_dimension]
 
         return waveforms, metadata
+
+    def _get_sample_unify_sampling_rate(
+        self, metadata: dict[str, Any], sampling_rate: Optional[float]
+    ):
+        """
+        Determines the correct sampling rate and adjusts sampling rate in metadata including "_samples" keys.
+        """
+        if sampling_rate is None:
+            sampling_rate = self.sampling_rate
+        if sampling_rate is not None:
+            source_sampling_rate = metadata["trace_sampling_rate_hz"]
+            if np.isnan(source_sampling_rate).any():
+                raise ValueError("Tried resampling trace with unknown sampling rate.")
+            else:
+                resampling_factor = sampling_rate / np.asarray(source_sampling_rate)
+                # Rewrite all metadata keys in sample units to the new sampling rate
+                for key in metadata.keys():
+                    if key.endswith("_sample"):
+                        try:
+                            metadata[key] = (
+                                np.asarray(metadata[key]) * resampling_factor
+                            )
+                        except TypeError:
+                            seisbench.logger.info(
+                                f"Failed to do sampling rate adjustment for column {key} "
+                                f"due to type error. "
+                            )
+
+                # Source sampling rate is required for reading the data correctly from disc
+                metadata["trace_source_sampling_rate_hz"] = np.asarray(
+                    source_sampling_rate
+                )
+                metadata["trace_sampling_rate_hz"] = (
+                    np.ones_like(metadata["trace_sampling_rate_hz"]) * sampling_rate
+                )
+                metadata["trace_dt_s"] = 1.0 / metadata["trace_sampling_rate_hz"]
+        else:
+            metadata["trace_source_sampling_rate_hz"] = np.asarray(
+                metadata["trace_sampling_rate_hz"]
+            )
+
+        return sampling_rate
 
     def get_waveforms(self, idx=None, mask=None, sampling_rate=None):
         """
@@ -1063,13 +1090,30 @@ class WaveformDataset:
         if sampling_rate is None:
             sampling_rate = self.sampling_rate
 
+        load_metadata["trace_source_sampling_rate_hz"] = load_metadata[
+            "trace_sampling_rate_hz"
+        ]
+        waveforms = self._get_waveforms_from_load_metadata(load_metadata, sampling_rate)
+
+        if squeeze:
+            batch_dimension = list(self.dimension_order).index("N")
+            waveforms = np.squeeze(waveforms, axis=batch_dimension)
+
+        return waveforms
+
+    def _get_waveforms_from_load_metadata(
+        self, load_metadata, sampling_rate, pack=True
+    ):
+        """
+        Get waveforms based on load metadata
+        """
         waveforms = []
         chunks, metadata_paths, waveforms_path = self._chunks_with_paths()
         with LoadingContext(chunks, waveforms_path) as context:
             for trace_name, chunk, trace_sampling_rate, trace_component_order in zip(
                 load_metadata["trace_name"],
                 load_metadata["trace_chunk"],
-                load_metadata["trace_sampling_rate_hz"],
+                load_metadata["trace_source_sampling_rate_hz"],
                 load_metadata["trace_component_order"],
             ):
                 waveforms.append(
@@ -1093,16 +1137,23 @@ class WaveformDataset:
                     "Change missing_components or request traces separately."
                 )
 
-        waveforms = self._pad_packed_sequence(waveforms)
+        if pack:
+            waveforms = self._pad_packed_sequence(waveforms)
 
-        # Impose correct dimension order
-        waveforms = waveforms.transpose(*self._dimension_mapping)
-
-        if squeeze:
-            batch_dimension = list(self.dimension_order).index("N")
-            waveforms = np.squeeze(waveforms, axis=batch_dimension)
+            # Impose correct dimension order
+            waveforms = waveforms.transpose(*self._dimension_mapping)
+        else:
+            waveforms = [self._transpose_single_waveform(wv) for wv in waveforms]
 
         return waveforms
+
+    def _transpose_single_waveform(self, wv: np.ndarray) -> np.ndarray:
+        squeeze_axis = self.dimension_order.index("N")
+
+        wv = np.expand_dims(wv, 0)
+        wv = wv.transpose(*self._dimension_mapping)
+        wv = np.squeeze(wv, squeeze_axis)
+        return wv
 
     def get_group_size(self, idx):
         """
@@ -1142,24 +1193,37 @@ class WaveformDataset:
         """
         return self._get_group_internal(idx, return_metadata=False, **kwargs)
 
-    def _get_group_internal(self, idx, return_metadata, **kwargs):
+    def _get_group_internal(self, idx, return_metadata, sampling_rate=None):
         self._verify_grouping_defined()
 
         group = self._groups[idx]
         idx = self._groups_to_trace_idx[group]
 
-        waveforms = []
-        metadata = []
+        if self._metadata_lookup is None:
+            metadata = self.metadata.iloc[idx].to_dict("list")
+        else:
+            metadata = WaveformDataset._pack_metadata(
+                [self._metadata_lookup[i] for i in idx]
+            )
 
-        for trace_idx in idx:
-            trace_wv, trace_meta = self.get_sample(trace_idx, **kwargs)
-            waveforms.append(trace_wv)
-            metadata.append(trace_meta)
+        sampling_rate = self._get_sample_unify_sampling_rate(metadata, sampling_rate)
+
+        waveforms = self._get_waveforms_from_load_metadata(
+            metadata, sampling_rate, pack=False
+        )
+
+        self._calculate_trace_npts_group(metadata, waveforms)
 
         if return_metadata:
-            return waveforms, WaveformDataset._pack_metadata(metadata)
+            return waveforms, metadata
         else:
             return waveforms
+
+    def _calculate_trace_npts_group(self, metadata, waveforms):
+        dimension_order = list(self.dimension_order)
+        del dimension_order[dimension_order.index("N")]
+        sample_dimension = dimension_order.index("W")
+        metadata["trace_npts"] = [wv.shape[sample_dimension] for wv in waveforms]
 
     @staticmethod
     def _pack_metadata(metadata):
@@ -1505,6 +1569,7 @@ class MultiWaveformDataset:
         self._metadata["trace_dataset"] = sum(
             ([dataset.name] * len(dataset) for dataset in self.datasets), []
         )
+        self._metadata.reset_index(inplace=True, drop=True)
 
         self._trace_identification_warning_issued = (
             False  # Traced whether warning for trace name was issued already
@@ -1656,6 +1721,15 @@ class MultiWaveformDataset:
     def sampling_rate(self, sampling_rate):
         for dataset in self.datasets:
             dataset.sampling_rate = sampling_rate
+
+    @property
+    def metadata_cache(self):
+        return self.datasets[0]._metadata_cache
+
+    @metadata_cache.setter
+    def metadata_cache(self, val):
+        for dataset in self.datasets:
+            dataset.metadata_cache = val
 
     @property
     def dimension_order(self):
@@ -1899,6 +1973,44 @@ class MultiWaveformDataset:
         for dataset in self.datasets:
             dataset.preload_waveforms(*args, **kwargs)
 
+    def _get_group_internal(self, idx, return_metadata, sampling_rate=None):
+        """
+        This function does *not* use the metadata_lookup.
+        """
+        self._verify_grouping_defined()
+
+        group = self._groups[idx]
+        idx = self._groups_to_trace_idx[group]
+
+        metadata = self.metadata.iloc[idx].to_dict("list")
+
+        sampling_rate = self._get_sample_unify_sampling_rate(metadata, sampling_rate)
+
+        lookups = defaultdict(list)
+        for query_idx, i in enumerate(idx):
+            dataset_idx, _ = self._resolve_idx(i)
+            lookups[dataset_idx].append(query_idx)
+
+        waveforms_pre = {}
+        for dataset_idx, query_idx in lookups.items():
+            sub_metadata = {k: np.asarray(v)[query_idx] for k, v in metadata.items()}
+            waveforms_pre[dataset_idx] = self.datasets[
+                dataset_idx
+            ]._get_waveforms_from_load_metadata(sub_metadata, sampling_rate, pack=False)
+        waveforms_pre = {k: iter(v) for k, v in waveforms_pre.items()}
+
+        waveforms = []
+        for i in idx:
+            dataset_idx, local_idx = self._resolve_idx(i)
+            waveforms.append(next(waveforms_pre[dataset_idx]))
+
+        self._calculate_trace_npts_group(metadata, waveforms)
+
+        if return_metadata:
+            return waveforms, metadata
+        else:
+            return waveforms
+
     # Copy compatible parts from WaveformDataset
     region_filter = WaveformDataset.region_filter
     region_filter_source = WaveformDataset.region_filter_source
@@ -1916,7 +2028,8 @@ class MultiWaveformDataset:
     get_group_waveforms = WaveformDataset.get_group_waveforms
     get_group_samples = WaveformDataset.get_group_samples
     get_group_size = WaveformDataset.get_group_size
-    _get_group_internal = WaveformDataset._get_group_internal
+    _get_sample_unify_sampling_rate = WaveformDataset._get_sample_unify_sampling_rate
+    _calculate_trace_npts_group = WaveformDataset._calculate_trace_npts_group
 
 
 class LoadingContext:
