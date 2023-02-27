@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import copy
 import inspect
 import os
@@ -1077,15 +1079,15 @@ class WaveformDataset:
                 squeeze = True
 
             if self._metadata_lookup is None:
-                load_metadata = self._metadata.iloc[idx]
+                load_metadata = self._metadata.iloc[idx].to_dict("list")
             else:
                 load_metadata = [self._metadata_lookup[i] for i in idx]
                 load_metadata = self._pack_metadata(load_metadata)
         else:
             if mask is not None:
-                load_metadata = self._metadata[mask]
+                load_metadata = self._metadata[mask].to_dict("list")
             else:
-                load_metadata = self._metadata
+                load_metadata = self._metadata.to_dict("list")
 
         if sampling_rate is None:
             sampling_rate = self.sampling_rate
@@ -1107,30 +1109,43 @@ class WaveformDataset:
         """
         Get waveforms based on load metadata
         """
-        waveforms = []
+        waveforms = {}
         chunks, metadata_paths, waveforms_path = self._chunks_with_paths()
-        with LoadingContext(chunks, waveforms_path) as context:
+
+        # Calculate which segments to load, only load each segment once and then combine the results at the end.
+        # This pays of if the same trace is accessed multiple times in a query.
+        # This occurs for example when using grouping.
+        segments = [
+            (trace_name, chunk, float(trace_sampling_rate), trace_component_order)
             for trace_name, chunk, trace_sampling_rate, trace_component_order in zip(
                 load_metadata["trace_name"],
                 load_metadata["trace_chunk"],
                 load_metadata["trace_source_sampling_rate_hz"],
                 load_metadata["trace_component_order"],
-            ):
-                waveforms.append(
-                    self._get_single_waveform(
-                        trace_name,
-                        chunk,
-                        context=context,
-                        target_sampling_rate=sampling_rate,
-                        source_sampling_rate=trace_sampling_rate,
-                        source_component_order=trace_component_order,
-                    )
+            )
+        ]
+
+        with LoadingContext(chunks, waveforms_path) as context:
+            for segment in segments:
+                if segment in waveforms:
+                    # Segment already loaded
+                    continue
+                trace_name, chunk, trace_sampling_rate, trace_component_order = segment
+                waveforms[segment] = self._get_single_waveform(
+                    trace_name,
+                    chunk,
+                    context=context,
+                    target_sampling_rate=sampling_rate,
+                    source_sampling_rate=trace_sampling_rate,
+                    source_component_order=trace_component_order,
                 )
 
         if self.missing_components == "ignore":
             # Check consistent number of components
             component_dimension = list(self._data_format["dimension_order"]).index("C")
-            n_components = np.array([x.shape[component_dimension] for x in waveforms])
+            n_components = np.array(
+                [x.shape[component_dimension] for x in waveforms.values()]
+            )
             if (n_components[0] != n_components).any():
                 raise ValueError(
                     "Requested traces with mixed number of components. "
@@ -1138,12 +1153,16 @@ class WaveformDataset:
                 )
 
         if pack:
+            waveforms = [waveforms[segment] for segment in segments]
             waveforms = self._pad_packed_sequence(waveforms)
 
             # Impose correct dimension order
             waveforms = waveforms.transpose(*self._dimension_mapping)
         else:
-            waveforms = [self._transpose_single_waveform(wv) for wv in waveforms]
+            waveforms = {
+                k: self._transpose_single_waveform(wv) for k, wv in waveforms.items()
+            }
+            waveforms = [waveforms[segment] for segment in segments]
 
         return waveforms
 
