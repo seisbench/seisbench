@@ -2,7 +2,7 @@ from .eqtransformer import EQTransformer
 from .phasenet import PhaseNet
 
 
-def PickBlue(base: str = "eqtransformer", **kwargs):
+def PickBlue(base: str = "phasenet", **kwargs):
     """
     Initialize a PickBlue model. All `kwargs` are passed to `from_pretrained`.
 
