@@ -565,6 +565,7 @@ def test_get_sample(metadata_cache):
     assert metadata["trace_sampling_rate_hz"] == base_sampling_rate
     assert metadata["trace_dt_s"] == 1.0 / base_sampling_rate
     assert metadata["trace_p_arrival_sample"] == base_arrival_sample
+    assert np.all(waveforms == dummy.get_waveforms(0))
 
     # Different resampling rates
     for factor in [0.1, 0.5, 1, 2, 5]:
@@ -575,6 +576,10 @@ def test_get_sample(metadata_cache):
         assert metadata["trace_sampling_rate_hz"] == base_sampling_rate * factor
         assert metadata["trace_dt_s"] == 1.0 / (base_sampling_rate * factor)
         assert metadata["trace_p_arrival_sample"] == base_arrival_sample * factor
+        assert np.all(
+            waveforms
+            == dummy.get_waveforms(0, sampling_rate=base_sampling_rate * factor)
+        )
 
     # Sampling rate defined globally for data set
     factor = 0.5
@@ -584,6 +589,7 @@ def test_get_sample(metadata_cache):
     assert metadata["trace_sampling_rate_hz"] == base_sampling_rate * factor
     assert metadata["trace_dt_s"] == 1.0 / (base_sampling_rate * factor)
     assert metadata["trace_p_arrival_sample"] == base_arrival_sample * factor
+    assert np.all(waveforms == dummy.get_waveforms(0))
 
 
 def test_load_waveform_data_with_sampling_rate():
@@ -1338,45 +1344,45 @@ def test_verify_grouping():
 def grouping_test_data():
     data = seisbench.data.DummyDataset()
 
+    trace_names = data._metadata["trace_name"].values[:5]
+
     data._metadata = pd.DataFrame(
         [
             {
                 "event": "a",
                 "station": "A",
                 "part": 0,
-                "trace_name": "a1",
                 "trace_chunk": "",
             },
             {
                 "event": "b",
                 "station": "A",
                 "part": 0,
-                "trace_name": "b1",
                 "trace_chunk": "",
             },
             {
                 "event": "b",
                 "station": "B",
                 "part": 0,
-                "trace_name": "b2",
                 "trace_chunk": "",
             },
             {
                 "event": "b",
                 "station": "C",
                 "part": 0,
-                "trace_name": "b3",
                 "trace_chunk": "",
             },
             {
                 "event": "b",
                 "station": "C",
                 "part": 1,
-                "trace_name": "b4",
                 "trace_chunk": "",
             },
         ]
     )
+    data._metadata["trace_sampling_rate_hz"] = np.ones(5) * 100
+    data._metadata["trace_component_order"] = "ZNE"
+    data._metadata["trace_name"] = trace_names
     return data
 
 
@@ -1402,17 +1408,36 @@ def test_get_group_sample_waveforms(grouping_test_data):
     data.grouping = "event"
     idx = data.get_group_idx_from_params("b")
 
-    with patch("seisbench.data.WaveformDataset.get_sample") as get_sample:
-        get_sample.return_value = (np.zeros(5), {"a": 1})
+    waveforms, metadata = data.get_group_samples(idx)
+    assert len(waveforms) == len(metadata["trace_name"]) == 4
+    assert metadata["station"] == ["A", "B", "C", "C"]
+    assert isinstance(waveforms, list)
+    for wv in waveforms:
+        assert wv.shape == (3, 1200)
+    assert all(x == 1200 for x in metadata["trace_npts"])
 
-        waveforms, metadata = data.get_group_samples(idx)
-        assert len(waveforms) == len(metadata["a"]) == 4
-        assert metadata == {"a": [1, 1, 1, 1]}
-        assert isinstance(waveforms[0], np.ndarray)
+    waveforms, metadata = data.get_group_samples(idx, sampling_rate=50)
+    assert len(waveforms) == len(metadata["trace_name"]) == 4
+    assert metadata["station"] == ["A", "B", "C", "C"]
+    assert isinstance(waveforms, list)
+    for wv in waveforms:
+        assert wv.shape == (3, 600)
+    assert all(x == 600 for x in metadata["trace_npts"])
 
-        waveforms = data.get_group_waveforms(idx)
-        assert len(waveforms) == 4
-        assert isinstance(waveforms[0], np.ndarray)
+    # Test trace independent resampling
+    data.metadata["trace_sampling_rate_hz"] = [50, 100, 50, 50, 100]
+    waveforms, metadata = data.get_group_samples(idx, sampling_rate=50)
+    assert len(waveforms) == len(metadata["trace_name"]) == 4
+    assert metadata["station"] == ["A", "B", "C", "C"]
+    assert isinstance(waveforms, list)
+    assert waveforms[0].shape == (3, 600)
+    assert metadata["trace_npts"][0] == 600
+    assert waveforms[1].shape == (3, 1200)
+    assert metadata["trace_npts"][1] == 1200
+    assert waveforms[2].shape == (3, 1200)
+    assert metadata["trace_npts"][2] == 1200
+    assert waveforms[3].shape == (3, 600)
+    assert metadata["trace_npts"][3] == 600
 
 
 def test_multiwaveformdataset_grouping():
@@ -1496,3 +1521,50 @@ def test_chunks_with_paths_cache():
     data._chunks_with_paths_cache = None
     data._chunks_with_paths()
     assert data._chunks_with_paths_cache is not None
+
+
+def test_transpose_single_waveform():
+    data = seisbench.data.DummyDataset()  # source dimension order = "CW"
+    wv = np.ones((3, 1200))
+
+    data.dimension_order = "NCW"
+    assert data._transpose_single_waveform(wv).shape == (3, 1200)
+
+    data.dimension_order = "NWC"
+    assert data._transpose_single_waveform(wv).shape == (1200, 3)
+
+    data.dimension_order = "WNC"
+    assert data._transpose_single_waveform(wv).shape == (1200, 3)
+
+    data.dimension_order = "CWN"
+    assert data._transpose_single_waveform(wv).shape == (3, 1200)
+
+
+@pytest.mark.parametrize("sampling_rate", [50, 100])
+def test_get_group_sample_multi_waveform_dataset(sampling_rate):
+    data = seisbench.data.DummyDataset() + seisbench.data.DummyDataset()
+
+    grouping_key = np.arange(len(data))
+    grouping_key[1] = grouping_key[0]
+    grouping_key[-2] = grouping_key[0]
+    grouping_key[-1] = grouping_key[0]
+    data.metadata["grouping_key"] = grouping_key
+
+    data.grouping = "grouping_key"
+
+    waveforms, metadata = data.get_group_samples(0, sampling_rate=sampling_rate)
+
+    assert isinstance(waveforms, list)
+    assert len(waveforms) == 4
+
+    # As we modify only a copy of the metadata, these will be missing in the single samples
+    del metadata["grouping_key"]
+    del metadata["trace_dataset"]
+
+    for i, target_idx in enumerate([0, 1, -2, -1]):
+        target_waveforms, target_metadata = data.get_sample(
+            target_idx, sampling_rate=sampling_rate
+        )
+
+        assert target_metadata == {k: v[i] for k, v in metadata.items()}
+        assert np.all(waveforms[i] == target_waveforms)
