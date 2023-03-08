@@ -681,8 +681,8 @@ def test_probabilistic_pick_labeller():
             assert np.array_equiv(state_dict["y"][0][1][490:510], np.ones(20))
             assert np.array_equiv(state_dict["y"][0][2][690:710], np.ones(20))
         else:
-            assert np.argmax(state_dict["y"][0], axis=1)[1] == 499
-            assert np.argmax(state_dict["y"][0], axis=1)[2] == 699
+            assert np.argmax(state_dict["y"][0], axis=1)[1] == 500
+            assert np.argmax(state_dict["y"][0], axis=1)[2] == 700
         assert (
             state_dict["y"][0][0] == 0
         ).all()  # Check that NaN picks are interpreted as not present
@@ -714,10 +714,10 @@ def test_probabilistic_pick_labeller():
                 state_dict["y"][0][2, 0, 190:210], np.ones(20)
             )  # Entry with pick
         else:
-            assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[1] == 499
-            assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[2] == 699
+            assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[1] == 500
+            assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[2] == 700
             assert (
-                np.argmax(state_dict["y"][0][2, :, :], axis=-1)[0] == 199
+                np.argmax(state_dict["y"][0][2, :, :], axis=-1)[0] == 200
             )  # Entry with pick
         assert (state_dict["y"][0][3, 0, :] == 0).all()
 
@@ -862,9 +862,9 @@ def test_probabilistic_pick_labeller_pickgroups():
     labeller(state_dict)
 
     assert state_dict["y"][0].shape == (3, 1000)
-    assert np.isclose(state_dict["y"][0][0, 299], 1)  # P picks
-    assert np.isclose(state_dict["y"][0][0, 899], 1)  # P picks
-    assert np.argmax(state_dict["y"][0], axis=1)[1] == 699  # S pick
+    assert np.isclose(state_dict["y"][0][0, 300], 1)  # P picks
+    assert np.isclose(state_dict["y"][0][0, 900], 1)  # P picks
+    assert np.argmax(state_dict["y"][0], axis=1)[1] == 700  # S pick
 
 
 def test_standard_pick_labeller():
