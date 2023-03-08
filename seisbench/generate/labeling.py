@@ -754,7 +754,7 @@ def gaussian_pick(onset, length, sigma):
     :return prob_pick: 1D time series with probabilistic representation of pick
     :rtype: np.ndarray
     """
-    x = np.linspace(1, length, length)
+    x = np.arange(length)
     return np.exp(-np.power(x - onset, 2.0) / (2 * np.power(sigma, 2.0)))
 
 
@@ -771,7 +771,7 @@ def triangle_pick(onset, length, sigma):
     :return y: 1D time series with triangle representation of pick
     :rtype: np.ndarray
     """
-    x = np.linspace(1, length, length)
+    x = np.arange(length)
     y1 = -(x - onset) / sigma + 1
     y1 *= (y1 >= 0) & (y1 <= 1)
     y2 = (x - onset) / sigma + 1
@@ -793,5 +793,5 @@ def box_pick(onset, length, sigma):
     :return y: 1D time series with box representation of pick
     :rtype: np.ndarray
     """
-    x = np.linspace(1, length, length)
-    return ((x - onset - 1) <= sigma) & (-(x - onset) < sigma)
+    x = np.arange(length)
+    return ((x - onset) <= sigma) & (-(x - onset + 1) < sigma)
