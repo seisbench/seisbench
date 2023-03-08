@@ -82,6 +82,11 @@ class DepthPhaseModel:
                     f"No distance for '{key}'. Trace will be ignored"
                 )
                 del_keys.append(key)
+            elif distances[key] >= 100:
+                seisbench.logger.debug(
+                    f"Station '{key}' at distance above 100 degrees will be ignored."
+                )
+                del_keys.append(key)
         for key in del_keys:
             del p_picks[key]
         return p_picks
@@ -137,7 +142,7 @@ class DepthPhaseModel:
         )  # Make sure sample 0 is at the P arrival
 
         probabilities = []
-        for station, station_annotations in self._group_traces(annotations):
+        for station, station_annotations in self._group_traces(annotations).items():
             probabilities.append(
                 self._backproject_single_station(
                     station_annotations, distances[station]
@@ -175,14 +180,12 @@ class DepthPhaseModel:
 
                 if not np.isnan(arrivals[j]):
                     sample = int(arrivals[j] * trace.stats.sampling_rate)
-                    if sample < y_trace.shape[1]:
-                        prob[i] *= max(
-                            y_trace[j, sample], np.quantile(y_trace[j], q_min)
-                        )
+                    if sample < y_trace.shape[0]:
+                        prob[i] *= max(y_trace[sample], np.quantile(y_trace, q_min))
                     else:
-                        prob[i] *= np.quantile(y_trace[j], q_min)
+                        prob[i] *= np.quantile(y_trace, q_min)
                 else:
-                    prob[i] *= np.quantile(y_trace[j], q_min)
+                    prob[i] *= np.quantile(y_trace, q_min)
 
         return prob
 
@@ -365,13 +368,18 @@ class DepthPhaseNet(PhaseNet, DepthPhaseModel):
         self,
         phases: str = ("P", "pP", "sP"),
         sampling_rate: float = 20.0,
+        depth_phase_args: Optional[dict] = None,
         **kwargs,
     ) -> None:
-        super().__init__(
+        if depth_phase_args is None:
+            depth_phase_args = {}
+        PhaseNet.__init__(
+            self,
             phases=phases,
             sampling_rate=sampling_rate,
             **kwargs,
         )
+        DepthPhaseModel.__init__(self, *depth_phase_args)
 
     def forward(self, x: torch.tensor, logits=False) -> torch.tensor:
         y = super().forward(x, logits=True)
@@ -387,7 +395,7 @@ class DepthPhaseNet(PhaseNet, DepthPhaseModel):
         **kwargs,
     ):
         raise NotImplementedError(
-            "DepthPhaseNet does not implement a annotate function. "
+            "DepthPhaseNet does not implement an annotate function. "
             "Please use the classify function instead."
         )
 
