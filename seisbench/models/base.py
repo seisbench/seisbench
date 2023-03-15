@@ -2105,15 +2105,7 @@ class WaveformModel(SeisBenchModel, ABC):
                     int(trace.stats.sampling_rate / sampling_rate), no_filter=True
                 )
             else:
-                # This exception handling is required because very short traces in obspy can cause a crash during resampling.
-                # For details see: https://github.com/obspy/obspy/pull/2885
-                # TODO: Remove the try except block and bump obspy version requirement to a version without this issue.
-                try:
-                    # window="hann" is required because of https://github.com/obspy/obspy/issues/3116
-                    # Should be fixed in obspy>=1.3.1
-                    trace.resample(sampling_rate, no_filter=True, window="hann")
-                except ZeroDivisionError:
-                    del_list.append(i)
+                trace.resample(sampling_rate, no_filter=True)
 
         for i in del_list:
             del stream[i]
