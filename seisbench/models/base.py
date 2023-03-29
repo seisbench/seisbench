@@ -585,7 +585,7 @@ class SeisBenchModel(nn.Module):
                     _flagged_callable = True
                 if isinstance(v, dict):
                     # Check inside nested dicts for callables
-                    if not _contains_callable_recursive(v):
+                    if _contains_callable_recursive(v):
                         _flagged_callable = True
 
                 if not _flagged_callable:

@@ -1430,6 +1430,7 @@ def test_save_load_model_updated_after_construction(tmp_path):
     # Test model saving w. updated params
     model_orig.in_samples = 10_000
     model_orig.sampling_rate = 500
+    model_orig.filter_kwargs = {"freqmin": 1, "freqmax": 10, "zerophase": True}
 
     model_orig.save(tmp_path / "eqtransformer_changed")
     assert (tmp_path / "eqtransformer_changed.json").exists()
@@ -1441,6 +1442,11 @@ def test_save_load_model_updated_after_construction(tmp_path):
 
     assert model_load_state["in_samples"] == 10_000
     assert model_load_state["sampling_rate"] == 500
+    assert model_load_state["filter_kwargs"] == {
+        "freqmin": 1,
+        "freqmax": 10,
+        "zerophase": True,
+    }
 
 
 def test_save_load_model_updated_after_construction_inheritence_compatible(tmp_path):
