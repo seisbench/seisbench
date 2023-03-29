@@ -299,7 +299,7 @@ class EQTransformer(WaveformModel):
         picks = []
         for phase in self.phases:
             picks += self.picks_from_annotations(
-                annotations.select(channel=f"EQTransformer_{phase}"),
+                annotations.select(channel=f"{self.__class__.__name__}_{phase}"),
                 argdict.get(
                     f"{phase}_threshold", self._annotate_args.get("*_threshold")[1]
                 ),
@@ -307,7 +307,7 @@ class EQTransformer(WaveformModel):
             )
 
         detections = self.detections_from_annotations(
-            annotations.select(channel="EQTransformer_Detection"),
+            annotations.select(channel=f"{self.__class__.__name__}_Detection"),
             argdict.get(
                 "detection_threshold", self._annotate_args.get("detection_threshold")[1]
             ),
