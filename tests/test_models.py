@@ -2093,3 +2093,26 @@ def test_argdict_get_with_default():
 
     assert model._argdict_get_with_default({"testarg": 2}, "testarg") == 2
     assert model._argdict_get_with_default({"not_testarg": 2}, "testarg") == 1
+
+
+@pytest.mark.parametrize(
+    "cls",
+    [
+        seisbench.models.PhaseNet,
+        seisbench.models.EQTransformer,
+        seisbench.models.PhaseNetLight,
+    ],
+)
+def test_model_normalize(cls):
+    # Tolerance is set rather high to mitigate EQTransformer taper
+    model = cls()
+
+    model.norm = "std"
+    x = np.random.rand(3, 100000)
+    x_norm = model.annotate_window_pre(x, {})
+    assert np.allclose(np.std(x_norm, axis=-1), 1, atol=1e-3, rtol=1e-3)
+
+    model.norm = "peak"
+    x = np.random.rand(3, 100000)
+    x_norm = model.annotate_window_pre(x, {})
+    assert np.allclose(np.max(np.abs(x_norm), axis=-1), 1, atol=1e-3, rtol=1e-3)

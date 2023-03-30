@@ -20,7 +20,13 @@ class PhaseNet(WaveformModel):
     _annotate_args["overlap"] = (_annotate_args["overlap"][0], 1500)
 
     def __init__(
-        self, in_channels=3, classes=3, phases="NPS", sampling_rate=100, **kwargs
+        self,
+        in_channels=3,
+        classes=3,
+        phases="NPS",
+        sampling_rate=100,
+        norm="std",
+        **kwargs,
     ):
         citation = (
             "Zhu, W., & Beroza, G. C. (2019). "
@@ -41,6 +47,7 @@ class PhaseNet(WaveformModel):
 
         self.in_channels = in_channels
         self.classes = classes
+        self.norm = norm
         self.depth = 5
         self.kernel_size = 7
         self.stride = 4
@@ -143,9 +150,15 @@ class PhaseNet(WaveformModel):
     def annotate_window_pre(self, window, argdict):
         # Add a demean and normalize step to the preprocessing
         window = window - np.mean(window, axis=-1, keepdims=True)
-        std = np.std(window, axis=-1, keepdims=True)
-        std[std == 0] = 1  # Avoid NaN errors
-        window = window / std
+
+        if self.norm == "std":
+            std = np.std(window, axis=-1, keepdims=True)
+            std[std == 0] = 1  # Avoid NaN errors
+            window = window / std
+        elif self.norm == "peak":
+            peak = np.max(np.abs(window), axis=-1, keepdims=True) + 1e-10
+            window = window / peak
+
         return window
 
     def annotate_window_post(self, pred, piggyback=None, argdict=None):
@@ -216,7 +229,13 @@ class PhaseNetLight(PhaseNet):
     """
 
     def __init__(
-        self, in_channels=3, classes=3, phases="NPS", sampling_rate=100, **kwargs
+        self,
+        in_channels=3,
+        classes=3,
+        phases="NPS",
+        sampling_rate=100,
+        norm="std",
+        **kwargs,
     ):
         citation = (
             "Zhu, W., & Beroza, G. C. (2019). "
@@ -239,6 +258,7 @@ class PhaseNetLight(PhaseNet):
 
         self.in_channels = in_channels
         self.classes = classes
+        self.norm = norm
         self.kernel_size = 7
         self.stride = 4
         self.activation = torch.relu
