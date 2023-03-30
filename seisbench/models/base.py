@@ -105,6 +105,13 @@ class SeisBenchModel(nn.Module):
     :type citation: str, optional
     """
 
+    # The model can list combination of weights and versions that should cause a warning.
+    # Each entry is a 3-tuple:
+    # - weights name regex
+    # - weights_version
+    # - warning message
+    _weight_warnings = []
+
     def __init__(self, citation=None):
         super().__init__()
         self._citation = citation
@@ -205,6 +212,8 @@ class SeisBenchModel(nn.Module):
                 raise ValueError(f"No version for weight '{name}' available.")
             version_str = max(versions, key=version.parse)
 
+        cls._version_warnings(name, version_str)
+
         weight_path, metadata_path = cls._pretrained_path(name, version_str)
 
         cls._ensure_weight_files(
@@ -212,6 +221,20 @@ class SeisBenchModel(nn.Module):
         )
 
         return cls.load(weight_path.with_name(name), version_str=version_str)
+
+    @classmethod
+    def _version_warnings(cls, name: str, version_str: str):
+        """
+        Check if the current weight should issue a warning
+        """
+        for name_regex, weight_version, warning_str in cls._weight_warnings:
+            if not re.fullmatch(name_regex, name):
+                continue
+
+            if not weight_version == version_str:
+                continue
+
+            seisbench.logger.warning(f"Weight version warning: {warning_str}")
 
     @classmethod
     def _cleanup_local_repository(cls):
