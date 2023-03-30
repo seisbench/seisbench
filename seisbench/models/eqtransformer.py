@@ -54,6 +54,16 @@ class EQTransformer(WaveformModel):
     )
     _annotate_args["overlap"] = (_annotate_args["overlap"][0], 3000)
 
+    _weight_warnings = [
+        (
+            "ethz|geofon|instance|iquique|lendb|neic|scedc|stead",
+            "1",
+            "The normalization for this weight version is incorrect and will lead to degraded performance. "
+            "Run from_pretrained with update=True once to solve this issue. "
+            "For details, see https://github.com/seisbench/seisbench/pull/188 .",
+        ),
+    ]
+
     def __init__(
         self,
         in_channels=3,
