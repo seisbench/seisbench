@@ -2093,3 +2093,52 @@ def test_argdict_get_with_default():
 
     assert model._argdict_get_with_default({"testarg": 2}, "testarg") == 2
     assert model._argdict_get_with_default({"not_testarg": 2}, "testarg") == 1
+
+
+@pytest.mark.parametrize(
+    "cls",
+    [
+        seisbench.models.PhaseNet,
+        seisbench.models.EQTransformer,
+        seisbench.models.PhaseNetLight,
+    ],
+)
+def test_model_normalize(cls):
+    # Tolerance is set rather high to mitigate EQTransformer taper
+    model = cls()
+
+    model.norm = "std"
+    x = np.random.rand(3, 100000)
+    x_norm = model.annotate_window_pre(x, {})
+    assert np.allclose(np.std(x_norm, axis=-1), 1, atol=1e-3, rtol=1e-3)
+
+    model.norm = "peak"
+    x = np.random.rand(3, 100000)
+    x_norm = model.annotate_window_pre(x, {})
+    assert np.allclose(np.max(np.abs(x_norm), axis=-1), 1, atol=1e-3, rtol=1e-3)
+
+
+def test_version_warnings(caplog):
+    class MockModel(seisbench.models.WaveformModel):
+        _weight_warnings = [
+            ("abc|def", "2", "MYWARN"),  # Problematic
+            ("xyz", "3", "MYWARN"),  # Fine
+        ]
+
+    def check_version(name, version_str, warns):
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            MockModel._version_warnings(name, version_str)
+
+        if warns:
+            assert "MYWARN" in caplog.text
+        else:
+            assert "MYWARN" not in caplog.text
+
+    check_version("abc", "2", True)
+    check_version("def", "2", True)
+    check_version("xyz", "3", True)
+
+    check_version("abc", "1", False)
+    check_version("def", "3", False)
+    check_version("xyz", "2", False)
