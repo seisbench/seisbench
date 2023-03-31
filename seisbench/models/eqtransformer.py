@@ -36,6 +36,7 @@ class EQTransformer(WaveformModel):
                                 It is usually recommended to stick to the default value, as the custom layers show
                                 slightly worse performance than the PyTorch builtins.
                                 The exception is when loading the original weights using :py:func:`from_pretrained`.
+    :param norm: Data normalization strategy, either "peak" or "std".
     :param kwargs: Keyword arguments passed to the constructor of :py:class:`WaveformModel`.
     """
 
@@ -54,6 +55,16 @@ class EQTransformer(WaveformModel):
     )
     _annotate_args["overlap"] = (_annotate_args["overlap"][0], 3000)
 
+    _weight_warnings = [
+        (
+            "ethz|geofon|instance|iquique|lendb|neic|scedc|stead",
+            "1",
+            "The normalization for this weight version is incorrect and will lead to degraded performance. "
+            "Run from_pretrained with update=True once to solve this issue. "
+            "For details, see https://github.com/seisbench/seisbench/pull/188 .",
+        ),
+    ]
+
     def __init__(
         self,
         in_channels=3,
@@ -64,6 +75,7 @@ class EQTransformer(WaveformModel):
         drop_rate=0.1,
         original_compatible=False,
         sampling_rate=100,
+        norm="std",
         **kwargs,
     ):
         citation = (
@@ -98,6 +110,7 @@ class EQTransformer(WaveformModel):
         self.classes = classes
         self.lstm_blocks = lstm_blocks
         self.drop_rate = drop_rate
+        self.norm = norm
 
         # Add options for conservative and the true original - see https://github.com/seisbench/seisbench/issues/96#issuecomment-1155158224
         if original_compatible == True:
@@ -289,7 +302,11 @@ class EQTransformer(WaveformModel):
                 amp_normed[i, :] = a / (np.max(np.abs(a)) + 1e-10)
             window = amp_normed
         else:
-            window = window / (np.std(window) + 1e-10)
+            if self.norm == "std":
+                window = window / (np.std(window) + 1e-10)
+            elif self.norm == "peak":
+                peak = np.max(np.abs(window), axis=-1, keepdims=True) + 1e-10
+                window = window / peak
 
         # Cosine taper (very short, i.e., only six samples on each side)
         tap = 0.5 * (1 + np.cos(np.linspace(np.pi, 2 * np.pi, 6)))
@@ -320,7 +337,7 @@ class EQTransformer(WaveformModel):
         picks = []
         for phase in self.phases:
             picks += self.picks_from_annotations(
-                annotations.select(channel=f"EQTransformer_{phase}"),
+                annotations.select(channel=f"{self.__class__.__name__}_{phase}"),
                 argdict.get(
                     f"{phase}_threshold", self._annotate_args.get("*_threshold")[1]
                 ),
@@ -328,7 +345,7 @@ class EQTransformer(WaveformModel):
             )
 
         detections = self.detections_from_annotations(
-            annotations.select(channel="EQTransformer_Detection"),
+            annotations.select(channel=f"{self.__class__.__name__}_Detection"),
             argdict.get(
                 "detection_threshold", self._annotate_args.get("detection_threshold")[1]
             ),

@@ -135,7 +135,7 @@ class CRED(WaveformModel):
         :return: List of detections
         """
         detections = self.detections_from_annotations(
-            annotations.select(channel="CRED_Detection"),
+            annotations.select(channel=f"{self.__class__.__name__}_Detection"),
             argdict.get(
                 "detection_threshold", self._annotate_args.get("detection_threshold")[1]
             ),

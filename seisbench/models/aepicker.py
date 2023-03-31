@@ -129,7 +129,7 @@ class BasicPhaseAE(WaveformModel):
                 continue
 
             picks += self.picks_from_annotations(
-                annotations.select(channel=f"BasicPhaseAE_{phase}"),
+                annotations.select(channel=f"{self.__class__.__name__}_{phase}"),
                 argdict.get(
                     f"{phase}_threshold", self._annotate_args.get("*_threshold")[1]
                 ),

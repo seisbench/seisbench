@@ -1456,6 +1456,7 @@ def test_save_load_model_updated_after_construction(tmp_path):
     # Test model saving w. updated params
     model_orig.in_samples = 10_000
     model_orig.sampling_rate = 500
+    model_orig.filter_kwargs = {"freqmin": 1, "freqmax": 10, "zerophase": True}
 
     model_orig.save(tmp_path / "eqtransformer_changed")
     assert (tmp_path / "eqtransformer_changed.json").exists()
@@ -1467,6 +1468,11 @@ def test_save_load_model_updated_after_construction(tmp_path):
 
     assert model_load_state["in_samples"] == 10_000
     assert model_load_state["sampling_rate"] == 500
+    assert model_load_state["filter_kwargs"] == {
+        "freqmin": 1,
+        "freqmax": 10,
+        "zerophase": True,
+    }
 
 
 def test_save_load_model_updated_after_construction_inheritence_compatible(tmp_path):
@@ -1966,12 +1972,12 @@ def test_get_weights_file_paths():
 
 def test_list_pretrained_version_empty_cache(tmp_path):
     with patch(
-        "seisbench.cache_root", tmp_path / "list_pretrained"
+        "seisbench.cache_model_root", tmp_path / "list_pretrained"
     ):  # Ensure SeisBench cache is empty
         seisbench.models.GPD.list_pretrained(details=True, remote=False)
 
     with patch(
-        "seisbench.cache_root", tmp_path / "list_versions"
+        "seisbench.cache_model_root", tmp_path / "list_versions"
     ):  # Ensure SeisBench cache is empty
         seisbench.models.GPD.list_versions("original", remote=False)
 
@@ -2159,3 +2165,52 @@ def test_argdict_get_with_default():
 
     assert model._argdict_get_with_default({"testarg": 2}, "testarg") == 2
     assert model._argdict_get_with_default({"not_testarg": 2}, "testarg") == 1
+
+
+@pytest.mark.parametrize(
+    "cls",
+    [
+        seisbench.models.PhaseNet,
+        seisbench.models.EQTransformer,
+        seisbench.models.PhaseNetLight,
+    ],
+)
+def test_model_normalize(cls):
+    # Tolerance is set rather high to mitigate EQTransformer taper
+    model = cls()
+
+    model.norm = "std"
+    x = np.random.rand(3, 100000)
+    x_norm = model.annotate_window_pre(x, {})
+    assert np.allclose(np.std(x_norm, axis=-1), 1, atol=1e-3, rtol=1e-3)
+
+    model.norm = "peak"
+    x = np.random.rand(3, 100000)
+    x_norm = model.annotate_window_pre(x, {})
+    assert np.allclose(np.max(np.abs(x_norm), axis=-1), 1, atol=1e-3, rtol=1e-3)
+
+
+def test_version_warnings(caplog):
+    class MockModel(seisbench.models.WaveformModel):
+        _weight_warnings = [
+            ("abc|def", "2", "MYWARN"),  # Problematic
+            ("xyz", "3", "MYWARN"),  # Fine
+        ]
+
+    def check_version(name, version_str, warns):
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            MockModel._version_warnings(name, version_str)
+
+        if warns:
+            assert "MYWARN" in caplog.text
+        else:
+            assert "MYWARN" not in caplog.text
+
+    check_version("abc", "2", True)
+    check_version("def", "2", True)
+    check_version("xyz", "3", True)
+
+    check_version("abc", "1", False)
+    check_version("def", "3", False)
+    check_version("xyz", "2", False)

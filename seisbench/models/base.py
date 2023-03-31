@@ -105,6 +105,13 @@ class SeisBenchModel(nn.Module):
     :type citation: str, optional
     """
 
+    # The model can list combination of weights and versions that should cause a warning.
+    # Each entry is a 3-tuple:
+    # - weights name regex
+    # - weights_version
+    # - warning message
+    _weight_warnings = []
+
     def __init__(self, citation=None):
         super().__init__()
         self._citation = citation
@@ -205,6 +212,8 @@ class SeisBenchModel(nn.Module):
                 raise ValueError(f"No version for weight '{name}' available.")
             version_str = max(versions, key=version.parse)
 
+        cls._version_warnings(name, version_str)
+
         weight_path, metadata_path = cls._pretrained_path(name, version_str)
 
         cls._ensure_weight_files(
@@ -212,6 +221,20 @@ class SeisBenchModel(nn.Module):
         )
 
         return cls.load(weight_path.with_name(name), version_str=version_str)
+
+    @classmethod
+    def _version_warnings(cls, name: str, version_str: str):
+        """
+        Check if the current weight should issue a warning
+        """
+        for name_regex, weight_version, warning_str in cls._weight_warnings:
+            if not re.fullmatch(name_regex, name):
+                continue
+
+            if not weight_version == version_str:
+                continue
+
+            seisbench.logger.warning(f"Weight version warning: {warning_str}")
 
     @classmethod
     def _cleanup_local_repository(cls):
@@ -584,7 +607,7 @@ class SeisBenchModel(nn.Module):
                     _flagged_callable = True
                 if isinstance(v, dict):
                     # Check inside nested dicts for callables
-                    if not _contains_callable_recursive(v):
+                    if _contains_callable_recursive(v):
                         _flagged_callable = True
 
                 if not _flagged_callable:
@@ -2130,15 +2153,7 @@ class WaveformModel(SeisBenchModel, ABC):
                     int(trace.stats.sampling_rate / sampling_rate), no_filter=True
                 )
             else:
-                # This exception handling is required because very short traces in obspy can cause a crash during resampling.
-                # For details see: https://github.com/obspy/obspy/pull/2885
-                # TODO: Remove the try except block and bump obspy version requirement to a version without this issue.
-                try:
-                    # window="hann" is required because of https://github.com/obspy/obspy/issues/3116
-                    # Should be fixed in obspy>=1.3.1
-                    trace.resample(sampling_rate, no_filter=True, window="hann")
-                except ZeroDivisionError:
-                    del_list.append(i)
+                trace.resample(sampling_rate, no_filter=True)
 
         for i in del_list:
             del stream[i]

@@ -74,6 +74,8 @@ Check out the [contribution guidelines](https://github.com/seisbench/seisbench/b
 
 ## Known issues
 
+- On the Apple M1 and M2 chips, pytorch seems to not always work when installed directly within `pip install seisbench`.
+  As a workaround, follow the instructions at (https://pytorch.org/) to install pytorch and then install SeisBench as usual through pip.
 - Some institutions and internet providers are blocking access to our data and model repository, as it is running on a non-standard port (2443).
   This usually manifests in timeouts when trying to download data or model weights.
   To verify the issue, try accessing [https://dcache-demo.desy.de:2443/](https://dcache-demo.desy.de:2443/) directly from the same machine.

@@ -23,14 +23,23 @@ class PhaseNet(WaveformModel):
     )
     _annotate_args["overlap"] = (_annotate_args["overlap"][0], 1500)
 
+    _weight_warnings = [
+        (
+            "ethz|geofon|instance|iquique|lendb|neic|scedc|stead",
+            "1",
+            "The normalization for this weight version is incorrect and will lead to degraded performance. "
+            "Run from_pretrained with update=True once to solve this issue. "
+            "For details, see https://github.com/seisbench/seisbench/pull/188 .",
+        ),
+    ]
+
     def __init__(
         self,
         in_channels=3,
         classes=3,
         phases="NPS",
         sampling_rate=100,
-        norm_amp_per_comp=False,
-        norm_detrend=False,
+        norm="std",
         **kwargs,
     ):
         citation = (
@@ -39,6 +48,14 @@ class PhaseNet(WaveformModel):
             "Geophysical Journal International, 216(1), 261-273. "
             "https://doi.org/10.1093/gji/ggy423"
         )
+
+        # PickBlue options
+        for option in ("norm_amp_per_comp", "norm_detrend"):
+            if option in kwargs:
+                setattr(self, option, kwargs[option])
+                del kwargs[option]
+            else:
+                setattr(self, option, False)
 
         super().__init__(
             citation=citation,
@@ -50,12 +67,9 @@ class PhaseNet(WaveformModel):
             **kwargs,
         )
 
-        # PickBlue options
-        self.norm_amp_per_comp = norm_amp_per_comp
-        self.norm_detrend = norm_detrend
-
         self.in_channels = in_channels
         self.classes = classes
+        self.norm = norm
         self.depth = 5
         self.kernel_size = 7
         self.stride = 4
@@ -156,7 +170,7 @@ class PhaseNet(WaveformModel):
         return torch.cat([skip, x_resize], dim=1)
 
     def annotate_window_pre(self, window, argdict):
-        # Add a demean and an amplitude normalization step to the preprocessing
+        # Add a demean and normalize step to the preprocessing
         window = window - np.mean(window, axis=-1, keepdims=True)
         if self.norm_detrend:
             detrended = np.zeros(window.shape)
@@ -170,9 +184,14 @@ class PhaseNet(WaveformModel):
                 amp_normed[i, :] = amp
             window = amp_normed
         else:
-            std = np.std(window, axis=-1, keepdims=True)
-            std[std == 0] = 1  # Avoid NaN errors
-            window = window / std
+            if self.norm == "std":
+                std = np.std(window, axis=-1, keepdims=True)
+                std[std == 0] = 1  # Avoid NaN errors
+                window = window / std
+            elif self.norm == "peak":
+                peak = np.max(np.abs(window), axis=-1, keepdims=True) + 1e-10
+                window = window / peak
+
         return window
 
     def annotate_window_post(self, pred, piggyback=None, argdict=None):
@@ -204,7 +223,7 @@ class PhaseNet(WaveformModel):
                 continue
 
             picks += self.picks_from_annotations(
-                annotations.select(channel=f"PhaseNet_{phase}"),
+                annotations.select(channel=f"{self.__class__.__name__}_{phase}"),
                 argdict.get(
                     f"{phase}_threshold", self._annotate_args.get("*_threshold")[1]
                 ),
@@ -280,9 +299,6 @@ class PhaseNet(WaveformModel):
             name, version_str, weight_path, metadata_path, force, wait_for_file
         )
 
-        path_json, path_pt = cls._get_weights_file_paths(
-            weight_path.with_name(name), version_str
-        )
         if metadata_path.is_file():
             with open(metadata_path, "r") as f:
                 weights_metadata = json.load(f)
@@ -314,14 +330,23 @@ class PhaseNetLight(PhaseNet):
     an earlier, incomplete implementation of PhaseNet in SeisBench prior to v0.3.
     """
 
+    _weight_warnings = [
+        (
+            "ethz|geofon|instance|iquique|lendb|neic|scedc|stead",
+            "1",
+            "The normalization for this weight version is incorrect and will lead to degraded performance. "
+            "Run from_pretrained with update=True once to solve this issue. "
+            "For details, see https://github.com/seisbench/seisbench/pull/188 .",
+        ),
+    ]
+
     def __init__(
         self,
         in_channels=3,
         classes=3,
         phases="NPS",
         sampling_rate=100,
-        norm_amp_per_comp=False,
-        norm_detrend=False,
+        norm="std",
         **kwargs,
     ):
         citation = (
@@ -330,6 +355,14 @@ class PhaseNetLight(PhaseNet):
             "Geophysical Journal International, 216(1), 261-273. "
             "https://doi.org/10.1093/gji/ggy423"
         )
+
+        # PickBlue options
+        for option in ("norm_amp_per_comp", "norm_detrend"):
+            if option in kwargs:
+                setattr(self, option, kwargs[option])
+                del kwargs[option]
+            else:
+                setattr(self, option, False)
 
         # Skip super call in favour of super-super class
         WaveformModel.__init__(
@@ -343,12 +376,9 @@ class PhaseNetLight(PhaseNet):
             **kwargs,
         )
 
-        # PickBlue options
-        self.norm_amp_per_comp = norm_amp_per_comp
-        self.norm_detrend = norm_detrend
-
         self.in_channels = in_channels
         self.classes = classes
+        self.norm = norm
         self.kernel_size = 7
         self.stride = 4
         self.activation = torch.relu
