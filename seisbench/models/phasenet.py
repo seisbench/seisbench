@@ -167,7 +167,6 @@ class PhaseNet(WaveformModel):
             amp_normed = np.zeros(window.shape)
             for i, a in enumerate(window):
                 amp = a / (np.max(np.abs(a)) + 1e-10)
-                amp[amp == 0] = 1  # Avoid NaN errors
                 amp_normed[i, :] = amp
             window = amp_normed
         else:
