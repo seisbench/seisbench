@@ -9,6 +9,10 @@ from .base import WaveformModel
 
 
 class DeepDenoiser(WaveformModel):
+    """
+    .. document_args:: seisbench.models DeepDenoiser
+    """
+
     _annotate_args = WaveformModel._annotate_args.copy()
     _annotate_args["overlap"] = (_annotate_args["overlap"][0], 1500)
 
