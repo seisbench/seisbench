@@ -1,9 +1,13 @@
+import json
+
 import numpy as np
+import scipy.signal
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from packaging import version
 
-from .base import Conv1dSame, WaveformModel
+from .base import Conv1dSame, WaveformModel, _cache_migration_v0_v3
 
 
 class PhaseNet(WaveformModel):
@@ -44,6 +48,14 @@ class PhaseNet(WaveformModel):
             "Geophysical Journal International, 216(1), 261-273. "
             "https://doi.org/10.1093/gji/ggy423"
         )
+
+        # PickBlue options
+        for option in ("norm_amp_per_comp", "norm_detrend"):
+            if option in kwargs:
+                setattr(self, option, kwargs[option])
+                del kwargs[option]
+            else:
+                setattr(self, option, False)
 
         super().__init__(
             citation=citation,
@@ -160,14 +172,25 @@ class PhaseNet(WaveformModel):
     def annotate_window_pre(self, window, argdict):
         # Add a demean and normalize step to the preprocessing
         window = window - np.mean(window, axis=-1, keepdims=True)
-
-        if self.norm == "std":
-            std = np.std(window, axis=-1, keepdims=True)
-            std[std == 0] = 1  # Avoid NaN errors
-            window = window / std
-        elif self.norm == "peak":
-            peak = np.max(np.abs(window), axis=-1, keepdims=True) + 1e-10
-            window = window / peak
+        if self.norm_detrend:
+            detrended = np.zeros(window.shape)
+            for i, a in enumerate(window):
+                detrended[i, :] = scipy.signal.detrend(a)
+            window = detrended
+        if self.norm_amp_per_comp:
+            amp_normed = np.zeros(window.shape)
+            for i, a in enumerate(window):
+                amp = a / (np.max(np.abs(a)) + 1e-10)
+                amp_normed[i, :] = amp
+            window = amp_normed
+        else:
+            if self.norm == "std":
+                std = np.std(window, axis=-1, keepdims=True)
+                std[std == 0] = 1  # Avoid NaN errors
+                window = window / std
+            elif self.norm == "peak":
+                peak = np.max(np.abs(window), axis=-1, keepdims=True) + 1e-10
+                window = window / peak
 
         return window
 
@@ -229,6 +252,75 @@ class PhaseNet(WaveformModel):
 
         return model_args
 
+    @classmethod
+    def from_pretrained_expand(
+        cls, name, version_str="latest", update=False, force=False, wait_for_file=False
+    ):
+        """
+        Load pretrained model with weights and copy the input channel weights that match the Z component to a new,
+        4th dimension that is used to process the hydrophone component of the input trace.
+
+        For further instructions, see :py:func:`~seisbench.models.base.SeisBenchModel.from_pretrained`. This method
+        differs from :py:func:`~seisbench.models.base.SeisBenchModel.from_pretrained` in that it does not call helper
+        functions to load the model weights. Instead it covers the same logic and, in addition, takes intermediate
+        steps to insert a new `in_channels` dimension to the loaded model and copy weights.
+
+        :param name: Model name prefix.
+        :type name: str
+        :param version_str: Version of the weights to load. Either a version string or "latest". The "latest" model is
+                            the model with the highest version number.
+        :type version_str: str
+        :param force: Force execution of download callback, defaults to False
+        :type force: bool, optional
+        :param update: If true, downloads potential new weights file and config from the remote repository.
+                       The old files are retained with their version suffix.
+        :type update: bool
+        :param wait_for_file: Whether to wait on partially downloaded files, defaults to False
+        :type wait_for_file: bool, optional
+        :return: Model instance
+        :rtype: SeisBenchModel
+        """
+        cls._cleanup_local_repository()
+        _cache_migration_v0_v3()
+
+        if version_str == "latest":
+            versions = cls.list_versions(name, remote=update)
+            # Always query remote versions if cache is empty
+            if len(versions) == 0:
+                versions = cls.list_versions(name, remote=True)
+
+            if len(versions) == 0:
+                raise ValueError(f"No version for weight '{name}' available.")
+            version_str = max(versions, key=version.parse)
+
+        weight_path, metadata_path = cls._pretrained_path(name, version_str)
+
+        cls._ensure_weight_files(
+            name, version_str, weight_path, metadata_path, force, wait_for_file
+        )
+
+        if metadata_path.is_file():
+            with open(metadata_path, "r") as f:
+                weights_metadata = json.load(f)
+        else:
+            weights_metadata = {}
+        model_args = weights_metadata.get("model_args", {})
+        model_args["in_channels"] = 4
+        model = cls(**model_args)
+
+        model._weights_metadata = weights_metadata
+        model._parse_metadata()
+
+        state_dict = torch.load(weight_path)
+        old_weight = state_dict["inc.weight"]
+        state_dict["inc.weight"] = torch.zeros(
+            old_weight.shape[0], old_weight.shape[1] + 1, old_weight.shape[2]
+        ).type_as(old_weight)
+        state_dict["inc.weight"][:, :3, ...] = old_weight
+        state_dict["inc.weight"][:, 3, ...] = old_weight[:, 0, ...]
+        model.load_state_dict(state_dict)
+        return model
+
 
 class PhaseNetLight(PhaseNet):
     """
@@ -263,6 +355,14 @@ class PhaseNetLight(PhaseNet):
             "Geophysical Journal International, 216(1), 261-273. "
             "https://doi.org/10.1093/gji/ggy423"
         )
+
+        # PickBlue options
+        for option in ("norm_amp_per_comp", "norm_detrend"):
+            if option in kwargs:
+                setattr(self, option, kwargs[option])
+                del kwargs[option]
+            else:
+                setattr(self, option, False)
 
         # Skip super call in favour of super-super class
         WaveformModel.__init__(

@@ -69,6 +69,14 @@ NEIC dataset
     :undoc-members:
     :show-inheritance:
 
+OBS dataset
+-----------------------------------
+
+.. automodule:: seisbench.data.obs
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Southern California datasets
 -----------------------------------
 

@@ -49,3 +49,11 @@ PhaseNet
     :members:
     :undoc-members:
     :show-inheritance:
+
+PickBlue
+-----------------------------------
+
+.. automodule:: seisbench.models.pickblue
+    :members:
+    :undoc-members:
+    :show-inheritance:

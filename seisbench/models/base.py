@@ -527,7 +527,6 @@ class SeisBenchModel(nn.Module):
         model_weights = torch.load(f"{path_pt}")
 
         model_args = weights_metadata.get("model_args", {})
-
         model = cls(**model_args)
         model._weights_metadata = weights_metadata
         model._parse_metadata()
@@ -658,6 +657,13 @@ class SeisBenchModel(nn.Module):
         self._weights_version = self._weights_metadata.get("version", "1")
 
         # Check version requirement
+        self._check_version_requirement()
+
+        # Parse default args - Config default_args supersede constructor args
+        default_args = self._weights_metadata.get("default_args", {})
+        self.default_args.update(default_args)
+
+    def _check_version_requirement(self):
         seisbench_requirement = self._weights_metadata.get(
             "seisbench_requirement", None
         )
@@ -669,10 +675,6 @@ class SeisBenchModel(nn.Module):
                     f"Weights require seisbench version at least {seisbench_requirement}, "
                     f"but the installed version is {seisbench.__version__}."
                 )
-
-        # Parse default args - Config default_args supersede constructor args
-        default_args = self._weights_metadata.get("default_args", {})
-        self.default_args.update(default_args)
 
     @abstractmethod
     def get_model_args(self):
@@ -1941,23 +1943,46 @@ class WaveformModel(SeisBenchModel, ABC):
         :param argdict: Dictionary of arguments
         :return: Preprocessed stream
         """
-        # TODO: This should check for gaps and ensure that these are zeroed at the end of processing
-        if self.filter_args is not None or self.filter_kwargs is not None:
-            if self.filter_args is None:
-                filter_args = ()
-            else:
-                filter_args = self.filter_args
-
-            if self.filter_kwargs is None:
-                filter_kwargs = {}
-            else:
-                filter_kwargs = self.filter_kwargs
-
-            stream.filter(*filter_args, **filter_kwargs)
+        self._filter_stream(stream)
 
         if self.sampling_rate is not None:
             self.resample(stream, self.sampling_rate)
         return stream
+
+    def _filter_stream(self, stream):
+        """
+        Filters stream according to filter_args and filter_kwargs.
+        By default, these are directly passed to `obspy.stream.filter(*filter_arg, **filter_kwargs)`.
+        In addition, separate filtering for different channels can be defined.
+        This is done by making `filter_args` a dict from channel regex to the actual filter arguments.
+        In this case, `filter_kwargs` is expected to be a dict with the same keys.
+        For example, `filter_args = {"??Z": ("highpass",)}` and `filter_kwargs = {"??Z": {"freq": 1}}`
+        would high-pass filter only the vertical components at 1 Hz.
+        """
+        # TODO: This should check for gaps and ensure that these are zeroed at the end of processing
+        if self.filter_args is not None or self.filter_kwargs is not None:
+            if isinstance(self.filter_args, dict):
+                for key, filter_args in self.filter_args.items():
+                    substream = stream.select(channel=key)
+                    if key not in self.filter_kwargs:
+                        raise ValueError(
+                            f"Invalid filter definition. Key '{key}' in args but not in kwargs."
+                        )
+                    self._filter_stream_single(
+                        filter_args, self.filter_kwargs[key], substream
+                    )
+
+            else:
+                self._filter_stream_single(self.filter_args, self.filter_kwargs, stream)
+
+    @staticmethod
+    def _filter_stream_single(filter_args, filter_kwargs, stream):
+        if filter_args is None:
+            filter_args = ()
+        if filter_kwargs is None:
+            filter_kwargs = {}
+
+        stream.filter(*filter_args, **filter_kwargs)
 
     def annotate_stream_validate(self, stream, argdict):
         """

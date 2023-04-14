@@ -1080,6 +1080,32 @@ def test_annotate_eqtransformer(parallelism):
 
 
 @pytest.mark.parametrize(
+    "parallelism,model",
+    [
+        (None, "phasenet"),
+        (1, "phasenet"),
+        (None, "eqtransformer"),
+        (1, "eqtransformer"),
+    ],
+)
+def test_annotate_pickblue(parallelism, model):
+    # Tests that the annotate/classify functions run without crashes and annotate produces an output
+    with patch(
+        "seisbench.models.SeisBenchModel._check_version_requirement"
+    ):  # Ignore version requirement
+        model = seisbench.models.PickBlue(base=model)
+
+    model.sampling_rate = 400  # Higher sampling rate ensures trace is long enough
+
+    stream = obspy.read("./tests/examples/OBS*")
+    annotations = model.annotate(stream, parallelism=parallelism)
+    assert len(annotations) > 0
+    model.classify(
+        stream, parallelism=parallelism
+    )  # Ensures classify succeeds even though labels are unknown
+
+
+@pytest.mark.parametrize(
     "parallelism",
     [None, 1],
 )
@@ -1986,6 +2012,52 @@ def test_verify_argdict(caplog):
     with caplog.at_level(logging.WARNING):
         model._verify_argdict({"my_var": 3})
     assert "Unknown argument" in caplog.text
+
+
+def test_annotate_filter():
+    model = seisbench.models.GPD()
+
+    # Nothing happens
+    stream_org = obspy.read()
+    stream = stream_org.copy()
+    model.filter_args = None
+    model.filter_kwargs = None
+    model._filter_stream(stream)
+
+    for trace_a, trace_b in zip(stream_org, stream):
+        assert np.allclose(trace_a.data, trace_b.data)
+
+    # Filter all
+    stream_org = obspy.read()
+    stream = stream_org.copy()
+    model.filter_args = ["highpass"]
+    model.filter_kwargs = {"freq": 1}
+    model._filter_stream(stream)
+
+    for trace_a, trace_b in zip(stream_org, stream):
+        assert not np.allclose(trace_a.data, trace_b.data)
+
+    # Filter Z only
+    stream_org = obspy.read()
+    stream = stream_org.copy()
+    model.filter_args = {"??Z": ["highpass"]}
+    model.filter_kwargs = {"??Z": {"freq": 1}}
+    model._filter_stream(stream)
+
+    for trace_a, trace_b in zip(stream_org, stream):
+        if trace_a.stats.channel[-1] == "Z":
+            assert not np.allclose(trace_a.data, trace_b.data)
+        else:
+            assert np.allclose(trace_a.data, trace_b.data)
+
+    # Invalid filter
+    model.filter_args = {"??Z": ["highpass"]}
+    model.filter_kwargs = {"??Y": {"freq": 1}}
+
+    with pytest.raises(ValueError) as e:
+        model._filter_stream(stream)
+
+    assert "Invalid filter definition" in str(e)
 
 
 def test_phasenet_forward():

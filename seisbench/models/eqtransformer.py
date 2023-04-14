@@ -1,6 +1,7 @@
 import warnings
 
 import numpy as np
+import scipy.signal
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -83,6 +84,15 @@ class EQTransformer(WaveformModel):
             "detection and phase picking. Nat Commun 11, 3952 (2020). "
             "https://doi.org/10.1038/s41467-020-17591-w"
         )
+
+        # PickBlue options
+        for option in ("norm_amp_per_comp", "norm_detrend"):
+            if option in kwargs:
+                setattr(self, option, kwargs[option])
+                del kwargs[option]
+            else:
+                setattr(self, option, False)
+
         # Blinding defines how many samples at beginning and end of the prediction should be ignored
         # This is usually required to mitigate prediction problems from training properties, e.g.,
         # if all picks in the training fall between seconds 5 and 55.
@@ -281,12 +291,22 @@ class EQTransformer(WaveformModel):
     def annotate_window_pre(self, window, argdict):
         # Add a demean and an amplitude normalization step to the preprocessing
         window = window - np.mean(window, axis=-1, keepdims=True)
-
-        if self.norm == "std":
-            window = window / (np.std(window) + 1e-10)
-        elif self.norm == "peak":
-            peak = np.max(np.abs(window), axis=-1, keepdims=True) + 1e-10
-            window = window / peak
+        if self.norm_detrend:
+            detrended = np.zeros(window.shape)
+            for i, a in enumerate(window):
+                detrended[i, :] = scipy.signal.detrend(a)
+            window = detrended
+        if self.norm_amp_per_comp:
+            amp_normed = np.zeros(window.shape)
+            for i, a in enumerate(window):
+                amp_normed[i, :] = a / (np.max(np.abs(a)) + 1e-10)
+            window = amp_normed
+        else:
+            if self.norm == "std":
+                window = window / (np.std(window) + 1e-10)
+            elif self.norm == "peak":
+                peak = np.max(np.abs(window), axis=-1, keepdims=True) + 1e-10
+                window = window / peak
 
         # Cosine taper (very short, i.e., only six samples on each side)
         tap = 0.5 * (1 + np.cos(np.linspace(np.pi, 2 * np.pi, 6)))
