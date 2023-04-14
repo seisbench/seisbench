@@ -130,7 +130,6 @@ class DepthPhaseModel:
         else:
             raise ValueError(f"Could not parse trace id '{trace_id}'")
 
-    # TODO: Test
     def _line_search_depth(
         self,
         annotations: obspy.Stream,
@@ -158,7 +157,6 @@ class DepthPhaseModel:
         else:
             return depth
 
-    # TODO: Test
     def _backproject_single_station(
         self, station_annotations: obspy.Stream, dist: float, q_min: float = 0.5
     ):
@@ -189,7 +187,6 @@ class DepthPhaseModel:
 
         return prob
 
-    # TODO: Test
     @staticmethod
     def _norm_label(y: np.ndarray, eps: float = 1e-5) -> np.ndarray:
         """
@@ -198,7 +195,6 @@ class DepthPhaseModel:
         y = y + eps / y.shape[-1]
         return y / np.sum(y, axis=-1, keepdims=True)
 
-    # TODO: Test
     @staticmethod
     def _smooth_curve(y: np.ndarray, smoothing: float = 10) -> np.ndarray:
         """
@@ -219,7 +215,6 @@ class DepthPhaseModel:
                 y_new[i] = np.convolve(y[i], kernel, "same")
             return y_new
 
-    # TODO: Test
     @staticmethod
     def _group_traces(annotations: obspy.Stream) -> dict[str, obspy.Stream]:
         grouping = defaultdict(obspy.Stream)

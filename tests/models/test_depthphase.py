@@ -4,6 +4,7 @@ from unittest.mock import patch
 import numpy as np
 import obspy
 import pytest
+import scipy.stats
 from obspy import UTCDateTime
 from obspy.core.inventory import Channel, Inventory, Network, Station
 
@@ -92,7 +93,7 @@ def test_calculate_distances():
     assert np.isclose(distances["NE.B."], 0)
 
 
-def test_rebase_streams_for_picks():
+def test_rebase_streams_for_picks(tmp_path):
     t0 = UTCDateTime("2000-01-01")
     picks = {"NE.A.": t0 + 30, "XY.B.01": t0 + 20, "XY.D.01": t0 + 20}
 
@@ -151,11 +152,15 @@ def test_rebase_streams_for_picks():
             )
         )
 
-    model = seisbench.models.depthphase.DepthPhaseModel(time_before=10)
-    substream = model._rebase_streams_for_picks(stream, picks, in_samples=1500)
-    assert len(substream) == 6
-    for trace in substream:
-        assert trace.stats.npts == 1500
+    with patch("seisbench.cache_aux_root", tmp_path):
+        model = seisbench.models.depthphase.DepthPhaseModel(
+            time_before=10,
+            tt_args=dict(dists=np.linspace(30, 100, 2), depths=np.linspace(5, 660, 2)),
+        )
+        substream = model._rebase_streams_for_picks(stream, picks, in_samples=1500)
+        assert len(substream) == 6
+        for trace in substream:
+            assert trace.stats.npts == 1500
 
 
 def test_ttlookup(caplog, tmp_path):
@@ -174,3 +179,153 @@ def test_ttlookup(caplog, tmp_path):
             )
         assert "Precalculating travel times." not in caplog.text
         model.get_traveltimes(50, 100)
+
+
+def test_group_traces():
+    t0 = UTCDateTime("2000-01-01")
+    stream = obspy.Stream()
+    for c in "ZNE":
+        stream.append(
+            obspy.Trace(
+                np.ones(10000),
+                header={
+                    "network": "XY",
+                    "station": "D",
+                    "location": "01",
+                    "channel": f"HH{c}",
+                    "sampling_rate": 100,
+                    "starttime": t0 - 1000,
+                },
+            )
+        )
+
+    for c in "ZN":
+        stream.append(
+            obspy.Trace(
+                np.ones(10000),
+                header={
+                    "network": "XY",
+                    "station": "E",
+                    "location": "",
+                    "channel": f"HH{c}",
+                    "sampling_rate": 100,
+                    "starttime": t0 - 1000,
+                },
+            )
+        )
+
+    grouped = seisbench.models.depthphase.DepthPhaseModel._group_traces(stream)
+    assert len(grouped) == 2
+    assert len(grouped["XY.D.01"]) == 3
+    assert len(grouped["XY.E."]) == 2
+
+
+def test_smooth_curve():
+    for x in [np.random.rand(1000), np.random.rand(3, 1000)]:
+        # Avoid boundary artifacts
+        x[..., :150] = 0
+        x[..., -150:] = 0
+
+        y = seisbench.models.depthphase.DepthPhaseModel._smooth_curve(x, smoothing=10)
+        assert np.allclose(
+            np.sum(x, axis=-1), np.sum(y, axis=-1)
+        )  # Integral stays constant
+        assert not np.allclose(x, y)  # Values are changed
+
+
+def test_norm_label():
+    x = np.random.rand(3, 1000)
+    y = seisbench.models.depthphase.DepthPhaseModel._norm_label(x, eps=1e-10)
+
+    assert np.allclose(np.sum(y, axis=-1), 1)
+
+
+def test_backproject_single_station(tmp_path):
+    with patch("seisbench.cache_aux_root", tmp_path):
+        model = seisbench.models.depthphase.DepthPhaseModel(
+            depth_levels=np.linspace(10, 500, 20),
+            tt_args=dict(dists=np.linspace(30, 100, 2), depths=np.linspace(5, 660, 2)),
+        )
+        t0 = UTCDateTime(0)
+
+        annotations = obspy.Stream(
+            [
+                obspy.Trace(
+                    np.ones(10000),
+                    header={
+                        "network": "XY",
+                        "station": "E",
+                        "location": "",
+                        "channel": f"model_pP",
+                        "sampling_rate": 100,
+                        "starttime": t0 - 10,
+                    },
+                ),
+                obspy.Trace(
+                    np.ones(10000),
+                    header={
+                        "network": "XY",
+                        "station": "E",
+                        "location": "",
+                        "channel": f"model_sP",
+                        "sampling_rate": 100,
+                        "starttime": t0 - 10,
+                    },
+                ),
+            ]
+        )
+
+        pred = model._backproject_single_station(annotations, dist=50)
+        assert len(pred) == len(model.depth_levels)
+
+
+def test_line_search_depth(tmp_path):
+    with patch("seisbench.cache_aux_root", tmp_path):
+        model = seisbench.models.depthphase.DepthPhaseModel(
+            depth_levels=np.linspace(10, 500, 20),
+            tt_args=dict(dists=np.linspace(30, 100, 2), depths=np.linspace(5, 660, 2)),
+        )
+        t0 = UTCDateTime(0)
+
+        annotations = obspy.Stream()
+        for station in "DE":
+            annotations += obspy.Stream(
+                [
+                    obspy.Trace(
+                        np.random.rand(10000),
+                        header={
+                            "network": "XY",
+                            "station": station,
+                            "location": "",
+                            "channel": f"model_pP",
+                            "sampling_rate": 100,
+                            "starttime": t0 - 10,
+                        },
+                    ),
+                    obspy.Trace(
+                        np.random.rand(10000),
+                        header={
+                            "network": "XY",
+                            "station": station,
+                            "location": "",
+                            "channel": f"model_sP",
+                            "sampling_rate": 100,
+                            "starttime": t0 - 10,
+                        },
+                    ),
+                ]
+            )
+
+        distances = {
+            "XY.D.": 50,
+            "XY.E.": 10,
+        }
+
+        depth, depth_levels, probabilities = model._line_search_depth(
+            annotations, distances, probability_curves=True
+        )
+        assert probabilities.shape == (2, depth_levels.shape[0])
+        assert (
+            depth
+            == depth_levels[np.argmax(scipy.stats.mstats.gmean(probabilities, axis=0))]
+        )
