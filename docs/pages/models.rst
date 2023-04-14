@@ -71,14 +71,19 @@ method. For a more in-depth explanation, see the :ref:`examples`.
 +-----------------------------------------------------------+---------------------------------------+
 | :py:class:`~seisbench.models.dpp.DPP`                     | Phase Picking                         |
 +-----------------------------------------------------------+---------------------------------------+
+| :py:class:`~seisbench.models.deepdenoiser.DeepDenoiser`   | Denoising                             |
++-----------------------------------------------------------+---------------------------------------+
 | :py:class:`~seisbench.models.eqtransformer.EQTransformer` | Earthquake Detection/Phase Picking    |
 +-----------------------------------------------------------+---------------------------------------+
 | :py:class:`~seisbench.models.gpd.GPD`                     | Phase Picking                         |
 +-----------------------------------------------------------+---------------------------------------+
 | :py:class:`~seisbench.models.phasenet.PhaseNet`           | Phase Picking                         |
 +-----------------------------------------------------------+---------------------------------------+
+| :py:class:`~seisbench.models.phasenet.PhaseNetLight`      | Phase Picking                         |
++-----------------------------------------------------------+---------------------------------------+
 | :py:class:`~seisbench.models.pickblue.PickBlue`           | Earthquake Detection/Phase Picking    |
 +-----------------------------------------------------------+---------------------------------------+
 
-Currently integrated models are limited to picking and detection works, but you can build ML models in SeisBench to perform general seismic tasks such as:
-magnitude and source parameter estimation, hypocentre determination etc.
+Currently integrated models are capable of earthquake detection, phase picking, and waveform denoising.
+However, with SeisBench you can build ML models to perform general seismic tasks such as magnitude and
+source parameter estimation, hypocentre determination etc.

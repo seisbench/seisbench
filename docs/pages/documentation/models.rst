@@ -26,6 +26,14 @@ CRED
     :undoc-members:
     :show-inheritance:
 
+DeepDenoiser
+-----------------------------------
+
+.. autoclass:: seisbench.models.deepdenoiser.DeepDenoiser
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 EQTransformer
 -----------------------------------
 

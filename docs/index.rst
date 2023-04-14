@@ -1,15 +1,18 @@
 .. figure::  _static/seisbench_logo_subtitle_outlined.svg
    :align:   center
 
+|
 
-Welcome to SeisBench's documentation!
+Welcome to SeisBench
 =====================================
 
-The Seismology Benchmark collection (*SeisBench*) is an open-source python toolbox for
-machine learning in seismology. It provides a unified API for accessing
-and training machine learning algorithms on seismic datasets. SeisBench has been built to
-alleviate traditional bottlenecks when applying machine learning techniques to seismic data,
-in particular the steps of data collection and labelling.
+SeisBench is an open-source python toolbox for machine learning in seismology.
+It provides a unified API for applying deep learning models to seismic waveforms,
+and for accessing and training machine learning algorithms on seismic datasets.
+SeisBench has been built to alleviate traditional bottlenecks when applying
+machine learning techniques to seismic data, in particular the steps of data
+preparation, collection and labelling. At the same time it aims to foster
+interoperability, interchangeability and comparability of different models and datasets.
 
 .. figure::  ./_static/schematic_fig_sb.svg
    :align:   center
@@ -17,9 +20,9 @@ in particular the steps of data collection and labelling.
 |
 
 
-To learn more about the dataset API, including the datasets currently integrated see :ref:`benchmark_datasets`. Alternatively,
-if you would like to know more about how to build, and train models, along with information on the machine learning models
-readily available through *SeisBench*, see :ref:`models`.
+To learn more about the dataset API, including the datasets currently integrated see :ref:`benchmark_datasets`.
+If you would like to know more about how to apply, build, and train models,
+along with information on the machine learning models readily available through *SeisBench*, see :ref:`models`.
 For an extensive reference of all features, check the code :ref:`documentation_overview`.
 
 SeisBench is built to be extensible and modular, allowing for easy incorporation of new models
