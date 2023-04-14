@@ -2214,3 +2214,16 @@ def test_version_warnings(caplog):
     check_version("abc", "1", False)
     check_version("def", "3", False)
     check_version("xyz", "2", False)
+
+
+def test_phaseteam():
+    model = seisbench.models.PhaseTEAM(classes=4)
+
+    x = torch.rand(2, 10, 3, 3001)
+    # Make sure there is some padding
+    x[0, 5:] = 0.0
+    x[1, 6:] = 0.0
+
+    y = model(x)
+
+    assert y.shape == (2, 10, 4, 3001)

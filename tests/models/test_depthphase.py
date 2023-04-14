@@ -5,6 +5,7 @@ import numpy as np
 import obspy
 import pytest
 import scipy.stats
+import torch
 from obspy import UTCDateTime
 from obspy.core.inventory import Channel, Inventory, Network, Station
 
@@ -329,3 +330,11 @@ def test_line_search_depth(tmp_path):
             depth
             == depth_levels[np.argmax(scipy.stats.mstats.gmean(probabilities, axis=0))]
         )
+
+
+def test_depthphaseteam():
+    model = seisbench.models.DepthPhaseTEAM(classes=4)
+
+    x = torch.rand(2, 10, 3, 3001)
+    y = model(x)
+    assert y.shape == (2, 10, 4, 3001)

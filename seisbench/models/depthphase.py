@@ -13,6 +13,7 @@ from tqdm import tqdm
 import seisbench
 
 from .phasenet import PhaseNet
+from .team import PhaseTEAM
 
 
 class DepthPhaseModel:
@@ -364,6 +365,7 @@ class DepthPhaseNet(PhaseNet, DepthPhaseModel):
         phases: str = ("P", "pP", "sP"),
         sampling_rate: float = 20.0,
         depth_phase_args: Optional[dict] = None,
+        norm="peak",
         **kwargs,
     ) -> None:
         if depth_phase_args is None:
@@ -372,6 +374,7 @@ class DepthPhaseNet(PhaseNet, DepthPhaseModel):
             self,
             phases=phases,
             sampling_rate=sampling_rate,
+            norm=norm,
             **kwargs,
         )
         DepthPhaseModel.__init__(self, *depth_phase_args)
@@ -391,6 +394,89 @@ class DepthPhaseNet(PhaseNet, DepthPhaseModel):
     ):
         raise NotImplementedError(
             "DepthPhaseNet does not implement an annotate function. "
+            "Please use the classify function instead."
+        )
+
+    def classify(
+        self,
+        stream: obspy.Stream,
+        p_picks: dict[str, UTCDateTime],
+        distances: Optional[dict[str, float]] = None,
+        inventory: Optional[obspy.Inventory] = None,
+        epicenter: Optional[tuple[float, float]] = None,
+        probability_curves: bool = False,
+        **kwargs,
+    ) -> Union[float, tuple[float, np.ndarray, np.ndarray]]:
+        """
+        Calculate depth of an event using depth phase picking and a line search over the depth axis.
+        Can only handle one event at a time.
+
+        For the line search, the epicentral distances of the stations to the event is required.
+        These can either be provided directly or through an inventory and the event epicenter.
+
+        :param stream: Obspy stream to classify
+        :param p_picks: Dictionary of P pick times. Station codes will be truncated to `NET.STA.LOC`.
+        :param distances: Dictionary of epicentral distances for the stations in degrees
+        :param inventory: Inventory for the stations
+        :param epicenter: (latitude, longitude) of the event epicenter
+        :param probability_curves: If true, returns depth_levels and probability curves/otherwise only the depth
+        """
+        p_picks, distances = self._prepare_classify_args(
+            p_picks, distances, inventory, epicenter
+        )
+
+        argdict = self.default_args.copy()
+        argdict.update(kwargs)
+
+        # Ensure all traces are at the right sampling rate and filtering causes no boundary artifacts
+        self.annotate_stream_pre(stream, argdict)
+        selected_stream = self._rebase_streams_for_picks(
+            stream, p_picks, self.in_samples
+        )
+
+        annotations = super().annotate(selected_stream, **kwargs)
+
+        return self._line_search_depth(
+            annotations,
+            distances,
+            probability_curves,
+        )
+
+
+class DepthPhaseTEAM(PhaseTEAM, DepthPhaseModel):
+    """
+    .. document_args:: seisbench.models DepthPhaseNet
+    """
+
+    def __init__(
+        self,
+        phases: str = ("P", "pP", "sP"),
+        classes: int = 3,
+        sampling_rate: float = 20.0,
+        depth_phase_args: Optional[dict] = None,
+        norm="peak",
+        **kwargs,
+    ) -> None:
+        if depth_phase_args is None:
+            depth_phase_args = {}
+        PhaseTEAM.__init__(
+            self,
+            phases=phases,
+            classes=classes,
+            sampling_rate=sampling_rate,
+            norm=norm,
+            **kwargs,
+        )
+        DepthPhaseModel.__init__(self, *depth_phase_args)
+
+    def annotate(
+        self,
+        stream: obspy.Stream,
+        parallelism: Optional[int] = None,
+        **kwargs,
+    ):
+        raise NotImplementedError(
+            "DepthPhaseTEAM does not implement an annotate function. "
             "Please use the classify function instead."
         )
 
