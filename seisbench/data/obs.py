@@ -12,7 +12,11 @@ class OBS(BenchmarkDataset):
     """
 
     def __init__(self, component_order="Z12H", **kwargs):
-        citation = "OBS dataset by Bornstein et al."
+        citation = (
+            "Bornstein, T., Lange, D., Münchmeyer, J., Woollam, J., Rietbrock, A., Barcheck, G., "
+            "Grevemeyer, I., Tilmann, F. (2023). PickBlue: Seismic phase picking for ocean bottom "
+            "seismometers with deep learning. arxiv preprint. http://arxiv.org/abs/2304.06635"
+        )
 
         self._write_chunk_file()
 

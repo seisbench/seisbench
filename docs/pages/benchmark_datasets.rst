@@ -159,7 +159,23 @@ it is stored in the SeisBench format, but without this normally required informa
     https://doi.org/10.1785/0220200178
 
 
+OBS
+----
 
+.. figure::  ../_static/obs_mapplot.png
+   :align:   center
+
+The ocean-bottom seismometer (OBS) benchmark dataset (:py:class:`~seisbench.data.obs.OBS`) comprises ~110,000 seismic waveforms with ~150,000 manually
+labeled phase arrivals. The data comprises 15 deployments with a total of 355 stations across different tectonic
+settings.
+
+
+.. admonition:: Citation
+
+    Bornstein, T., Lange, D., Münchmeyer, J., Woollam, J., Rietbrock, A., Barcheck, G., Grevemeyer, I., Tilmann, F. (2023).
+    PickBlue: Seismic phase picking for ocean bottom seismometers with deep learning. arxiv preprint.
+
+    http://arxiv.org/abs/2304.06635
 
 SCEDC
 -----
