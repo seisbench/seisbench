@@ -13,6 +13,7 @@ from obspy import UTCDateTime
 import seisbench
 import seisbench.models
 from seisbench.models.base import ActivationLSTMCell, CustomLSTM
+from seisbench.models.team import AlphabeticFullGroupingHelper
 
 
 def get_input_args(obj):
@@ -2385,3 +2386,22 @@ def test_merge_intervals():
         (["SB.ABC0..BH", "SB.ABC1..BH"], t_root + 6, t_root + 10),
         (["SB.ABC2..BH"], t_root + 20, t_root + 25),
     ]
+
+
+def test_split_groups():
+    helper = AlphabeticFullGroupingHelper(max_stations=10)
+
+    stations = [f"SB.AB{i:02d}" for i in range(15)]
+    np.random.shuffle(stations)
+    t0 = UTCDateTime()
+    intervals = [(stations, t0, t0 + 10)]
+
+    intervals = helper._split_groups(intervals)
+
+    assert len(intervals) == 2
+    assert len(intervals[0][0]) == 8
+    assert intervals[0][0] == [f"SB.AB{i:02d}" for i in range(8)]
+    assert len(intervals[1][0]) == 7
+    assert intervals[1][0] == [f"SB.AB{i:02d}" for i in range(8, 15)]
+    assert intervals[0][1] == intervals[1][1] == t0
+    assert intervals[0][2] == intervals[1][2] == t0 + 10

@@ -1,10 +1,11 @@
 import itertools
 
+import obspy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .base import WaveformModel
+from .base import GroupingHelper, WaveformModel
 
 
 class PhaseTEAM(WaveformModel):
@@ -18,8 +19,9 @@ class PhaseTEAM(WaveformModel):
         self,
         in_channels=3,
         classes=2,
-        phases=("P", "P"),
-        sampling_rate=20,
+        phases=("P", "S"),
+        sampling_rate=100,
+        max_stations=10,
         transformer_layers=2,
         transformer_compression=32,
         transformer_dim=256,
@@ -36,12 +38,13 @@ class PhaseTEAM(WaveformModel):
             pred_sample=(0, 3001),
             labels=phases,
             sampling_rate=sampling_rate,
-            grouping="full",
+            grouping=AlphabeticFullGroupingHelper(max_stations=max_stations),
             **kwargs,
         )
 
         self.in_channels = in_channels
         self.classes = classes
+        self.max_stations = max_stations
         self.transformer_dim = transformer_dim
         self.transformer_layers = transformer_layers
         self.transformer_compression = transformer_compression
@@ -288,3 +291,47 @@ class MLP(nn.Module):
 
     def parameters(self):
         return itertools.chain.from_iterable(fc.parameters() for fc in self.fcs)
+
+
+class AlphabeticFullGroupingHelper(GroupingHelper):
+    """
+    Splits groups alphabetically into groups of size at most max_stations.
+    Tries to build equal-sized groups.
+    """
+
+    def __init__(self, max_stations: int):
+        super().__init__("full")
+        self.max_stations = max_stations
+
+    def group_stream(
+        self,
+        stream: obspy.Stream,
+        strict: bool,
+        min_length_s: float,
+        comp_dict: dict[str, int],
+    ) -> list[list[obspy.Trace]]:
+        intervals = self._get_intervals(stream, strict, min_length_s, comp_dict)
+
+        intervals = self._split_groups(intervals)
+
+        return self._assemble_groups(stream, intervals)
+
+    def _split_groups(
+        self, intervals: list[tuple[list[str], obspy.UTCDateTime, obspy.UTCDateTime]]
+    ) -> list[tuple[list[str], obspy.UTCDateTime, obspy.UTCDateTime]]:
+        new_intervals = []
+
+        for stations, t0, t1 in intervals:
+            stations = list(sorted(stations))
+
+            groups = (len(stations) - 1) // self.max_stations + 1  # Number of groups
+            group_size = (
+                len(stations) - 1
+            ) // groups + 1  # Size of groups (except last)
+
+            p = 0
+            while p < len(stations):
+                new_intervals.append((stations[p : p + group_size], t0, t1))
+                p += group_size
+
+        return new_intervals
