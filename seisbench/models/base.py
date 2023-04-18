@@ -1025,7 +1025,7 @@ class WaveformModel(SeisBenchModel, ABC):
         groups = self._grouping.group_stream(
             stream,
             strict=strict,
-            min_length_s=self.in_samples / sampling_rate,
+            min_length_s=(self.in_samples - 1) / sampling_rate,
             comp_dict=comp_dict,
         )
 
@@ -1154,7 +1154,7 @@ class WaveformModel(SeisBenchModel, ABC):
         groups = self._grouping.group_stream(
             stream,
             strict=strict,
-            min_length_s=self.in_samples / sampling_rate,
+            min_length_s=(self.in_samples - 1) / sampling_rate,
             comp_dict=comp_dict,
         )
 
@@ -1339,12 +1339,11 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         group = await queue_in.get()
         while group is not None:
-            times, data = self.stream_to_arrays(
+            t0, block = self.stream_to_array(
                 group,
                 argdict,
             )
-            for t0, block in zip(times, data):
-                await queue_out.put((t0, block, group[0].stats))
+            await queue_out.put((t0, block, group[0].stats))
             group = await queue_in.get()
 
     async def _async_annotate_window_pre(self, queue_in, queue_out, argdict):
@@ -1450,12 +1449,11 @@ class WaveformModel(SeisBenchModel, ABC):
             if group is None:
                 break
 
-            times, data = self.stream_to_arrays(
+            t0, block = self.stream_to_array(
                 group,
                 argdict,
             )
-            for t0, block in zip(times, data):
-                queue_out.put((t0, block, group[0].stats))
+            queue_out.put((t0, block, group[0].stats))
 
         queue_watchdog.put("streams_to_arrays")
 
@@ -2247,16 +2245,18 @@ class WaveformModel(SeisBenchModel, ABC):
 
         return stream
 
-    def stream_to_arrays(
+    def stream_to_array(
         self,
         stream,
         argdict,
     ):
         """
-        Converts streams into a list of start times and numpy arrays.
+        Converts streams into a start time and a numpy array.
         Assumes:
 
-        - All traces in the stream are from the same instrument and only differ in the components
+        - All traces within a group can be put into an array, i.e, the strict parameter is already enforced.
+          Every remaining gap is intended to be filled with zeros.
+          The selection/cutting of intervals has already been done by :py:func:`GroupingHelper.group_stream`.
         - No overlapping traces of the same component exist
         - All traces have the same sampling rate
 
@@ -2266,129 +2266,40 @@ class WaveformModel(SeisBenchModel, ABC):
         :return: output_times: Start times for each array
         :return: output_data: Arrays with waveforms
         """
-        strict = self._argdict_get_with_default(argdict, "strict")
         flexible_horizontal_components = self._argdict_get_with_default(
             argdict, "flexible_horizontal_components"
         )
-
-        # Obspy raises an error when trying to compare traces.
-        # The seqnum hack guarantees that no two tuples reach comparison of the traces.
-        seqnum = 0
-        if len(stream) == 0:
-            return [], []
-
-        sampling_rate = stream[0].stats.sampling_rate
 
         comp_dict, component_order = self._build_comp_dict(
             stream, flexible_horizontal_components
         )
 
-        start_sorted = PriorityQueue()
+        stations = np.unique([trace.id[:-1] for trace in stream])
+        station_dict = {station: i for i, station in enumerate(stations)}
+
+        sampling_rate = stream[0].stats.sampling_rate
+        t0 = min(trace.stats.starttime for trace in stream)
+        t1 = max(trace.stats.endtime for trace in stream)
+
+        data = np.zeros(
+            (len(stations), len(component_order), int((t1 - t0) * sampling_rate + 2))
+        )  # +2 avoids fractional errors
+
         for trace in stream:
-            if trace.id[-1] in comp_dict and len(trace.data) > 0:
-                start_sorted.put((trace.stats.starttime, seqnum, trace))
-                seqnum += 1
+            p = int((trace.stats.starttime - t0) * sampling_rate)
+            if trace.id[-1] not in comp_dict:
+                continue
+            comp_idx = comp_dict[trace.id[-1]]
+            sta_idx = station_dict[trace.id[:-1]]
+            data[sta_idx, comp_idx, p : p + len(trace.data)] = trace.data
 
-        active = (
-            PriorityQueue()
-        )  # Traces with starttime before the current time, but endtime after
-        to_write = (
-            []
-        )  # Traces that are not active any more, but need to be written in the next array. Irrelevant for strict mode
+        data = data[:, :, :-1]  # Remove fractional error +1
+        if self._grouping.grouping == "channel":
+            data = data[0, 0]  # Remove station and channel dimension
+        elif self._grouping.grouping == "instrument":
+            data = data[0]  # Remove station dimension
 
-        output_times = []
-        output_data = []
-        while True:
-            if not start_sorted.empty():
-                start_element = start_sorted.get()
-            else:
-                start_element = None
-                if strict:
-                    # In the strict case, all data would already have been written
-                    break
-
-            if not active.empty():
-                end_element = active.get()
-            else:
-                end_element = None
-
-            if start_element is None and end_element is None:
-                # Processed all data
-                break
-            elif start_element is not None and end_element is None:
-                active.put(
-                    (start_element[2].stats.endtime, start_element[1], start_element[2])
-                )
-            elif start_element is None and end_element is not None:
-                to_write.append(end_element[2])
-            else:
-                # both start_element and end_element are active
-                if end_element[0] < start_element[0] or (
-                    strict and end_element[0] == start_element[0]
-                ):
-                    to_write.append(end_element[2])
-                    start_sorted.put(start_element)
-                else:
-                    active.put(
-                        (
-                            start_element[2].stats.endtime,
-                            start_element[1],
-                            start_element[2],
-                        )
-                    )
-                    active.put(end_element)
-
-            if not strict and active.qsize() == 0 and len(to_write) != 0:
-                t0 = min(trace.stats.starttime for trace in to_write)
-                t1 = max(trace.stats.endtime for trace in to_write)
-
-                data = np.zeros(
-                    (len(component_order), int((t1 - t0) * sampling_rate + 2))
-                )  # +2 avoids fractional errors
-
-                for trace in to_write:
-                    p = int((trace.stats.starttime - t0) * sampling_rate)
-                    cidx = comp_dict[trace.id[-1]]
-                    data[cidx, p : p + len(trace.data)] = trace.data
-
-                data = data[:, :-1]  # Remove fractional error +1
-
-                output_times.append(t0)
-                output_data.append(data)
-
-                to_write = []
-
-            if strict and active.qsize() == len(component_order):
-                traces = []
-                while not active.empty():
-                    traces.append(active.get()[2])
-
-                t0 = max(trace.stats.starttime for trace in traces)
-                t1 = min(trace.stats.endtime for trace in traces)
-
-                short_traces = [trace.slice(t0, t1) for trace in traces]
-                data = np.zeros(
-                    (len(component_order), len(short_traces[0].data) + 2)
-                )  # +2 avoids fractional errors
-                for trace in short_traces:
-                    cidx = comp_dict[trace.id[-1]]
-                    data[cidx, : len(trace.data)] = trace.data
-
-                data = data[:, :-2]  # Remove fractional error +2
-
-                output_times.append(t0)
-                output_data.append(data)
-
-                for trace in traces:
-                    if t1 < trace.stats.endtime:
-                        start_sorted.put((t1, seqnum, trace.slice(starttime=t1)))
-                        seqnum += 1
-
-        if self._component_order is None:
-            # Remove channel dimension
-            output_data = [data[0] for data in output_data]
-
-        return output_times, output_data
+        return t0, data
 
     def _build_comp_dict(
         self, stream: obspy.Stream, flexible_horizontal_components: bool
@@ -2896,6 +2807,9 @@ class GroupingHelper:
     ) -> list[list[obspy.Trace]]:
         """
         Perform grouping of input stream.
+        In addition, enforces the strict mode, i.e, if strict=True only keeps segments where all components are available,
+        and discards segments that are too short.
+        For grouping=channel no checks are performed.
 
         :param stream: Input stream
         :param strict: If streams should be treated strict as for waveform model.
@@ -2910,25 +2824,33 @@ class GroupingHelper:
             stream, strict, min_length_s, comp_dict
         )
 
-    @staticmethod
     def _group_instrument(
-        stream: obspy.Stream, *args, **kwargs
+        self, stream: obspy.Stream, *args, **kwargs
     ) -> list[list[obspy.Trace]]:
-        groups = defaultdict(list)
+        pre_groups = defaultdict(list)
         for trace in stream:
-            groups[trace.id[:-1]].append(trace)
+            pre_groups[trace.id[:-1]].append(trace)
 
-        return list(groups.values())
+        groups = []
+        for group in pre_groups.values():
+            groups.extend(self._group_full(obspy.Stream(group), *args, **kwargs))
 
-    @staticmethod
+        return groups
+
     def _group_channel(
-        stream: obspy.Stream, *args, **kwargs
+        self, stream: obspy.Stream, *args, **kwargs
     ) -> list[list[obspy.Trace]]:
-        groups = defaultdict(list)
+        pre_groups = defaultdict(list)
         for trace in stream:
-            groups[trace.id].append(trace)
+            pre_groups[trace.id].append(trace)
 
-        return list(groups.values())
+        groups = []
+        for group in pre_groups.values():
+            groups.extend(
+                self._group_full(obspy.Stream(group), *args, channel=True, **kwargs)
+            )
+
+        return groups
 
     def _group_full(
         self,
@@ -2936,8 +2858,11 @@ class GroupingHelper:
         strict: bool,
         min_length_s: float,
         comp_dict: dict[str, int],
+        channel: bool = False,
     ) -> list[list[obspy.Trace]]:
-        intervals = self._get_intervals(stream, strict, min_length_s, comp_dict)
+        intervals = self._get_intervals(
+            stream, strict, min_length_s, comp_dict, channel=channel
+        )
 
         return self._assemble_groups(stream, intervals)
 
@@ -2960,7 +2885,10 @@ class GroupingHelper:
         strict: bool,
         min_length_s: float,
         comp_dict: dict[str, int],
+        channel: bool = False,
     ) -> list[tuple[list[str], obspy.UTCDateTime, obspy.UTCDateTime]]:
+        if channel:
+            strict = False
         # Do coordinate compression
         coords = np.unique(
             [trace.stats.starttime for trace in stream]
@@ -2968,8 +2896,13 @@ class GroupingHelper:
         )
         coords = sorted(list(coords))
 
-        n_comp = max(comp_dict.values()) + 1
-        stations = sorted(list(set(trace.id[:-1] for trace in stream)))
+        if channel:
+            n_comp = 1
+            stations = sorted(list(set(trace.id for trace in stream)))
+        else:
+            n_comp = max(comp_dict.values()) + 1
+            stations = sorted(list(set(trace.id[:-1] for trace in stream)))
+
         sta_dict = {sta: i for i, sta in enumerate(stations)}
 
         covered = np.zeros((len(stations), n_comp, len(coords) - 1), dtype=bool)
@@ -2978,11 +2911,15 @@ class GroupingHelper:
             p0 = self._bin_search_idx(coords, trace.stats.starttime)
             p1 = self._bin_search_idx(coords, trace.stats.endtime)
 
-            if trace.id[-1] not in comp_dict:
-                continue
+            if channel:
+                comp_idx = 0
+                sta_idx = sta_dict[trace.id]
+            else:
+                if trace.id[-1] not in comp_dict:
+                    continue
 
-            comp_idx = comp_dict[trace.id[-1]]
-            sta_idx = sta_dict[trace.id[:-1]]
+                comp_idx = comp_dict[trace.id[-1]]
+                sta_idx = sta_dict[trace.id[:-1]]
 
             covered[sta_idx, comp_idx, p0:p1] = True
 
@@ -3030,6 +2967,8 @@ class GroupingHelper:
         # Goal: Maximize "stations * time" while ensuring no segment is too short
         # Use a greedy approach for maximizing which will not always lead to the globally optimal results
         # but usually to reasonably good results.
+        has_warned = np.zeros(1, dtype=bool)
+
         def encompassing_interval(t0: obspy.UTCDateTime, t1: obspy.UTCDateTime):
             p0 = self._bin_search_idx(coords, t0)
             # Move index to actual left border of this segment
@@ -3101,12 +3040,21 @@ class GroupingHelper:
             t1 = coords[p1]
 
             if act.any() and t1 - t0 < min_length_s:
+                # Fixing required
                 # Iterate over all reasonable merging times and find the cheapest
                 # Reasonable merge intervals:
                 # - every interval covering the target, starting either at a coord to the left
                 #   or ending at a coord to the right
                 # - if corner interval has at least min_length_s left, make new coord
                 # - else, just merge intervals
+
+                if not has_warned[0]:
+                    has_warned[0] = True
+                    seisbench.logger.warning(
+                        "Parts of the input stream consist of fragments shorter than the number "
+                        "of input samples or misaligned traces. Output might be empty."
+                    )
+
                 candidate_starts = []
                 for p in range(p0, -1, -1):
                     if t1 - coords[p] > min_length_s:

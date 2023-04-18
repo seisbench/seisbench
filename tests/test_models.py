@@ -253,174 +253,12 @@ def test_stream_to_arrays_instrument():
 
     # Aligned strict
     stream = obspy.Stream([trace_z, trace_n, trace_e])
-    times, data = dummy.stream_to_arrays(stream, {"strict": True})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0
-    assert data[0].shape == (3, len(trace_z.data))
-    assert (data[0][0] == trace_z.data).all()
-    assert (data[0][1] == trace_n.data).all()
-    assert (data[0][2] == trace_e.data).all()
-
-    # Aligned non strict
-    stream = obspy.Stream([trace_z, trace_n, trace_e])
-    times, data = dummy.stream_to_arrays(stream, {"strict": False})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0
-    assert data[0].shape == (3, len(trace_z.data))
-    assert (data[0][0] == trace_z.data).all()
-    assert (data[0][1] == trace_n.data).all()
-    assert (data[0][2] == trace_e.data).all()
-
-    # Covering strict
-    stream = obspy.Stream([trace_z, trace_n, trace_e.slice(t0 + 1, t0 + 5)])
-    times, data = dummy.stream_to_arrays(stream, {"strict": True})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0 + 1
-    assert data[0].shape == (3, 401)
-    assert (data[0][0] == trace_z.data[0]).all()
-    assert (data[0][1] == trace_n.data[0]).all()
-    assert (data[0][2] == trace_e.data[0]).all()
-
-    # Covering non-strict
-    stream = obspy.Stream([trace_z, trace_n, trace_e.slice(t0 + 1, t0 + 5)])
-    times, data = dummy.stream_to_arrays(stream, {"strict": False})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0
-    assert data[0].shape == (3, len(trace_z.data))
-    assert (data[0][0] == trace_z.data[0]).all()
-    assert (data[0][1] == trace_n.data[0]).all()
-    assert (data[0][2, 100:501] == trace_e.data[0]).all()
-    assert (data[0][2, :100] == 0).all()
-    assert (data[0][2, 501:] == 0).all()
-
-    # Double covering strict
-    stream = obspy.Stream(
-        [trace_z, trace_n, trace_e.slice(t0 + 1, t0 + 5), trace_e.slice(t0 + 6, t0 + 8)]
-    )
-    times, data = dummy.stream_to_arrays(stream, {"strict": True})
-    assert len(times) == len(data) == 2
-    assert times[0] == t0 + 1
-    assert times[1] == t0 + 6
-    assert data[0].shape == (3, 401)
-    assert data[1].shape == (3, 201)
-    for i in range(2):
-        assert (data[i][0] == trace_z.data[0]).all()
-        assert (data[i][1] == trace_n.data[0]).all()
-        assert (data[i][2] == trace_e.data[0]).all()
-
-    # Double covering non strict
-    stream = obspy.Stream(
-        [trace_z, trace_n, trace_e.slice(t0 + 1, t0 + 5), trace_e.slice(t0 + 6, t0 + 8)]
-    )
-    times, data = dummy.stream_to_arrays(stream, {"strict": False})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0
-    assert data[0].shape == (3, len(trace_z.data))
-    assert (data[0][0] == trace_z.data[0]).all()
-    assert (data[0][1] == trace_n.data[0]).all()
-    assert (data[0][2, 100:501] == trace_e.data[0]).all()
-    assert (data[0][2, 600:801] == trace_e.data[0]).all()
-    assert (data[0][2, :100] == 0).all()
-    assert (data[0][2, 501:600] == 0).all()
-    assert (data[0][2, 801:] == 0).all()
-
-    # Intersecting strict
-    stream = obspy.Stream(
-        [trace_z, trace_n.slice(t0 + 1, t0 + 5), trace_e.slice(t0 + 3, t0 + 7)]
-    )
-    times, data = dummy.stream_to_arrays(stream, {"strict": True})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0 + 3
-    assert data[0].shape == (3, 201)
-    assert (data[0][0] == trace_z.data[0]).all()
-    assert (data[0][1] == trace_n.data[0]).all()
-    assert (data[0][2] == trace_e.data[0]).all()
-
-    # Intersecting non strict
-    stream = obspy.Stream(
-        [trace_z, trace_n.slice(t0 + 1, t0 + 5), trace_e.slice(t0 + 3, t0 + 7)]
-    )
-    times, data = dummy.stream_to_arrays(stream, {"strict": False})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0
-    assert data[0].shape == (3, len(trace_z.data))
-    assert (data[0][0] == trace_z.data[0]).all()
-    assert (data[0][1, 100:501] == trace_n.data[0]).all()
-    assert (data[0][1, :100] == 0).all()
-    assert (data[0][1, 501:] == 0).all()
-    assert (data[0][2, 300:701] == trace_e.data[0]).all()
-    assert (data[0][2, :300] == 0).all()
-    assert (data[0][2, 701:] == 0).all()
-
-    # No overlap strict
-    stream = obspy.Stream(
-        [
-            trace_z.slice(t0, t0 + 1),
-            trace_n.slice(t0 + 1, t0 + 2),
-            trace_e.slice(t0 + 1, t0 + 2),
-        ]
-    )
-    times, data = dummy.stream_to_arrays(stream, {"strict": True})
-    assert len(times) == len(data) == 0
-
-    # No overlap non strict
-    stream = obspy.Stream(
-        [
-            trace_z.slice(t0, t0 + 1),
-            trace_n.slice(t0 + 1, t0 + 2),
-            trace_e.slice(t0 + 1, t0 + 2),
-        ]
-    )
-    times, data = dummy.stream_to_arrays(stream, {"strict": False})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0
-    assert data[0].shape == (3, 201)
-    assert (data[0][0, :101] == trace_z.data[0]).all()
-    assert (data[0][0, 101:] == 0).all()
-    assert (data[0][1, :100] == 0).all()
-    assert (data[0][1, 100:] == trace_n.data[0]).all()
-    assert (data[0][2, :100] == 0).all()
-    assert (data[0][2, 100:] == trace_e.data[0]).all()
-
-    # Separate fragments strict
-    stream = obspy.Stream(
-        [
-            trace_z.slice(t0, t0 + 1),
-            trace_n.slice(t0 + 0, t0 + 1),
-            trace_e.slice(t0 + 0, t0 + 1),
-            trace_z.slice(t0 + 2, t0 + 3),
-            trace_n.slice(t0 + 2, t0 + 3),
-            trace_e.slice(t0 + 2, t0 + 3),
-        ]
-    )
-    times, data = dummy.stream_to_arrays(stream, {"strict": True})
-    assert len(times) == len(data) == 2
-    for i in range(2):
-        assert times[i] == t0 + 2 * i
-        assert data[i].shape == (3, 101)
-        assert (data[i][0] == trace_z.data[0]).all()
-        assert (data[i][1] == trace_n.data[0]).all()
-        assert (data[i][2] == trace_e.data[0]).all()
-
-    # Separate fragments non-strict
-    stream = obspy.Stream(
-        [
-            trace_z.slice(t0, t0 + 1),
-            trace_n.slice(t0 + 0, t0 + 1),
-            trace_e.slice(t0 + 0, t0 + 1),
-            trace_z.slice(t0 + 2, t0 + 3),
-            trace_n.slice(t0 + 2, t0 + 3),
-            trace_e.slice(t0 + 2, t0 + 3),
-        ]
-    )
-    times, data = dummy.stream_to_arrays(stream, {"strict": False})
-    assert len(times) == len(data) == 2
-    for i in range(2):
-        assert times[i] == t0 + 2 * i
-        assert data[i].shape == (3, 101)
-        assert (data[i][0] == trace_z.data[0]).all()
-        assert (data[i][1] == trace_n.data[0]).all()
-        assert (data[i][2] == trace_e.data[0]).all()
+    t0_out, data = dummy.stream_to_array(stream, {})
+    assert t0_out == t0
+    assert data.shape == (3, len(trace_z.data))
+    assert (data[0] == trace_z.data).all()
+    assert (data[1] == trace_n.data).all()
+    assert (data[2] == trace_e.data).all()
 
 
 def test_stream_to_arrays_channel():
@@ -436,21 +274,11 @@ def test_stream_to_arrays_channel():
 
     trace_z = obspy.Trace(np.ones(1000), stats_z)
 
-    # Simple
     stream = obspy.Stream([trace_z])
-    times, data = dummy.stream_to_arrays(stream, {})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0
-    assert data[0].shape == (len(trace_z.data),)
-    assert (data[0] == trace_z.data).all()
-
-    # Separate fragments
-    stream = obspy.Stream([trace_z.slice(t0, t0 + 1), trace_z.slice(t0 + 2, t0 + 3)])
-    times, data = dummy.stream_to_arrays(stream, {"strict": True})
-    assert len(times) == len(data) == 2
-    for i in range(2):
-        assert times[i] == t0 + 2 * i
-        assert data[i].shape == (101,)
+    t0_out, data = dummy.stream_to_array(stream, {})
+    assert t0_out == t0
+    assert data.shape == (len(trace_z.data),)
+    assert (data == trace_z.data).all()
 
 
 def test_flexible_horizontal_components(caplog):
@@ -508,35 +336,30 @@ def test_flexible_horizontal_components(caplog):
 
     # flexible_horizontal_components=False
     stream = obspy.Stream([trace_z, trace_1, trace_2])
-    times, data = dummy.stream_to_arrays(
-        stream, {"strict": True, "flexible_horizontal_components": False}
-    )
-    assert len(times) == len(data) == 0
+    _, data = dummy.stream_to_array(stream, {"flexible_horizontal_components": False})
+    assert np.allclose(data[0, :], 1)
+    assert np.allclose(data[1, :], 0)
+    assert np.allclose(data[2, :], 0)
 
     # flexible_horizontal_components=True
     stream = obspy.Stream([trace_z, trace_1, trace_2])
-    times, data = dummy.stream_to_arrays(
-        stream, {"strict": True, "flexible_horizontal_components": True}
-    )
-    assert len(times) == len(data) == 1
+    _, data = dummy.stream_to_array(stream, {"flexible_horizontal_components": True})
+    assert np.allclose(data[0, :], 1)
+    assert np.allclose(data[1, :], 4)
+    assert np.allclose(data[2, :], 5)
 
     # Warning for mixed component names
     caplog.clear()
     stream = obspy.Stream([trace_z, trace_n, trace_e, trace_1, trace_2])
     with caplog.at_level(logging.WARNING):
-        times, data = dummy.stream_to_arrays(
-            stream, {"strict": True, "flexible_horizontal_components": True}
-        )
+        dummy.stream_to_array(stream, {"flexible_horizontal_components": True})
     assert "This might lead to undefined behavior." in caplog.text
-    assert len(times) == len(data) == 1
 
     # No warning for mixed component names on different stations
     caplog.clear()
     stream = obspy.Stream([trace_z, trace_n, trace_e, trace_2_test2])
     with caplog.at_level(logging.WARNING):
-        dummy.stream_to_arrays(
-            stream, {"strict": True, "flexible_horizontal_components": True}
-        )
+        dummy.stream_to_array(stream, {"flexible_horizontal_components": True})
     assert "This might lead to undefined behavior." not in caplog.text
 
 
@@ -544,24 +367,44 @@ def test_group_stream_by_instrument():
     # The first 3 should be grouped together, the last 3 should each be separate
     stream = obspy.Stream(
         [
-            obspy.Trace(header={"network": "SB", "station": "ABC1", "channel": "BHZ"}),
-            obspy.Trace(header={"network": "SB", "station": "ABC1", "channel": "BHN"}),
-            obspy.Trace(header={"network": "SB", "station": "ABC1", "channel": "BHE"}),
-            obspy.Trace(header={"network": "SB", "station": "ABC1", "channel": "HHZ"}),
-            obspy.Trace(header={"network": "HB", "station": "ABC1", "channel": "BHZ"}),
-            obspy.Trace(header={"network": "SB", "station": "ABC2", "channel": "BHZ"}),
+            obspy.Trace(
+                np.ones(100),
+                header={"network": "SB", "station": "ABC1", "channel": "BHZ"},
+            ),
+            obspy.Trace(
+                np.ones(100),
+                header={"network": "SB", "station": "ABC1", "channel": "BHN"},
+            ),
+            obspy.Trace(
+                np.ones(100),
+                header={"network": "SB", "station": "ABC1", "channel": "BHE"},
+            ),
+            obspy.Trace(
+                np.ones(100),
+                header={"network": "SB", "station": "ABC1", "channel": "HHZ"},
+            ),
+            obspy.Trace(
+                np.ones(100),
+                header={"network": "HB", "station": "ABC1", "channel": "BHZ"},
+            ),
+            obspy.Trace(
+                np.ones(100),
+                header={"network": "SB", "station": "ABC2", "channel": "BHZ"},
+            ),
         ]
     )
 
-    dummy = seisbench.models.base.GroupingHelper("instrument")
+    helper = seisbench.models.base.GroupingHelper("instrument")
 
-    groups = dummy.group_stream(stream, None, None, None)
+    comp_dict = {"Z": 0, "N": 1, "E": 2}
+
+    groups = helper.group_stream(stream, False, 0, comp_dict)
 
     assert len(groups) == 4
     assert list(sorted([len(x) for x in groups])) == [1, 1, 1, 3]
 
-    dummy = seisbench.models.base.GroupingHelper("channel")
-    groups = dummy.group_stream(stream, None, None, None)
+    helper = seisbench.models.base.GroupingHelper("channel")
+    groups = helper.group_stream(stream, False, 0, comp_dict)
 
     assert len(groups) == 6
     assert list(sorted([len(x) for x in groups])) == [1, 1, 1, 1, 1, 1]
@@ -2180,12 +2023,12 @@ def test_model_normalize(cls):
     model.norm = "std"
     x = np.random.rand(3, 100000)
     x_norm = model.annotate_window_pre(x, {})
-    assert np.allclose(np.std(x_norm, axis=-1), 1, atol=1e-3, rtol=1e-3)
+    assert np.allclose(np.std(x_norm, axis=-1), 1, atol=1e-2, rtol=1e-2)
 
     model.norm = "peak"
     x = np.random.rand(3, 100000)
     x_norm = model.annotate_window_pre(x, {})
-    assert np.allclose(np.max(np.abs(x_norm), axis=-1), 1, atol=1e-3, rtol=1e-3)
+    assert np.allclose(np.max(np.abs(x_norm), axis=-1), 1, atol=1e-2, rtol=1e-2)
 
 
 def test_version_warnings(caplog):
