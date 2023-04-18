@@ -36,6 +36,7 @@ class PhaseTEAM(WaveformModel):
             pred_sample=(0, 3001),
             labels=phases,
             sampling_rate=sampling_rate,
+            grouping="full",
             **kwargs,
         )
 

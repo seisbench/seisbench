@@ -553,23 +553,21 @@ def test_group_stream_by_instrument():
         ]
     )
 
-    dummy = DummyWaveformModel(component_order="ZNE")
+    dummy = seisbench.models.base.GroupingHelper("instrument")
 
-    dummy._grouping = "instrument"
-    groups = dummy.group_stream(stream)
+    groups = dummy.group_stream(stream, None, None, None)
 
     assert len(groups) == 4
     assert list(sorted([len(x) for x in groups])) == [1, 1, 1, 3]
 
-    dummy._grouping = "channel"
-    groups = dummy.group_stream(stream)
+    dummy = seisbench.models.base.GroupingHelper("channel")
+    groups = dummy.group_stream(stream, None, None, None)
 
     assert len(groups) == 6
     assert list(sorted([len(x) for x in groups])) == [1, 1, 1, 1, 1, 1]
 
-    dummy._grouping = "invalid"
     with pytest.raises(ValueError):
-        dummy.group_stream(stream)
+        seisbench.models.base.GroupingHelper("invalid")
 
 
 def test_recursive_torch_to_numpy():
@@ -2227,3 +2225,320 @@ def test_phaseteam():
     y = model(x)
 
     assert y.shape == (2, 10, 4, 3001)
+
+
+def test_get_intervals():
+    helper = seisbench.models.GroupingHelper("full")
+
+    comp_dict = {"Z": 0, "N": 1, "E": 2}
+
+    t0 = UTCDateTime("2000-01-01")
+
+    # Easy example, none-intersecting traces, single component
+    stream = obspy.Stream(
+        [
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC1",
+                    "channel": "BHZ",
+                    "sampling_rate": 20,
+                    "starttime": t0,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC2",
+                    "channel": "HHE",
+                    "sampling_rate": 20,
+                    "starttime": t0 + 100,
+                },
+            ),
+        ]
+    )
+
+    intervals = helper._get_intervals(
+        stream, strict=False, comp_dict=comp_dict, min_length_s=0
+    )
+    assert len(intervals) == 2
+    assert intervals[0] == (
+        ["SB.ABC1..BH"],
+        stream[0].stats.starttime,
+        stream[0].stats.endtime,
+    )
+    assert intervals[1] == (
+        ["SB.ABC2..HH"],
+        stream[1].stats.starttime,
+        stream[1].stats.endtime,
+    )
+    intervals = helper._get_intervals(
+        stream, strict=True, comp_dict=comp_dict, min_length_s=0
+    )
+    assert len(intervals) == 0
+
+    # Easy example, none-intersecting traces, three components
+    stream = obspy.Stream(
+        [
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC1",
+                    "channel": "BHZ",
+                    "sampling_rate": 20,
+                    "starttime": t0,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC1",
+                    "channel": "BHN",
+                    "sampling_rate": 20,
+                    "starttime": t0,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC1",
+                    "channel": "BHE",
+                    "sampling_rate": 20,
+                    "starttime": t0,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC2",
+                    "channel": "HHZ",
+                    "sampling_rate": 20,
+                    "starttime": t0 + 100,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC2",
+                    "channel": "HHE",
+                    "sampling_rate": 20,
+                    "starttime": t0 + 100,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC2",
+                    "channel": "HHN",
+                    "sampling_rate": 20,
+                    "starttime": t0 + 100,
+                },
+            ),
+        ]
+    )
+
+    for strict in [True, False]:
+        intervals = helper._get_intervals(
+            stream, strict=strict, comp_dict=comp_dict, min_length_s=0
+        )
+        assert len(intervals) == 2
+        assert intervals[0] == (
+            ["SB.ABC1..BH"],
+            stream[0].stats.starttime,
+            stream[0].stats.endtime,
+        )
+        assert intervals[1] == (
+            ["SB.ABC2..HH"],
+            stream[3].stats.starttime,
+            stream[3].stats.endtime,
+        )
+
+    # Example with intersections
+    stream = obspy.Stream(
+        [
+            obspy.Trace(
+                np.zeros(2000),
+                header={
+                    "network": "SB",
+                    "station": "ABC1",
+                    "channel": "BHZ",
+                    "sampling_rate": 20,
+                    "starttime": t0,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC2",
+                    "channel": "HHE",
+                    "sampling_rate": 20,
+                    "starttime": t0 + 10,
+                },
+            ),
+        ]
+    )
+
+    intervals = helper._get_intervals(
+        stream, strict=False, comp_dict=comp_dict, min_length_s=0
+    )
+    assert len(intervals) == 3
+    assert intervals[0] == (
+        ["SB.ABC1..BH"],
+        stream[0].stats.starttime,
+        stream[1].stats.starttime,
+    )
+    assert intervals[1] == (
+        ["SB.ABC1..BH", "SB.ABC2..HH"],
+        stream[1].stats.starttime,
+        stream[1].stats.endtime,
+    )
+    assert intervals[2] == (
+        ["SB.ABC1..BH"],
+        stream[1].stats.endtime,
+        stream[0].stats.endtime,
+    )
+
+
+def test_assemble_groups():
+    helper = seisbench.models.GroupingHelper("full")
+
+    t0 = UTCDateTime("2000-01-01")
+    stream = obspy.Stream(
+        [
+            obspy.Trace(
+                np.zeros(1000),
+                header={
+                    "network": "SB",
+                    "station": "ABC1",
+                    "channel": "BHZ",
+                    "sampling_rate": 20,
+                    "starttime": t0,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(1000),
+                header={
+                    "network": "SB",
+                    "station": "ABC1",
+                    "channel": "BHN",
+                    "sampling_rate": 20,
+                    "starttime": t0,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(1000),
+                header={
+                    "network": "SB",
+                    "station": "ABC1",
+                    "channel": "BHE",
+                    "sampling_rate": 20,
+                    "starttime": t0,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(1000),
+                header={
+                    "network": "SB",
+                    "station": "ABC2",
+                    "channel": "HHZ",
+                    "sampling_rate": 20,
+                    "starttime": t0 + 2,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(1000),
+                header={
+                    "network": "SB",
+                    "station": "ABC2",
+                    "channel": "HHE",
+                    "sampling_rate": 20,
+                    "starttime": t0 + 2,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(1000),
+                header={
+                    "network": "SB",
+                    "station": "ABC2",
+                    "channel": "HHN",
+                    "sampling_rate": 20,
+                    "starttime": t0 + 2,
+                },
+            ),
+        ]
+    )
+
+    intervals = [
+        (["SB.ABC1..BH"], t0, t0 + 5),
+        (["SB.ABC1..BH", "SB.ABC2..HH"], t0 + 10, t0 + 20),
+    ]
+    groups = helper._assemble_groups(stream, intervals)
+    print(groups)
+
+    assert len(groups[0]) == 3
+    for trace in groups[0]:
+        assert trace.stats.starttime == t0
+        assert trace.stats.endtime == t0 + 5
+    assert len(groups[1]) == 6
+    for trace in groups[1]:
+        assert trace.stats.starttime == t0 + 10
+        assert trace.stats.endtime == t0 + 20
+
+
+def test_merge_intervals():
+    helper = seisbench.models.GroupingHelper("full")
+    intervals = [
+        (0, -5, 1),
+        (0, 5, 10),
+        (1, 0.5, 3),
+        (1, 5, 10),
+        (2, 2, 6),
+        (2, 20, 25),
+    ]
+
+    t_root = obspy.UTCDateTime(0)
+
+    comp_dict = {"Z": 0}
+    sampling_rate = 100
+
+    stream = obspy.Stream()
+    for sta, t0, t1 in intervals:
+        samples = int((t1 - t0) * sampling_rate) + 1
+        stream.append(
+            obspy.Trace(
+                np.zeros(samples),
+                header={
+                    "network": "SB",
+                    "station": f"ABC{sta}",
+                    "channel": "BHZ",
+                    "sampling_rate": sampling_rate,
+                    "starttime": t_root + t0,
+                },
+            )
+        )
+
+    selected = helper._get_intervals(stream, False, 2, comp_dict)
+    assert selected == [
+        (["SB.ABC0..BH"], t_root - 5, t_root + 1),
+        (["SB.ABC1..BH"], t_root + 1, t_root + 3),
+        (["SB.ABC2..BH"], t_root + 3, t_root + 5),
+        (["SB.ABC0..BH", "SB.ABC1..BH"], t_root + 5, t_root + 10),
+        (["SB.ABC2..BH"], t_root + 20, t_root + 25),
+    ]
+
+    selected = helper._get_intervals(stream, False, 4, comp_dict)
+    assert selected == [
+        (["SB.ABC0..BH"], t_root - 5, t_root + 1),
+        (["SB.ABC2..BH"], t_root + 2, t_root + 6),
+        (["SB.ABC0..BH", "SB.ABC1..BH"], t_root + 6, t_root + 10),
+        (["SB.ABC2..BH"], t_root + 20, t_root + 25),
+    ]
