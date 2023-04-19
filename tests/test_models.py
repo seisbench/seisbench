@@ -254,8 +254,9 @@ def test_stream_to_arrays_instrument():
 
     # Aligned strict
     stream = obspy.Stream([trace_z, trace_n, trace_e])
-    t0_out, data = dummy.stream_to_array(stream, {})
+    t0_out, data, stations = dummy.stream_to_array(stream, {})
     assert t0_out == t0
+    assert stations == ["SB.TEST..HH"]
     assert data.shape == (3, len(trace_z.data))
     assert (data[0] == trace_z.data).all()
     assert (data[1] == trace_n.data).all()
@@ -276,8 +277,10 @@ def test_stream_to_arrays_channel():
     trace_z = obspy.Trace(np.ones(1000), stats_z)
 
     stream = obspy.Stream([trace_z])
-    t0_out, data = dummy.stream_to_array(stream, {})
+    t0_out, data, stations = dummy.stream_to_array(stream, {})
     assert t0_out == t0
+    print(stations)
+    assert stations == ["SB.TEST..HHZ"]
     assert data.shape == (len(trace_z.data),)
     assert (data == trace_z.data).all()
 
@@ -337,14 +340,18 @@ def test_flexible_horizontal_components(caplog):
 
     # flexible_horizontal_components=False
     stream = obspy.Stream([trace_z, trace_1, trace_2])
-    _, data = dummy.stream_to_array(stream, {"flexible_horizontal_components": False})
+    _, data, stations = dummy.stream_to_array(
+        stream, {"flexible_horizontal_components": False}
+    )
     assert np.allclose(data[0, :], 1)
     assert np.allclose(data[1, :], 0)
     assert np.allclose(data[2, :], 0)
 
     # flexible_horizontal_components=True
     stream = obspy.Stream([trace_z, trace_1, trace_2])
-    _, data = dummy.stream_to_array(stream, {"flexible_horizontal_components": True})
+    _, data, stations = dummy.stream_to_array(
+        stream, {"flexible_horizontal_components": True}
+    )
     assert np.allclose(data[0, :], 1)
     assert np.allclose(data[1, :], 4)
     assert np.allclose(data[2, :], 5)
@@ -491,12 +498,13 @@ def test_predictions_to_stream():
     preds = [np.random.rand(1000, 3), np.random.rand(2000, 3)]
     preds[0][:100] = np.nan  # Test proper shift
     trace = obspy.Trace(np.zeros(100), header={"network": "SB", "station": "ABC1"})
+    stations = ["SB.ABC1..HH"]
 
     stream = dummy._predictions_to_stream(
-        pred_rates[0], pred_times[0], preds[0], trace.stats
+        pred_rates[0], pred_times[0], preds[0], stations
     )
     stream += dummy._predictions_to_stream(
-        pred_rates[1], pred_times[1], preds[1], trace.stats
+        pred_rates[1], pred_times[1], preds[1], stations
     )
 
     assert stream[0].stats.starttime == pred_times[0] + 1
@@ -2405,3 +2413,20 @@ def test_split_groups():
     assert intervals[1][0] == [f"SB.AB{i:02d}" for i in range(8, 15)]
     assert intervals[0][1] == intervals[1][1] == t0
     assert intervals[0][2] == intervals[1][2] == t0 + 10
+
+
+def test_align_fractional_samples():
+    helper = seisbench.models.GroupingHelper("full")
+
+    stream = obspy.Stream(
+        [
+            obspy.Trace(header={"starttime": UTCDateTime(0.01), "sampling_rate": 100}),
+            obspy.Trace(header={"starttime": UTCDateTime(0.014), "sampling_rate": 100}),
+            obspy.Trace(header={"starttime": UTCDateTime(0.006), "sampling_rate": 100}),
+        ]
+    )
+
+    helper._align_fractional_samples(stream)
+
+    for trace in stream:
+        assert trace.stats.starttime == UTCDateTime(0.01)

@@ -246,6 +246,7 @@ class DepthPhaseModel:
                     continue
 
                 trace.stats.starttime -= pick
+                # trace.stats.starttime = UTCDateTime(0) - self.time_before
                 selected_stream.append(trace)
 
         return selected_stream

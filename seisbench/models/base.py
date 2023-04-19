@@ -1332,18 +1332,18 @@ class WaveformModel(SeisBenchModel, ABC):
         argdict,
     ):
         """
-        Wrapper around :py:func:`stream_to_arrays`, adding the functionality to read from and write to queues.
+        Wrapper around :py:func:`stream_to_array`, adding the functionality to read from and write to queues.
         :param queue_in: Input queue
         :param queue_out: Output queue
         :return: None
         """
         group = await queue_in.get()
         while group is not None:
-            t0, block = self.stream_to_array(
+            t0, block, stations = self.stream_to_array(
                 group,
                 argdict,
             )
-            await queue_out.put((t0, block, group[0].stats))
+            await queue_out.put((t0, block, stations))
             group = await queue_in.get()
 
     async def _async_annotate_window_pre(self, queue_in, queue_out, argdict):
@@ -1420,9 +1420,9 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         elem = await queue_in.get()
         while elem is not None:
-            (pred_rate, pred_time, preds), trace_stats = elem
+            (pred_rate, pred_time, preds), stations = elem
             await queue_out.put(
-                self._predictions_to_stream(pred_rate, pred_time, preds, trace_stats)
+                self._predictions_to_stream(pred_rate, pred_time, preds, stations)
             )
             elem = await queue_in.get()
 
@@ -1435,7 +1435,7 @@ class WaveformModel(SeisBenchModel, ABC):
         argdict,
     ):
         """
-        Wrapper around :py:func:`stream_to_arrays`, adding the functionality to read from and write to queues.
+        Wrapper around :py:func:`stream_to_array`, adding the functionality to read from and write to queues.
 
         :param queue_watchdog: Signal queue for watchdog
         :param queue_in: Input queue
@@ -1449,11 +1449,11 @@ class WaveformModel(SeisBenchModel, ABC):
             if group is None:
                 break
 
-            t0, block = self.stream_to_array(
+            t0, block, stations = self.stream_to_array(
                 group,
                 argdict,
             )
-            queue_out.put((t0, block, group[0].stats))
+            queue_out.put((t0, block, stations))
 
         queue_watchdog.put("streams_to_arrays")
 
@@ -1470,10 +1470,8 @@ class WaveformModel(SeisBenchModel, ABC):
             if elem is None:
                 break
 
-            t0, block, trace_stats = elem
-            for output_elem in self._cut_fragments_point(
-                t0, block, trace_stats, argdict
-            ):
+            t0, block, stations = elem
+            for output_elem in self._cut_fragments_point(t0, block, stations, argdict):
                 queue_out.put(output_elem)
 
         queue_watchdog.put("cut")
@@ -1484,22 +1482,20 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         elem = await queue_in.get()
         while elem is not None:
-            t0, block, trace_stats = elem
+            t0, block, stations = elem
 
-            for output_elem in self._cut_fragments_point(
-                t0, block, trace_stats, argdict
-            ):
+            for output_elem in self._cut_fragments_point(t0, block, stations, argdict):
                 await queue_out.put(output_elem)
 
             elem = await queue_in.get()
 
-    def _cut_fragments_point(self, t0, block, trace_stats, argdict):
+    def _cut_fragments_point(self, t0, block, stations, argdict):
         """
         Cuts numpy arrays into fragments for point prediction models.
 
         :param t0:
         :param block:
-        :param trace_stats:
+        :param stations:
         :param argdict:
         :return:
         """
@@ -1517,9 +1513,9 @@ class WaveformModel(SeisBenchModel, ABC):
         # Generate windows and preprocess
         for s in starts:
             window = block[..., s : s + self.in_samples]
-            # The combination of trace_stats and t0 is a unique identifier
+            # The combination of stations and t0 is a unique identifier
             # s can be used to reassemble the block, len(starts) allows to identify if the block is complete yet
-            metadata = (t0, s, len(starts), trace_stats, bucket_id)
+            metadata = (t0, s, len(starts), stations, bucket_id)
             yield window, metadata
 
     @log_lifecycle(logging.DEBUG)
@@ -1564,8 +1560,8 @@ class WaveformModel(SeisBenchModel, ABC):
         stride = self._argdict_get_with_default(argdict, "stride")
 
         window, metadata = elem
-        t0, s, len_starts, trace_stats, bucket_id = metadata
-        key = f"{t0}_{trace_stats.network}.{trace_stats.station}.{trace_stats.station}.{trace_stats.channel[:-1]}"
+        t0, s, len_starts, stations, bucket_id = metadata
+        key = f"{t0}_{'__'.join(stations)}"
 
         output = None
 
@@ -1582,7 +1578,7 @@ class WaveformModel(SeisBenchModel, ABC):
             pred_time = t0 + self.pred_sample / argdict["sampling_rate"]
             pred_rate = argdict["sampling_rate"] / stride
 
-            output = ((pred_rate, pred_time, preds), trace_stats)
+            output = ((pred_rate, pred_time, preds), stations)
 
             del buffer[key]
 
@@ -1624,7 +1620,7 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         overlap = self._argdict_get_with_default(argdict, "overlap")
 
-        t0, block, trace_stats = elem
+        t0, block, stations = elem
 
         bucket_id = np.random.randint(int(1e9))
 
@@ -1645,9 +1641,9 @@ class WaveformModel(SeisBenchModel, ABC):
         # Generate windows and preprocess
         for s in starts:
             window = block[..., s : s + self.in_samples]
-            # The combination of trace_stats and t0 is a unique identifier
+            # The combination of stations and t0 is a unique identifier
             # s can be used to reassemble the block, len(starts) allows to identify if the block is complete yet
-            metadata = (t0, s, len(starts), trace_stats, bucket_id)
+            metadata = (t0, s, len(starts), stations, bucket_id)
             yield window, metadata
 
     @log_lifecycle(logging.DEBUG)
@@ -1698,8 +1694,8 @@ class WaveformModel(SeisBenchModel, ABC):
             stack_method in self._stack_options
         ), f"Stacking method {stack_method} unknown. Known options are: {self._stack_options}"
         window, metadata = elem
-        t0, s, len_starts, trace_stats, bucket_id = metadata
-        key = f"{t0}_{trace_stats.network}.{trace_stats.station}.{trace_stats.station}.{trace_stats.channel[:-1]}"
+        t0, s, len_starts, stations, bucket_id = metadata
+        key = f"{t0}_{'__'.join(stations)}"
         buffer[key].append(elem)
 
         output = None
@@ -1711,10 +1707,10 @@ class WaveformModel(SeisBenchModel, ABC):
             )  # Sort by start (overwrite keys to make sure window is never used as key)
             starts = [s for s, window in preds]
             preds = [window for s, window in preds]
-            preds = np.stack(preds, axis=0)
+            preds = [self._add_grouping_dimensions(pred) for pred in preds]
 
             # Number of prediction samples per input sample
-            prediction_sample_factor = preds[0].shape[0] / (
+            prediction_sample_factor = preds[0].shape[1] / (
                 self.pred_sample[1] - self.pred_sample[0]
             )
 
@@ -1726,14 +1722,20 @@ class WaveformModel(SeisBenchModel, ABC):
             )
             pred_merge = (
                 np.zeros_like(
-                    preds[0], shape=(pred_length, preds[0].shape[1], coverage)
+                    preds[0],
+                    shape=(
+                        preds[0].shape[0],
+                        pred_length,
+                        preds[0].shape[-1],
+                        coverage,
+                    ),
                 )
                 * np.nan
             )
             for i, (pred, start) in enumerate(zip(preds, starts)):
                 pred_start = int(start * prediction_sample_factor)
                 pred_merge[
-                    pred_start : pred_start + pred.shape[0], :, i % coverage
+                    :, pred_start : pred_start + pred.shape[1], :, i % coverage
                 ] = pred
 
             with warnings.catch_warnings():
@@ -1747,10 +1749,15 @@ class WaveformModel(SeisBenchModel, ABC):
                     preds = np.nanmax(pred_merge, axis=-1)
                 # Case of stack_method not in avg or max is caught by assert above
 
+            if self._grouping.grouping == "channel":
+                preds = preds[0, :, 0]
+            elif self._grouping.grouping == "instrument":
+                preds = preds[0]
+
             pred_time = t0 + self.pred_sample[0] / argdict["sampling_rate"]
             pred_rate = argdict["sampling_rate"] * prediction_sample_factor
 
-            output = ((pred_rate, pred_time, preds), trace_stats)
+            output = ((pred_rate, pred_time, preds), stations)
 
             del buffer[key]
 
@@ -1872,7 +1879,7 @@ class WaveformModel(SeisBenchModel, ABC):
 
             window, piggyback, metadata = elem
 
-            t0, s, len_starts, trace_stats, bucket_id = metadata
+            t0, s, len_starts, stations, bucket_id = metadata
             idx = bucket_id % len(queues_out)
 
             queues_out[idx].put(
@@ -1900,51 +1907,65 @@ class WaveformModel(SeisBenchModel, ABC):
             if elem is None:
                 break
 
-            (pred_rate, pred_time, preds), trace_stats = elem
+            (pred_rate, pred_time, preds), stations = elem
             queue_out.put(
-                self._predictions_to_stream(pred_rate, pred_time, preds, trace_stats)
+                self._predictions_to_stream(pred_rate, pred_time, preds, stations)
             )
 
         queue_watchdog.put("predictions_to_stream")
 
-    def _predictions_to_stream(self, pred_rate, pred_time, pred, trace_stats):
+    def _predictions_to_stream(self, pred_rate, pred_time, pred, stations):
         """
         Converts a set of predictions to obspy streams
 
         :param pred_rates: Sampling rates of the prediction arrays
         :param pred_times: Start time of each prediction array
         :param preds: The prediction arrays, each with shape (samples, channels)
-        :param trace_stats: A source trace.stats object to extract trace naming from
+        :param stations: The list of stations as strings in format NET.STA.LOC.CHA
         :return: Obspy stream of predictions
         """
         output = obspy.Stream()
 
+        pred = self._add_grouping_dimensions(pred)
+
         # Define and store default labels
         if self.labels is None:
-            self.labels = list(range(pred.shape[1]))
+            self.labels = list(range(pred.shape[-1]))
 
-        for i in range(pred.shape[1]):
-            if callable(self.labels):
-                label = self.labels(trace_stats)
-            else:
-                label = self.labels[i]
+        for station_idx, trace_id in enumerate(stations):
+            for channel_idx in range(pred.shape[-1]):
+                if callable(self.labels):
+                    label = self.labels(stations)
+                else:
+                    label = self.labels[channel_idx]
 
-            trimmed_pred, f, _ = self._trim_nan(pred[:, i])
-            trimmed_start = pred_time + f / pred_rate
-            output.append(
-                obspy.Trace(
-                    trimmed_pred,
-                    {
-                        "starttime": trimmed_start,
-                        "sampling_rate": pred_rate,
-                        "network": trace_stats.network,
-                        "station": trace_stats.station,
-                        "location": trace_stats.location,
-                        "channel": f"{self.__class__.__name__}_{label}",
-                    },
+                trimmed_pred, f, _ = self._trim_nan(pred[station_idx, :, channel_idx])
+                trimmed_start = pred_time + f / pred_rate
+                network, station, location, _ = trace_id.split(".")
+                output.append(
+                    obspy.Trace(
+                        trimmed_pred,
+                        {
+                            "starttime": trimmed_start,
+                            "sampling_rate": pred_rate,
+                            "network": network,
+                            "station": station,
+                            "location": location,
+                            "channel": f"{self.__class__.__name__}_{label}",
+                        },
+                    )
                 )
-            )
         return output
+
+    def _add_grouping_dimensions(self, pred):
+        """
+        Add fake dimensions to make pred shape (stations, samples, channels)
+        """
+        if self._grouping.grouping == "instrument":
+            pred = np.expand_dims(pred, 0)
+        if self._grouping.grouping == "channel":
+            pred = np.expand_dims(np.expand_dims(pred, -1), 0)
+        return pred
 
     def annotate_stream_pre(self, stream, argdict):
         """
@@ -2274,7 +2295,17 @@ class WaveformModel(SeisBenchModel, ABC):
             stream, flexible_horizontal_components
         )
 
-        stations = np.unique([trace.id[:-1] for trace in stream])
+        if self._grouping.grouping == "channel":
+
+            def get_station_key(trace: obspy.Trace) -> str:
+                return trace.id
+
+        else:
+
+            def get_station_key(trace: obspy.Trace) -> str:
+                return trace.id[:-1]
+
+        stations = np.unique([get_station_key(trace) for trace in stream])
         station_dict = {station: i for i, station in enumerate(stations)}
 
         sampling_rate = stream[0].stats.sampling_rate
@@ -2290,7 +2321,7 @@ class WaveformModel(SeisBenchModel, ABC):
             if trace.id[-1] not in comp_dict:
                 continue
             comp_idx = comp_dict[trace.id[-1]]
-            sta_idx = station_dict[trace.id[:-1]]
+            sta_idx = station_dict[get_station_key(trace)]
             data[sta_idx, comp_idx, p : p + len(trace.data)] = trace.data
 
         data = data[:, :, :-1]  # Remove fractional error +1
@@ -2299,7 +2330,7 @@ class WaveformModel(SeisBenchModel, ABC):
         elif self._grouping.grouping == "instrument":
             data = data[0]  # Remove station dimension
 
-        return t0, data
+        return t0, data, stations
 
     def _build_comp_dict(
         self, stream: obspy.Stream, flexible_horizontal_components: bool
@@ -2879,6 +2910,22 @@ class GroupingHelper:
                 mini = m
         return mini
 
+    @staticmethod
+    def _align_fractional_samples(stream: obspy.Stream) -> None:
+        """
+        Shifts the starttime of every member to a valid fractional second according to the sampling rate.
+        Assumes there is a hypothetical sample at UTCDateTime(0).
+
+        For example, at 20 Hz sampling rate:
+        0.05 is okay
+        0.06 is not
+        """
+        for trace in stream:
+            ts = trace.stats.starttime.timestamp
+            ts *= trace.stats.sampling_rate
+            ts = np.round(ts) / trace.stats.sampling_rate
+            trace.stats.starttime = obspy.UTCDateTime(ts)
+
     def _get_intervals(
         self,
         stream: obspy.Stream,
@@ -2889,6 +2936,9 @@ class GroupingHelper:
     ) -> list[tuple[list[str], obspy.UTCDateTime, obspy.UTCDateTime]]:
         if channel:
             strict = False
+
+        self._align_fractional_samples(stream)
+
         # Do coordinate compression
         coords = np.unique(
             [trace.stats.starttime for trace in stream]

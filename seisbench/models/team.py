@@ -1,5 +1,6 @@
 import itertools
 
+import numpy as np
 import obspy
 import torch
 import torch.nn as nn
@@ -132,6 +133,34 @@ class PhaseTEAM(WaveformModel):
             return y
         else:
             return torch.sigmoid(y)
+
+    def annotate_window_pre(self, window, argdict):
+        # Add a demean and normalize step to the preprocessing
+        window = window - np.mean(window, axis=-1, keepdims=True)
+
+        if self.norm == "std":
+            std = np.std(window, axis=-1, keepdims=True)
+            std[std == 0] = 1  # Avoid NaN errors
+            window = window / std
+        elif self.norm == "peak":
+            peak = np.max(np.abs(window), axis=-1, keepdims=True) + 1e-10
+            window = window / peak
+
+        # Pad with zeros
+        if window.shape[0] < self.max_stations:
+            window = np.pad(
+                window,
+                [(0, self.max_stations - window.shape[0]), (0, 0), (0, 0)],
+                "constant",
+                constant_values=0,
+            )
+
+        return window
+
+    def annotate_window_post(self, pred, piggyback=None, argdict=None):
+        # Transpose predictions to correct shape
+        pred = np.swapaxes(pred, -2, -1)
+        return pred
 
 
 class Encoder(nn.Module):
