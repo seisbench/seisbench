@@ -406,6 +406,9 @@ class DepthPhaseNet(PhaseNet, DepthPhaseModel):
         parallelism: Optional[int] = None,
         **kwargs,
     ):
+        """
+        The annotate function is disabled for this class.
+        """
         raise NotImplementedError(
             "DepthPhaseNet does not implement an annotate function. "
             "Please use the classify function instead."
@@ -459,7 +462,7 @@ class DepthPhaseNet(PhaseNet, DepthPhaseModel):
 
 class DepthPhaseTEAM(PhaseTEAM, DepthPhaseModel):
     """
-    .. document_args:: seisbench.models DepthPhaseNet
+    .. document_args:: seisbench.models DepthPhaseTEAM
     """
 
     def __init__(
@@ -489,6 +492,9 @@ class DepthPhaseTEAM(PhaseTEAM, DepthPhaseModel):
         parallelism: Optional[int] = None,
         **kwargs,
     ):
+        """
+        The annotate function is disabled for this class.
+        """
         raise NotImplementedError(
             "DepthPhaseTEAM does not implement an annotate function. "
             "Please use the classify function instead."

@@ -2,6 +2,11 @@ from .base import BenchmarkDataset
 
 
 class ISC_EHB_DepthPhases(BenchmarkDataset):
+    """
+    Dataset of depth phase picks from the
+    `ISC-EHB bulletin <http://www.isc.ac.uk/isc-ehb/>`_.
+    """
+
     def __init__(self, **kwargs):
         # TODO: Add correct citation information
         citation = "TBD"

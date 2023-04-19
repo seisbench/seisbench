@@ -117,6 +117,21 @@ are 100Hz, 3-component stations. The waveforms contain examples of earthquakes o
     Seismological Research Letters, 90(2A), pp.491-502.
     https://doi.org/10.1785/0220180312
 
+ISC-EHB Depth Phases
+--------------------
+
+.. figure::  ../_static/isc_ehb_mapplot.png
+   :align:   center
+
+
+The :py:class:`~seisbench.data.isc_ehb.ISC_EHB_DepthPhases` dataset contains 44,106 events and 174,436 traces.
+It contains traces with depth phase readings (pP, sP and pwP) from the
+`ISC-EHB bulletin <http://www.isc.ac.uk/isc-ehb/>`_.
+Additional picks have been annotated on the traces, if they were contained in the bulletin.
+
+.. admonition:: Citation
+
+    tbd
 
 LENDB
 -----

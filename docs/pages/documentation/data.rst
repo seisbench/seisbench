@@ -53,6 +53,14 @@ Iquique dataset
     :undoc-members:
     :show-inheritance:
 
+ISC-EHB dataset
+-----------------------------------
+
+.. automodule:: seisbench.data.isc_ehb
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 LenDB dataset
 -----------------------------------
 
