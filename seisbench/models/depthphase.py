@@ -83,9 +83,9 @@ class DepthPhaseModel:
                     f"No distance for '{key}'. Trace will be ignored"
                 )
                 del_keys.append(key)
-            elif distances[key] >= 100:
+            elif not (15 < distances[key] < 100):
                 seisbench.logger.debug(
-                    f"Station '{key}' at distance above 100 degrees will be ignored."
+                    f"Station '{key}' at distance outside 15 to 100 degrees will be ignored."
                 )
                 del_keys.append(key)
         for key in del_keys:
@@ -150,7 +150,9 @@ class DepthPhaseModel:
             )
         probabilities = np.stack(probabilities, axis=0)
 
-        avg_probabilities = scipy.stats.mstats.gmean(probabilities, axis=0)
+        avg_probabilities = scipy.stats.mstats.gmean(
+            probabilities, nan_policy="omit", axis=0
+        )
         depth = self.depth_levels[np.argmax(avg_probabilities)]
 
         if probability_curves:
@@ -159,20 +161,28 @@ class DepthPhaseModel:
             return depth
 
     def _backproject_single_station(
-        self, station_annotations: obspy.Stream, dist: float, q_min: float = 0.5
+        self,
+        station_annotations: obspy.Stream,
+        dist: float,
+        q_min: float = 0.5,
+        truncate: int = 100,
     ):
         """
         Backproject single station
 
         :param q_min: Quantile to use as lower cutoff for stability
+        :param truncate: Number of samples truncated at the end for stability
         """
         prob = np.ones_like(self.depth_levels)
+        has_phases = np.zeros(
+            len(self.depth_levels), dtype=bool
+        )  # Log where at least one phase value was available
         for i, depth in enumerate(self.depth_levels):
             arrivals = self._ttlookup.get_traveltimes(dist, depth)
             for phase in ["pP", "sP"]:
                 j = self._ttlookup.phases.index(phase)
                 trace = station_annotations.select(channel=f"*_{phase}")[0]
-                y_trace = trace.data
+                y_trace = trace.data[:-truncate]
 
                 y_trace = self._smooth_curve(y_trace)
                 y_trace = self._norm_label(y_trace)
@@ -181,10 +191,13 @@ class DepthPhaseModel:
                     sample = int(arrivals[j] * trace.stats.sampling_rate)
                     if sample < y_trace.shape[0]:
                         prob[i] *= max(y_trace[sample], np.quantile(y_trace, q_min))
+                        has_phases[i] = True
                     else:
                         prob[i] *= np.quantile(y_trace, q_min)
                 else:
                     prob[i] *= np.quantile(y_trace, q_min)
+
+        prob[~has_phases] = np.nan  # Set all values without any phase to nan
 
         return prob
 
