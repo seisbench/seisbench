@@ -858,6 +858,11 @@ class WaveformModel(SeisBenchModel, ABC):
             ),
         }
 
+        if self.output_type == "point" and self._grouping.grouping == "full":
+            raise NotImplementedError(
+                "Point outputs with full grouping are currently not implemented."
+            )
+
         self._annotate_functions = self._annotate_function_mapping.get(
             output_type, None
         )
