@@ -153,6 +153,11 @@ class DepthPhaseModel:
                     station_annotations, distances[station]
                 )
             )
+        if len(probabilities) == 0:
+            if probability_curves:
+                return np.nan, self.depth_levels, np.nan * self.depth_levels
+            else:
+                return np.nan
         probabilities = np.stack(probabilities, axis=0)
 
         avg_probabilities = scipy.stats.mstats.gmean(
@@ -527,7 +532,10 @@ class DepthFinder:
 
         ev_cache = self.cache / self._get_event_key(lat, lon, depth, origin_time)
         if ev_cache.is_file():
-            return obspy.read(ev_cache)
+            if ev_cache.stat().st_size == 0:  # Empty token file
+                return obspy.Stream()
+            else:
+                return obspy.read(ev_cache)
 
     def _set_cache(
         self,
@@ -541,13 +549,17 @@ class DepthFinder:
             return
 
         ev_cache = self.cache / self._get_event_key(lat, lon, depth, origin_time)
-        if ev_cache.is_file():
-            stream.write(ev_cache)
+        if not ev_cache.is_file():
+            if len(stream) > 0:
+                stream.write(ev_cache)
+            else:
+                with open(ev_cache, "w"):
+                    pass  # Create empty token file
 
     def _get_event_key(
         self, lat: float, lon: float, depth: float, origin_time: UTCDateTime
     ) -> str:
-        return f"{lat:.3f}__{lon:.3f}__{depth:.2f}__{origin_time}.mseed"
+        return f"{origin_time}__{lat:.3f}__{lon:.3f}__{depth:.2f}.mseed"
 
     def _get_waveforms(
         self,
