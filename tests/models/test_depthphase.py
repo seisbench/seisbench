@@ -61,7 +61,7 @@ def test_validate_distances(caplog):
 
 def test_validate_p_picks(caplog):
     p_picks = {"A.B.C.D": 0, "X.Y.Z": 0}
-    distances = {"A.B.C": 0}
+    distances = {"A.B.C": 20}
 
     with caplog.at_level(logging.WARNING):
         p_picks = seisbench.models.depthphase.DepthPhaseModel._validate_p_picks(
@@ -338,3 +338,22 @@ def test_depthphaseteam():
     x = torch.rand(2, 10, 3, 3001)
     y = model(x)
     assert y.shape == (2, 10, 4, 3001)
+
+
+@pytest.mark.slow  # Test is slow and depends on SeisBench repository and FDSN web service
+@patch("seisbench.__version__", "0.5.0")  #
+def test_depth_finder():
+    networks = {"GFZ": ["GE"]}
+    depth_model = seisbench.models.DepthPhaseTEAM.from_pretrained("original")
+    phase_model = seisbench.models.PhaseNet.from_pretrained("geofon")
+    depth_finder = seisbench.models.DepthFinder(networks, depth_model, phase_model)
+
+    lat, lon, depth, org_time = (
+        24.631,
+        121.703,
+        52.8,
+        UTCDateTime("1995-12-01T03:17:04.490000Z"),
+    )
+
+    depth = depth_finder.get_depth(lat, lon, depth, org_time)
+    assert isinstance(depth, float)

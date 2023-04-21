@@ -42,6 +42,11 @@ Depth phase models
     :undoc-members:
     :show-inheritance:
 
+.. autoclass:: seisbench.models.depthphase.DepthFinder
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 .. autoclass:: seisbench.models.depthphase.DepthPhaseNet
     :members:
     :undoc-members:

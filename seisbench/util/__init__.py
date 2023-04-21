@@ -10,6 +10,7 @@ from .file import (
 )
 from .torch_helpers import worker_seeding
 from .trace_ops import (
+    fdsn_get_bulk_safe,
     rotate_stream_to_zne,
     stream_to_array,
     trace_has_spikes,

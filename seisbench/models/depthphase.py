@@ -1,5 +1,6 @@
 import pickle
 from collections import defaultdict
+from pathlib import Path
 from typing import Any, Optional, Union
 
 import numpy as np
@@ -7,11 +8,15 @@ import obspy
 import scipy.stats
 import torch
 from obspy import UTCDateTime
+from obspy.clients.fdsn import Client
 from obspy.geodetics import locations2degrees
+from obspy.taup import TauPyModel
 from tqdm import tqdm
 
 import seisbench
+import seisbench.util as sbu
 
+from .base import WaveformModel
 from .phasenet import PhaseNet
 from .team import PhaseTEAM
 
@@ -367,6 +372,231 @@ class TTLookup:
     @staticmethod
     def _linspaced(x: np.ndarray):
         return np.allclose(x[1] - x[0], x[1:] - x[:-1])
+
+
+class DepthFinder:
+    """
+    This class is a high-level interface to the depth phase models.
+    It determines event depth at teleseismic distances based on a preliminary location.
+    In contrast to the depth phase models, it is not provided with waveforms,
+    but automatically downloads data through FDSN.
+    Furthermore, it automatically determines first P arrivals using predicted travel times
+    and a deep learning picker.
+
+    The processing consists of several steps:
+
+    - determine available station at the time of the event
+    - predict P arrivals
+    - download waveforms through FDSN
+    - repick P arrivals with a deep learning model
+    - determine depth with deep learning based depth model
+
+    If waveforms and P wave picks are already available, it is highly recommended to directly use
+    the underlying depth phase model instead of this helper.
+
+    .. code-block:: python
+        :caption: Example application
+
+        networks = {"GFZ": ["GE"], "IRIS": ["II", "IU"]}  # FDSN providers and networks
+        depth_model = sbm.DepthPhaseTEAM.from_pretrained("original")  # A depth phase model
+        phase_model = sbm.PhaseNet.from_pretrained("geofon")  # A teleseismic picking model
+        depth_finder = DepthFinder(networks, depth_model, phase_model)
+
+    :param networks: Dictionary of FDSN providers and seismic network codes to query
+    :param depth_model: The depth phase model to use
+    :param phase_model: The phase picking model to use for pick refinement
+    :param p_window: Seconds around the predicted P arrival to search for actual arrival
+    :param p_threshold: Minimum detection confidence for the primary P phase to include a record
+    """
+
+    def __init__(
+        self,
+        networks: dict[str, list[str]],
+        depth_model: DepthPhaseModel,
+        phase_model: WaveformModel,
+        p_window: float = 10,
+        p_threshold: float = 0.15,
+    ):
+        self.networks = networks
+        self.depth_model = depth_model
+        self.phase_model = phase_model
+        self.p_window = p_window
+        self.p_threshold = p_threshold
+        self.cache: Optional[
+            Path
+        ] = None  # If set, cache waveforms at this path and try loading them here
+
+        self.tt_model = TauPyModel(model="iasp91")
+
+        self._clients = {provider: Client(provider) for provider in networks.keys()}
+        self._network_to_provider = {
+            net: provider for provider, nets in networks.items() for net in nets
+        }
+
+        self._setup_inventories()
+
+    def _setup_inventories(self):
+        self._inventories = {}
+        for provider, networks in self.networks.items():
+            for network in networks:
+                seisbench.logger.debug(
+                    f"Querying inventory for {network} from {provider}"
+                )
+                self._inventories[network] = self._clients[provider].get_stations(
+                    network=network, channel="BH?", level="CHANNEL"
+                )
+
+    def _get_stations(self, time: UTCDateTime) -> obspy.Inventory:
+        stations = obspy.Inventory()
+        for network, inv in self._inventories.items():
+            stations += inv.select(time=time)
+
+        return stations
+
+    def get_depth(
+        self,
+        lat: float,
+        lon: float,
+        depth: float,
+        origin_time: UTCDateTime,
+        details: bool = False,
+    ) -> float:
+        """
+        Get the depth of an event based on its preliminary latitude, longitude, depth and origin time.
+        A depth estimate needs to be input, as it is required to predict preliminary P arrivals.
+        This is not a circular reasoning, as depth and origin_time trade off against each other.
+
+        :param lat: Latitude of the event
+        :param lon: Longitude of the event
+        :param depth: Preliminary depth of the event
+        :param origin_time: Preliminary origin time of the event
+        :param details: If true, returns depth, refined P picks, P picks from predicted travel times
+                        distances to the stations and the waveform stream.
+        """
+        stations = self._get_stations(origin_time)
+
+        distances = self.depth_model._calculate_distances(stations, (lat, lon))
+        distances = {key: val for key, val in distances.items() if 15 < val < 100}
+
+        p_picks_tt = self._get_picks_tt(origin_time, depth, distances)
+
+        stream = self._get_cache(lat, lon, depth, origin_time)
+        if stream is None:
+            stream = self._get_waveforms(p_picks_tt)
+        self._set_cache(stream, lat, lon, depth, origin_time)
+
+        p_picks = self._repick_dl(p_picks_tt, stream)
+
+        seisbench.logger.debug("Calculating depth")
+        depth = self.depth_model.classify(stream, p_picks, distances)
+
+        if details:
+            return depth, p_picks, p_picks_tt, distances, stream
+        else:
+            return depth
+
+    def _get_picks_tt(
+        self, origin_time: UTCDateTime, depth: float, distances: dict[str, float]
+    ):
+        seisbench.logger.debug("Calculating traveltimes")
+        p_picks = {}
+        for station, dist in distances.items():
+            # Assume all station are at 0 km elevation. Error is small enough to be fixed by repicker.
+            tt = self._get_traveltime(dist, depth)
+            if not np.isnan(tt):
+                p_picks[station] = origin_time + tt
+        return p_picks
+
+    def _get_traveltime(self, dist_deg: float, source_depth_km: float) -> float:
+        arrivals = self.tt_model.get_travel_times(
+            source_depth_in_km=source_depth_km,
+            distance_in_degree=dist_deg,
+            phase_list=["p", "P"],
+        )
+
+        if len(arrivals) > 0:
+            return arrivals[0].time
+        else:
+            return np.nan
+
+    def _get_cache(
+        self, lat: float, lon: float, depth: float, origin_time: UTCDateTime
+    ) -> Optional[obspy.Stream]:
+        if self.cache is None:
+            return
+
+        ev_cache = self.cache / self._get_event_key(lat, lon, depth, origin_time)
+        if ev_cache.is_file():
+            return obspy.read(ev_cache)
+
+    def _set_cache(
+        self,
+        stream: obspy.Stream,
+        lat: float,
+        lon: float,
+        depth: float,
+        origin_time: UTCDateTime,
+    ) -> None:
+        if self.cache is None:
+            return
+
+        ev_cache = self.cache / self._get_event_key(lat, lon, depth, origin_time)
+        if ev_cache.is_file():
+            stream.write(ev_cache)
+
+    def _get_event_key(
+        self, lat: float, lon: float, depth: float, origin_time: UTCDateTime
+    ) -> str:
+        return f"{lat:.3f}__{lon:.3f}__{depth:.2f}__{origin_time}.mseed"
+
+    def _get_waveforms(
+        self,
+        p_picks: dict[str, UTCDateTime],
+        time_before: float = 100,
+        time_after: float = 300,
+    ) -> obspy.Stream:
+
+        bulks = {provider: [] for provider in self.networks.keys()}
+        for station, pick in p_picks.items():
+            net, sta, loc = station.split(".")
+            provider = self._network_to_provider[net]
+            bulks[provider].append(
+                (net, sta, loc, "BH?", pick - time_before, pick + time_after)
+            )
+
+        stream = obspy.Stream()
+        for provider, bulk in bulks.items():
+            seisbench.logger.debug(f"Querying {provider}")
+            stream += sbu.fdsn_get_bulk_safe(self._clients[provider], bulk)
+
+        return stream
+
+    def _repick_dl(
+        self, p_picks: dict[str, UTCDateTime], stream: obspy.Stream
+    ) -> dict[str, UTCDateTime]:
+        seisbench.logger.debug("Repicking")
+        ann = self.phase_model.annotate(stream).select(channel="*_P")
+
+        refined_p_picks = {}
+
+        for station, pick in p_picks.items():
+            net, sta, loc = station.split(".")
+            station_ann = ann.select(network=net, station=sta, location=loc)
+            station_ann = station_ann.slice(pick - self.p_window, pick + self.p_window)
+
+            if len(station_ann) != 1:
+                continue
+            station_ann = station_ann[0]
+
+            if np.max(station_ann.data) < self.p_threshold:
+                continue
+
+            refined_p_picks[station] = (
+                station_ann.stats.starttime
+                + station_ann.times()[np.argmax(station_ann.data)]
+            )
+
+        return refined_p_picks
 
 
 class DepthPhaseNet(PhaseNet, DepthPhaseModel):

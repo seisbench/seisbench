@@ -49,3 +49,8 @@ tests = ["pytest", "pytest-asyncio"]
 GitHub = "https://github.com/seisbench/seisbench"
 Documentation = "https://seisbench.readthedocs.io/en/latest/"
 Issues = "https://github.com/seisbench/seisbench/issues"
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
