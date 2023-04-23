@@ -645,16 +645,33 @@ class DepthPhaseNet(PhaseNet, DepthPhaseModel):
     def annotate(
         self,
         stream: obspy.Stream,
-        parallelism: Optional[int] = None,
+        p_picks: dict[str, UTCDateTime],
         **kwargs,
     ):
         """
-        The annotate function is disabled for this class.
+        Get depth phase probabilities curves for one event.
+        Note that the annotations are aligned to have the P arrival at UTCDateTime(0), i.e.,
+        1970-01-01 00:00:00.
+        The probability curves are not normalized, there absolute value is therefore meaningless.
+
+        :param stream: Obspy stream to annotate
+        :param p_picks: Dictionary of P pick times. Station codes will be truncated to `NET.STA.LOC`.
+        :param kwargs: All kwargs are passed to the annotate function of the superclass.
         """
-        raise NotImplementedError(
-            "DepthPhaseNet does not implement an annotate function. "
-            "Please use the classify function instead."
+        p_picks = {
+            DepthPhaseModel._homogenize_station_name(k): v for k, v in p_picks.items()
+        }
+
+        argdict = self.default_args.copy()
+        argdict.update(kwargs)
+
+        # Ensure all traces are at the right sampling rate and filtering causes no boundary artifacts
+        self.annotate_stream_pre(stream, argdict)
+        selected_stream = self._rebase_streams_for_picks(
+            stream, p_picks, self.in_samples
         )
+
+        return super().annotate(selected_stream, **kwargs)
 
     def classify(
         self,
@@ -684,16 +701,7 @@ class DepthPhaseNet(PhaseNet, DepthPhaseModel):
             p_picks, distances, inventory, epicenter
         )
 
-        argdict = self.default_args.copy()
-        argdict.update(kwargs)
-
-        # Ensure all traces are at the right sampling rate and filtering causes no boundary artifacts
-        self.annotate_stream_pre(stream, argdict)
-        selected_stream = self._rebase_streams_for_picks(
-            stream, p_picks, self.in_samples
-        )
-
-        annotations = super().annotate(selected_stream, **kwargs)
+        annotations = self.annotate(stream, p_picks, **kwargs)
 
         return self._line_search_depth(
             annotations,
@@ -731,16 +739,33 @@ class DepthPhaseTEAM(PhaseTEAM, DepthPhaseModel):
     def annotate(
         self,
         stream: obspy.Stream,
-        parallelism: Optional[int] = None,
+        p_picks: dict[str, UTCDateTime],
         **kwargs,
     ):
         """
-        The annotate function is disabled for this class.
+        Get depth phase probabilities curves for one event.
+        Note that the annotations are aligned to have the P arrival at UTCDateTime(0), i.e.,
+        1970-01-01 00:00:00.
+        The probability curves are not normalized, there absolute value is therefore meaningless.
+
+        :param stream: Obspy stream to annotate
+        :param p_picks: Dictionary of P pick times. Station codes will be truncated to `NET.STA.LOC`.
+        :param kwargs: All kwargs are passed to the annotate function of the superclass.
         """
-        raise NotImplementedError(
-            "DepthPhaseTEAM does not implement an annotate function. "
-            "Please use the classify function instead."
+        p_picks = {
+            DepthPhaseModel._homogenize_station_name(k): v for k, v in p_picks.items()
+        }
+
+        argdict = self.default_args.copy()
+        argdict.update(kwargs)
+
+        # Ensure all traces are at the right sampling rate and filtering causes no boundary artifacts
+        self.annotate_stream_pre(stream, argdict)
+        selected_stream = self._rebase_streams_for_picks(
+            stream, p_picks, self.in_samples
         )
+
+        return super().annotate(selected_stream, **kwargs)
 
     def classify(
         self,
@@ -770,16 +795,7 @@ class DepthPhaseTEAM(PhaseTEAM, DepthPhaseModel):
             p_picks, distances, inventory, epicenter
         )
 
-        argdict = self.default_args.copy()
-        argdict.update(kwargs)
-
-        # Ensure all traces are at the right sampling rate and filtering causes no boundary artifacts
-        self.annotate_stream_pre(stream, argdict)
-        selected_stream = self._rebase_streams_for_picks(
-            stream, p_picks, self.in_samples
-        )
-
-        annotations = super().annotate(selected_stream, **kwargs)
+        annotations = self.annotate(stream, p_picks, **kwargs)
 
         return self._line_search_depth(
             annotations,
