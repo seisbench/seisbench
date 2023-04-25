@@ -165,7 +165,13 @@ class PhaseNet(WaveformModel):
     @staticmethod
     def _merge_skip(skip, x):
         offset = (x.shape[-1] - skip.shape[-1]) // 2
-        x_resize = x[:, :, offset : offset + skip.shape[-1]]
+        if offset >=0 :
+            x_resize = x[:, :, offset : offset + skip.shape[-1]]
+        else:
+            diff = skip.shape[-1] - x.shape[-1]
+            lpad = diff // 2
+            rpad = diff - lpad
+            x_resize = F.pad(x, (lpad, rpad), "constant", 0)
 
         return torch.cat([skip, x_resize], dim=1)
 
