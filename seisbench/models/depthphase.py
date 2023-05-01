@@ -475,8 +475,9 @@ class DepthFinder:
         :param lon: Longitude of the event
         :param depth: Preliminary depth of the event
         :param origin_time: Preliminary origin time of the event
-        :param details: If true, returns depth, refined P picks, P picks from predicted travel times
-                        distances to the stations and the waveform stream.
+        :param details: If true, returns depth, depth levels for search, depth probabilities for all stations,
+                        refined P picks, P picks from predicted travel times distances to the stations and the
+                        waveform stream.
         """
         stations = self._get_stations(origin_time)
 
@@ -493,10 +494,20 @@ class DepthFinder:
         p_picks = self._repick_dl(p_picks_tt, stream)
 
         seisbench.logger.debug("Calculating depth")
-        depth = self.depth_model.classify(stream, p_picks, distances)
+        depth, depth_levels, probabilities = self.depth_model.classify(
+            stream, p_picks, distances, probability_curves=True
+        )
 
         if details:
-            return depth, p_picks, p_picks_tt, distances, stream
+            return (
+                depth,
+                depth_levels,
+                probabilities,
+                p_picks,
+                p_picks_tt,
+                distances,
+                stream,
+            )
         else:
             return depth
 
