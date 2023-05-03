@@ -340,6 +340,22 @@ def test_depthphaseteam():
     assert y.shape == (2, 10, 4, 3001)
 
 
+def test_depthphasemodel_qc(tmp_path):
+    with patch("seisbench.cache_aux_root", tmp_path):
+        model = seisbench.models.depthphase.DepthPhaseModel(
+            time_before=10,
+            tt_args=dict(dists=np.linspace(30, 100, 2), depths=np.linspace(5, 660, 2)),
+            qc_std=20,
+            qc_depth=200,
+        )
+        prob = np.zeros_like(model.depth_levels)
+        prob[0] = 1
+        assert model._qc_prediction(prob, 100.0) == 100.0
+        prob[-1] = 1  # Make sure STD is high
+        assert model._qc_prediction(prob, 300.0) == 300.0  # Deeper than qc_depth
+        assert np.isnan(model._qc_prediction(prob, 100.0))
+
+
 @pytest.mark.slow  # Test is slow and depends on SeisBench repository and FDSN web service
 @patch("seisbench.__version__", "0.5.0")  #
 def test_depth_finder():

@@ -24,6 +24,14 @@ from .team import PhaseTEAM
 class DepthPhaseModel:
     """
     Helper class implementing all tools for determining depth from depth phases
+
+    :param time_before: Time included before the P pick in seconds
+    :param depth_levels: Array of depth levels to search for
+    :param tt_args: Arguments for the :py:class:`TTLookup`
+    :param qc_std: Maximum standard deviation to pass quality control.
+                   If None, no quality control is applied.
+    :param qc_depth: Quality control is only applied to predictions shallower than this depth.
+                     If None, quality control is applied to all depth levels.
     """
 
     def __init__(
@@ -31,11 +39,17 @@ class DepthPhaseModel:
         time_before: float = 12.5,
         depth_levels: Optional[np.ndarray] = None,
         tt_args: Optional[dict[str, Any]] = None,
+        qc_std: Optional[float] = None,
+        qc_depth: Optional[float] = None,
     ) -> None:
         self.time_before = time_before
         if tt_args is None:
             tt_args = {}
         self._ttlookup = TTLookup(**tt_args)
+
+        self.qc_std = qc_std
+        self.qc_depth = qc_depth
+
         if depth_levels is None:
             self.depth_levels = np.linspace(0, 650, 651)
         else:
@@ -163,12 +177,33 @@ class DepthPhaseModel:
         avg_probabilities = scipy.stats.mstats.gmean(
             probabilities, nan_policy="omit", axis=0
         )
+
         depth = self.depth_levels[np.argmax(avg_probabilities)]
+
+        depth = self._qc_prediction(avg_probabilities, depth)
 
         if probability_curves:
             return depth, self.depth_levels, probabilities
         else:
             return depth
+
+    def _qc_prediction(self, prob: np.ndarray, depth: float) -> float:
+        normed_prob = self._norm_label(prob, eps=1e-12)
+        mean = np.sum(normed_prob * self.depth_levels)
+        var = np.sum(normed_prob * ((self.depth_levels - mean) ** 2))
+        std = np.sqrt(var)
+
+        if self.qc_std is not None:
+            if std > self.qc_std and (self.qc_depth is None or depth < self.qc_depth):
+                seisbench.logger.warning(
+                    f"Standard deviation ({std:.1f} km) above quality control "
+                    f"limit ({self.qc_std:.1f} km). Returning NaN. You can increase "
+                    f"qc_std to get a depth estimate nonetheless, but the result is "
+                    f"likely unreliable."
+                )
+                return np.nan
+
+        return depth
 
     def _backproject_single_station(
         self,
@@ -644,7 +679,7 @@ class DepthPhaseNet(PhaseNet, DepthPhaseModel):
             norm=norm,
             **kwargs,
         )
-        DepthPhaseModel.__init__(self, *depth_phase_args)
+        DepthPhaseModel.__init__(self, **depth_phase_args)
 
     def forward(self, x: torch.tensor, logits=False) -> torch.tensor:
         y = super().forward(x, logits=True)
@@ -745,7 +780,7 @@ class DepthPhaseTEAM(PhaseTEAM, DepthPhaseModel):
             norm=norm,
             **kwargs,
         )
-        DepthPhaseModel.__init__(self, *depth_phase_args)
+        DepthPhaseModel.__init__(self, **depth_phase_args)
 
     def annotate(
         self,
