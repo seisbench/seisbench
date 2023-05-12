@@ -20,7 +20,7 @@ class PNW(BenchmarkDataset):
 
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, component_order="ENZ", **kwargs):
         citation = (
             "Ni, Y., Hutko, A., Skene, F., Denolle, M., Malone, "
             "S., Bodin, P., Hartog, R., & Wright, A. (2023)."
@@ -32,7 +32,11 @@ class PNW(BenchmarkDataset):
         seisbench.logger.warning("None")
 
         super().__init__(
-            citation=citation, license=license, repository_lookup=True, **kwargs
+            citation=citation,
+            license=license,
+            repository_lookup=True,
+            component_order=component_order,
+            **kwargs
         )
 
     def _download_dataset(self, writer, **kwargs):
