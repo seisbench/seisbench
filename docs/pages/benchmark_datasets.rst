@@ -177,6 +177,29 @@ settings.
 
     http://arxiv.org/abs/2304.06635
 
+PNW
+----
+
+.. figure::  ../_static/pnw_mapplot.png
+   :align:   center
+
+A ML-ready curated data set for a wide range of sources from the Pacific Northwest (PNW). PNW dataset is made by several separate datasets.
+
+:py:class:`~seisbench.data.pnw.PNW` contains waveforms from earthquake and explosion (comcat events) from velocity channels (EH, HH and BH).
+:py:class:`~seisbench.data.pnw.PNWAccelerometers` contains waveform from earthquake and explosion (comcat events) but from accelerometers (EN).
+:py:class:`~seisbench.data.pnw.PNWNoise` contains noise waveforms
+:py:class:`~seisbench.data.pnw.PNWExotic` contains exotic event waveforms (surface event, thunder quake, sonic boom, etc.)
+
+For more information see: `PNW-ML <https://github.com/niyiyu/PNW-ML>`__.
+
+
+.. admonition:: Citation
+
+    Ni, Y., Hutko, A., Skene, F., Denolle, M., Malone, S., Bodin, P., Hartog, R., & Wright, A. (2023).
+    Curated Pacific Northwest AI-ready Seismic Dataset. *Seismica*, 2(1).
+
+    https://doi.org/10.26443/seismica.v2i1.368
+
 SCEDC
 -----
 
