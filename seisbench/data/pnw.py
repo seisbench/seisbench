@@ -1,9 +1,3 @@
-import random
-import string
-
-import numpy as np
-
-import seisbench
 from seisbench.data.base import BenchmarkDataset
 
 
@@ -13,7 +7,7 @@ class PNW(BenchmarkDataset):
 
     """
 
-    def __init__(self, component_order="ENZ", **kwargs):
+    def __init__(self, **kwargs):
         citation = (
             "Ni, Y., Hutko, A., Skene, F., Denolle, M., Malone, "
             "S., Bodin, P., Hartog, R., & Wright, A. (2023)."
@@ -23,11 +17,7 @@ class PNW(BenchmarkDataset):
         license = "CC BY 4.0"
 
         super().__init__(
-            citation=citation,
-            license=license,
-            repository_lookup=True,
-            component_order=component_order,
-            **kwargs
+            citation=citation, license=license, repository_lookup=True, **kwargs
         )
 
     def _download_dataset(self, writer, **kwargs):
@@ -40,7 +30,7 @@ class PNWExotic(BenchmarkDataset):
 
     """
 
-    def __init__(self, component_order="ENZ", **kwargs):
+    def __init__(self, **kwargs):
         citation = (
             "Ni, Y., Hutko, A., Skene, F., Denolle, M., Malone, "
             "S., Bodin, P., Hartog, R., & Wright, A. (2023)."
@@ -50,11 +40,7 @@ class PNWExotic(BenchmarkDataset):
         license = "CC BY 4.0"
 
         super().__init__(
-            citation=citation,
-            license=license,
-            repository_lookup=True,
-            component_order=component_order,
-            **kwargs
+            citation=citation, license=license, repository_lookup=True, **kwargs
         )
 
     def _download_dataset(self, writer, **kwargs):
@@ -67,7 +53,7 @@ class PNWAccelerometers(BenchmarkDataset):
 
     """
 
-    def __init__(self, component_order="ENZ", **kwargs):
+    def __init__(self, **kwargs):
         citation = (
             "Ni, Y., Hutko, A., Skene, F., Denolle, M., Malone, "
             "S., Bodin, P., Hartog, R., & Wright, A. (2023)."
@@ -77,11 +63,7 @@ class PNWAccelerometers(BenchmarkDataset):
         license = "CC BY 4.0"
 
         super().__init__(
-            citation=citation,
-            license=license,
-            repository_lookup=True,
-            component_order=component_order,
-            **kwargs
+            citation=citation, license=license, repository_lookup=True, **kwargs
         )
 
     def _download_dataset(self, writer, **kwargs):
@@ -94,7 +76,7 @@ class PNWNoise(BenchmarkDataset):
 
     """
 
-    def __init__(self, component_order="ENZ", **kwargs):
+    def __init__(self, **kwargs):
         citation = (
             "Ni, Y., Hutko, A., Skene, F., Denolle, M., Malone, "
             "S., Bodin, P., Hartog, R., & Wright, A. (2023)."
@@ -104,11 +86,7 @@ class PNWNoise(BenchmarkDataset):
         license = "CC BY 4.0"
 
         super().__init__(
-            citation=citation,
-            license=license,
-            repository_lookup=True,
-            component_order=component_order,
-            **kwargs
+            citation=citation, license=license, repository_lookup=True, **kwargs
         )
 
     def _download_dataset(self, writer, **kwargs):
