@@ -77,6 +77,14 @@ OBS dataset
     :undoc-members:
     :show-inheritance:
 
+PNW dataset
+-----------------------------------
+
+.. automodule:: seisbench.data.pnw
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Southern California datasets
 -----------------------------------
 
