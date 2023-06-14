@@ -25,7 +25,7 @@ cache_root = _Path(
 cache_data_root = cache_root / "datasets"
 cache_model_root = cache_root / "models" / "v3"
 
-remote_root = "https://dcache-demo.desy.de:2443/Helmholtz/HelmholtzAI/SeisBench/"
+remote_root = "https://hifis-storage.desy.de:2880/Helmholtz/HelmholtzAI/SeisBench/"
 
 remote_data_root = _urljoin(remote_root, "datasets/")
 remote_model_root = _urljoin(remote_root, "models/v3/")
