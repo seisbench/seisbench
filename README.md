@@ -74,11 +74,21 @@ Check out the [contribution guidelines](https://github.com/seisbench/seisbench/b
 
 ## Known issues
 
+- We've recently changed the URL of the SeisBench repository. To use the new URL update to SeisBench 0.4.1.
+  It this is not possible, you can use the following commands within your runtime to update the URL manually:
+  ```python
+  import seisbench
+  from urllib.parse import urljoin
+
+  seisbench.remote_root = "https://hifis-storage.desy.de:2880/Helmholtz/HelmholtzAI/SeisBench/"
+  seisbench.remote_data_root = urljoin(seisbench.remote_root, "datasets/")
+  seisbench.remote_model_root = urljoin(seisbench.remote_root, "models/v3/")
+  ```
 - On the Apple M1 and M2 chips, pytorch seems to not always work when installed directly within `pip install seisbench`.
   As a workaround, follow the instructions at (https://pytorch.org/) to install pytorch and then install SeisBench as usual through pip.
 - Some institutions and internet providers are blocking access to our data and model repository, as it is running on a non-standard port (2443).
   This usually manifests in timeouts when trying to download data or model weights.
-  To verify the issue, try accessing [https://dcache-demo.desy.de:2443/](https://dcache-demo.desy.de:2443/) directly from the same machine.
+  To verify the issue, try accessing [https://hifis-storage.desy.de:2880/](https://hifis-storage.desy.de:2880/) directly from the same machine.
   We are working on a permanent solution for the issue.
   In the meantime, if you are having trouble, try downloading through another network/VPN if possible.
   You can also contact your network administrator to allow access to port 2443 on our server.
