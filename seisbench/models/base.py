@@ -1830,8 +1830,10 @@ class WaveformModel(SeisBenchModel, ABC):
         finally:
             if train_mode:
                 self.train()
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
+        
+        # Explicit synchronisation can help profiling the stack
+        # if torch.cuda.is_available():
+        #    torch.cuda.synchronize()
 
         preds = self._recursive_torch_to_numpy(preds)
         # Unbatch window predictions
