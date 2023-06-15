@@ -1830,7 +1830,7 @@ class WaveformModel(SeisBenchModel, ABC):
         finally:
             if train_mode:
                 self.train()
-        
+
         # Explicit synchronisation can help profiling the stack
         # if torch.cuda.is_available():
         #    torch.cuda.synchronize()
