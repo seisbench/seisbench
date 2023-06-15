@@ -11,6 +11,7 @@ from pathlib import Path
 from queue import PriorityQueue
 from urllib.parse import urljoin
 
+import bottleneck as bn
 import nest_asyncio
 import numpy as np
 import obspy
@@ -1724,10 +1725,10 @@ class WaveformModel(SeisBenchModel, ABC):
                     warnings.filterwarnings(
                         action="ignore", message="Mean of empty slice"
                     )
-                    preds = np.nanmean(pred_merge, axis=-1)
+                    preds = bn.nanmean(pred_merge, axis=-1)
                 elif stack_method == "max":
                     warnings.filterwarnings(action="ignore", message="All-NaN")
-                    preds = np.nanmax(pred_merge, axis=-1)
+                    preds = bn.nanmax(pred_merge, axis=-1)
                 # Case of stack_method not in avg or max is caught by assert above
 
             pred_time = t0 + self.pred_sample[0] / argdict["sampling_rate"]
@@ -1829,6 +1830,11 @@ class WaveformModel(SeisBenchModel, ABC):
         finally:
             if train_mode:
                 self.train()
+
+        # Explicit synchronisation can help profiling the stack
+        # if torch.cuda.is_available():
+        #    torch.cuda.synchronize()
+
         preds = self._recursive_torch_to_numpy(preds)
         # Unbatch window predictions
         reshaped_preds = [pred for pred in self._recursive_slice_pred(preds)]
