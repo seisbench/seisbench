@@ -24,9 +24,10 @@ from packaging import version
 
 import seisbench
 import seisbench.util as util
-from seisbench.util import log_lifecycle
+from seisbench.util import in_notebook, log_lifecycle
 
-nest_asyncio.apply()
+if in_notebook():
+    nest_asyncio.apply()
 
 
 def _cache_migration_v0_v3():
