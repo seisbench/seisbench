@@ -26,6 +26,8 @@ import seisbench
 import seisbench.util as util
 from seisbench.util import log_lifecycle
 
+nest_asyncio.apply()
+
 
 def _cache_migration_v0_v3():
     """
@@ -935,7 +937,6 @@ class WaveformModel(SeisBenchModel, ABC):
         self._verify_argdict(kwargs)
 
         if parallelism is None:
-            nest_asyncio.apply()
             call = self._annotate_async(stream, **kwargs)
             return asyncio.run(call)
         else:
