@@ -24,7 +24,12 @@ from packaging import version
 
 import seisbench
 import seisbench.util as util
-from seisbench.util import log_lifecycle
+from seisbench.util import in_notebook, log_lifecycle
+
+if in_notebook():
+    # Jupyter notebooks have their own asyncio loop and will crash `annotate/classify`
+    # if not patched with nest_asyncio
+    nest_asyncio.apply()
 
 
 def _cache_migration_v0_v3():
@@ -935,7 +940,6 @@ class WaveformModel(SeisBenchModel, ABC):
         self._verify_argdict(kwargs)
 
         if parallelism is None:
-            nest_asyncio.apply()
             call = self._annotate_async(stream, **kwargs)
             return asyncio.run(call)
         else:

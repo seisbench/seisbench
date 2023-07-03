@@ -1,4 +1,5 @@
 from .annotations import Detection, Pick
+from .auxiliary import in_notebook
 from .decorators import log_lifecycle
 from .file import (
     callback_if_uncached,
