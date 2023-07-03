@@ -44,7 +44,7 @@ Common functions for converting datasets to SeisBench format
 Auxiliary functions
 ------------------------------------------------------------
 
-.. automodule:: seisbench.util.aux
+.. automodule:: seisbench.util.auxiliary
     :members:
     :undoc-members:
     :show-inheritance:
