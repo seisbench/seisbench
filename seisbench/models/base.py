@@ -27,6 +27,8 @@ import seisbench.util as util
 from seisbench.util import in_notebook, log_lifecycle
 
 if in_notebook():
+    # Jupyter notebooks have their own asyncio loop and will crash `annotate/classify`
+    # if not patched with nest_asyncio
     nest_asyncio.apply()
 
 
