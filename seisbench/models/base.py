@@ -1926,7 +1926,7 @@ class WaveformModel(SeisBenchModel, ABC):
         :param pred_rates: Sampling rates of the prediction arrays
         :param pred_times: Start time of each prediction array
         :param preds: The prediction arrays, each with shape (samples, channels)
-        :param stations: The list of stations as strings in format NET.STA.LOC.CHA
+        :param stations: The list of stations as strings in format NET.STA.LOC or NET.STA.LOC.CHA
         :return: Obspy stream of predictions
         """
         output = obspy.Stream()
@@ -1946,7 +1946,7 @@ class WaveformModel(SeisBenchModel, ABC):
 
                 trimmed_pred, f, _ = self._trim_nan(pred[station_idx, :, channel_idx])
                 trimmed_start = pred_time + f / pred_rate
-                network, station, location, _ = trace_id.split(".")
+                network, station, location = trace_id.split(".")[:3]
                 output.append(
                     obspy.Trace(
                         trimmed_pred,
@@ -2308,7 +2308,7 @@ class WaveformModel(SeisBenchModel, ABC):
         else:
 
             def get_station_key(trace: obspy.Trace) -> str:
-                return trace.id[:-1]
+                return self._grouping.trace_id_without_component(trace)
 
         stations = np.unique([get_station_key(trace) for trace in stream])
         station_dict = {station: i for i, station in enumerate(stations)}
@@ -2366,7 +2366,9 @@ class WaveformModel(SeisBenchModel, ABC):
 
             for trace in stream:
                 if trace.id[-1] in comp_dict and len(trace.data) > 0:
-                    existing_trace_components[trace.id[:-1]].append(trace.id[-1])
+                    existing_trace_components[
+                        self._grouping.trace_id_without_component(trace)
+                    ].append(trace.id[-1])
 
             for trace, components in existing_trace_components.items():
                 for a, b in matches:
@@ -2860,12 +2862,16 @@ class GroupingHelper:
             stream, strict, min_length_s, comp_dict
         )
 
+    @staticmethod
+    def trace_id_without_component(trace: obspy.Trace):
+        return f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
+
     def _group_instrument(
         self, stream: obspy.Stream, *args, **kwargs
     ) -> list[list[obspy.Trace]]:
         pre_groups = defaultdict(list)
         for trace in stream:
-            pre_groups[trace.id[:-1]].append(trace)
+            pre_groups[self.trace_id_without_component(trace)].append(trace)
 
         groups = []
         for group in pre_groups.values():
@@ -2956,7 +2962,9 @@ class GroupingHelper:
             stations = sorted(list(set(trace.id for trace in stream)))
         else:
             n_comp = max(comp_dict.values()) + 1
-            stations = sorted(list(set(trace.id[:-1] for trace in stream)))
+            stations = sorted(
+                list(set(self.trace_id_without_component(trace) for trace in stream))
+            )
 
         sta_dict = {sta: i for i, sta in enumerate(stations)}
 
@@ -2974,7 +2982,7 @@ class GroupingHelper:
                     continue
 
                 comp_idx = comp_dict[trace.id[-1]]
-                sta_idx = sta_dict[trace.id[:-1]]
+                sta_idx = sta_dict[self.trace_id_without_component(trace)]
 
             covered[sta_idx, comp_idx, p0:p1] = True
 

@@ -256,7 +256,7 @@ def test_stream_to_arrays_instrument():
     stream = obspy.Stream([trace_z, trace_n, trace_e])
     t0_out, data, stations = dummy.stream_to_array(stream, {})
     assert t0_out == t0
-    assert stations == ["SB.TEST..HH"]
+    assert stations == ["SB.TEST."]
     assert data.shape == (3, len(trace_z.data))
     assert (data[0] == trace_z.data).all()
     assert (data[1] == trace_n.data).all()
@@ -372,7 +372,7 @@ def test_flexible_horizontal_components(caplog):
 
 
 def test_group_stream_by_instrument():
-    # The first 3 should be grouped together, the last 3 should each be separate
+    # The first 4 should be grouped together, the last 2 should each be separate
     stream = obspy.Stream(
         [
             obspy.Trace(
@@ -408,8 +408,8 @@ def test_group_stream_by_instrument():
 
     groups = helper.group_stream(stream, False, 0, comp_dict)
 
-    assert len(groups) == 4
-    assert list(sorted([len(x) for x in groups])) == [1, 1, 1, 3]
+    assert len(groups) == 3
+    assert list(sorted([len(x) for x in groups])) == [1, 1, 4]
 
     helper = seisbench.models.base.GroupingHelper("channel")
     groups = helper.group_stream(stream, False, 0, comp_dict)
@@ -497,8 +497,7 @@ def test_predictions_to_stream():
     pred_times = [UTCDateTime(), UTCDateTime()]
     preds = [np.random.rand(1000, 3), np.random.rand(2000, 3)]
     preds[0][:100] = np.nan  # Test proper shift
-    trace = obspy.Trace(np.zeros(100), header={"network": "SB", "station": "ABC1"})
-    stations = ["SB.ABC1..HH"]
+    stations = ["SB.ABC1."]
 
     stream = dummy._predictions_to_stream(
         pred_rates[0], pred_times[0], preds[0], stations
@@ -949,7 +948,7 @@ def test_annotate_pickblue(parallelism, model):
 
     stream = obspy.read("./tests/examples/OBS*")
     annotations = model.annotate(stream, parallelism=parallelism)
-    assert len(annotations) > 0
+    assert len(annotations) == 3
     model.classify(
         stream, parallelism=parallelism
     )  # Ensures classify succeeds even though labels are unknown
@@ -2117,12 +2116,12 @@ def test_get_intervals():
     )
     assert len(intervals) == 2
     assert intervals[0] == (
-        ["SB.ABC1..BH"],
+        ["SB.ABC1."],
         stream[0].stats.starttime,
         stream[0].stats.endtime,
     )
     assert intervals[1] == (
-        ["SB.ABC2..HH"],
+        ["SB.ABC2."],
         stream[1].stats.starttime,
         stream[1].stats.endtime,
     )
@@ -2203,12 +2202,12 @@ def test_get_intervals():
         )
         assert len(intervals) == 2
         assert intervals[0] == (
-            ["SB.ABC1..BH"],
+            ["SB.ABC1."],
             stream[0].stats.starttime,
             stream[0].stats.endtime,
         )
         assert intervals[1] == (
-            ["SB.ABC2..HH"],
+            ["SB.ABC2."],
             stream[3].stats.starttime,
             stream[3].stats.endtime,
         )
@@ -2244,17 +2243,17 @@ def test_get_intervals():
     )
     assert len(intervals) == 3
     assert intervals[0] == (
-        ["SB.ABC1..BH"],
+        ["SB.ABC1."],
         stream[0].stats.starttime,
         stream[1].stats.starttime,
     )
     assert intervals[1] == (
-        ["SB.ABC1..BH", "SB.ABC2..HH"],
+        ["SB.ABC1.", "SB.ABC2."],
         stream[1].stats.starttime,
         stream[1].stats.endtime,
     )
     assert intervals[2] == (
-        ["SB.ABC1..BH"],
+        ["SB.ABC1."],
         stream[1].stats.endtime,
         stream[0].stats.endtime,
     )
@@ -2380,19 +2379,19 @@ def test_merge_intervals():
 
     selected = helper._get_intervals(stream, False, 2, comp_dict)
     assert selected == [
-        (["SB.ABC0..BH"], t_root - 5, t_root + 1),
-        (["SB.ABC1..BH"], t_root + 1, t_root + 3),
-        (["SB.ABC2..BH"], t_root + 3, t_root + 5),
-        (["SB.ABC0..BH", "SB.ABC1..BH"], t_root + 5, t_root + 10),
-        (["SB.ABC2..BH"], t_root + 20, t_root + 25),
+        (["SB.ABC0."], t_root - 5, t_root + 1),
+        (["SB.ABC1."], t_root + 1, t_root + 3),
+        (["SB.ABC2."], t_root + 3, t_root + 5),
+        (["SB.ABC0.", "SB.ABC1."], t_root + 5, t_root + 10),
+        (["SB.ABC2."], t_root + 20, t_root + 25),
     ]
 
     selected = helper._get_intervals(stream, False, 4, comp_dict)
     assert selected == [
-        (["SB.ABC0..BH"], t_root - 5, t_root + 1),
-        (["SB.ABC2..BH"], t_root + 2, t_root + 6),
-        (["SB.ABC0..BH", "SB.ABC1..BH"], t_root + 6, t_root + 10),
-        (["SB.ABC2..BH"], t_root + 20, t_root + 25),
+        (["SB.ABC0."], t_root - 5, t_root + 1),
+        (["SB.ABC2."], t_root + 2, t_root + 6),
+        (["SB.ABC0.", "SB.ABC1."], t_root + 6, t_root + 10),
+        (["SB.ABC2."], t_root + 20, t_root + 25),
     ]
 
 
