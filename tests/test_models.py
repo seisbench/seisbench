@@ -541,7 +541,7 @@ def test_flexible_horizontal_components(caplog):
 
 
 def test_group_stream_by_instrument():
-    # The first 3 should be grouped together, the last 3 should each be separate
+    # The first 4 should be grouped together, the last 2 should each be separate
     stream = obspy.Stream(
         [
             obspy.Trace(header={"network": "SB", "station": "ABC1", "channel": "BHZ"}),
@@ -558,8 +558,8 @@ def test_group_stream_by_instrument():
     dummy._grouping = "instrument"
     groups = dummy.group_stream(stream)
 
-    assert len(groups) == 4
-    assert list(sorted([len(x) for x in groups])) == [1, 1, 1, 3]
+    assert len(groups) == 3
+    assert list(sorted([len(x) for x in groups])) == [1, 1, 4]
 
     dummy._grouping = "channel"
     groups = dummy.group_stream(stream)

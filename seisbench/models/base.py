@@ -2180,13 +2180,17 @@ class WaveformModel(SeisBenchModel, ABC):
         groups = defaultdict(list)
         for trace in stream:
             if self._grouping == "instrument":
-                groups[trace.id[:-1]].append(trace)
+                groups[self._trace_id_without_component(trace)].append(trace)
             elif self._grouping == "channel":
                 groups[trace.id].append(trace)
             else:
                 raise ValueError(f"Unknown grouping parameter '{by}'.")
 
         return list(groups.values())
+
+    @staticmethod
+    def _trace_id_without_component(trace: obspy.Trace):
+        return f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
 
     @staticmethod
     def sanitize_mismatching_overlapping_records(stream):
@@ -2317,7 +2321,9 @@ class WaveformModel(SeisBenchModel, ABC):
             if trace.id[-1] in comp_dict and len(trace.data) > 0:
                 start_sorted.put((trace.stats.starttime, seqnum, trace))
                 seqnum += 1
-                existing_trace_components[trace.id[:-1]].append(trace.id[-1])
+                existing_trace_components[
+                    self._trace_id_without_component(trace)
+                ].append(trace.id[-1])
 
         if flexible_horizontal_components:
             for trace, components in existing_trace_components.items():
