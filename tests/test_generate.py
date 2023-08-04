@@ -658,89 +658,112 @@ def test_change_dtype():
 
 
 def test_probabilistic_pick_labeller():
-    for shape in ["gaussian", "triangle", "box"]:
-        np.random.seed(42)
-        state_dict = {
-            "X": (
-                10 * np.random.rand(3, 1000),
-                {
-                    "trace_p_arrival_sample": 500,
-                    "trace_s_arrival_sample": 700,
-                    "trace_g_arrival_sample": np.nan,
-                },
+    for noise_column in [True, False]:
+        for shape in ["gaussian", "triangle", "box"]:
+            np.random.seed(42)
+            state_dict = {
+                "X": (
+                    10 * np.random.rand(3, 1000),
+                    {
+                        "trace_p_arrival_sample": 500,
+                        "trace_s_arrival_sample": 700,
+                        "trace_g_arrival_sample": np.nan,
+                    },
+                )
+            }
+
+            # Assumes standard config['dimension_order'] = 'NCW'
+            # Test label construction for single window, handling NaN values
+            labeller = ProbabilisticLabeller(
+                dim=0, shape=shape, noise_column=noise_column
             )
-        }
-
-        # Assumes standard config['dimension_order'] = 'NCW'
-        # Test label construction for single window, handling NaN values
-        labeller = ProbabilisticLabeller(dim=0, shape=shape)
-        labeller(state_dict)
-
-        assert state_dict["y"][0].shape == (4, 1000)
-        if shape == "box":
-            assert np.array_equiv(state_dict["y"][0][1][490:510], np.ones(20))
-            assert np.array_equiv(state_dict["y"][0][2][690:710], np.ones(20))
-        else:
-            assert np.argmax(state_dict["y"][0], axis=1)[1] == 500
-            assert np.argmax(state_dict["y"][0], axis=1)[2] == 700
-        assert (
-            state_dict["y"][0][0] == 0
-        ).all()  # Check that NaN picks are interpreted as not present
-
-        # Fails when multi_class specified and channel dim sum > 1
-        with pytest.raises(ValueError):
-            labeller = ProbabilisticLabeller(dim=1, shape=shape)
             labeller(state_dict)
 
-        # Test label construction for multiple windows
-        state_dict = {
-            "X": (
-                10 * np.random.rand(5, 3, 1000),
-                {
-                    "trace_p_arrival_sample": np.array([500] * 5),
-                    "trace_s_arrival_sample": np.array([700] * 5),
-                    "trace_g_arrival_sample": np.array([500, 500, 200, np.nan, 500]),
-                },
-            )
-        }
-        labeller = ProbabilisticLabeller(dim=1, shape=shape)
-        labeller(state_dict)
+            if noise_column:
+                assert state_dict["y"][0].shape == (4, 1000)
+                assert np.allclose(
+                    np.sum(state_dict["y"][0], axis=0), 1
+                )  # Sum is always 1
+            else:
+                assert state_dict["y"][0].shape == (3, 1000)
+                assert ~np.allclose(
+                    np.sum(state_dict["y"][0], axis=0), 1
+                )  # Sum may not be 1
+            assert np.isclose(
+                np.min(state_dict["y"][0]), 0
+            )  # Minimum is close to 0, in particular noise is never negative
 
-        assert state_dict["y"][0].shape == (5, 4, 1000)
-        if shape == "box":
-            assert np.array_equiv(state_dict["y"][0][3, 1, 490:510], np.ones(20))
-            assert np.array_equiv(state_dict["y"][0][3, 2, 690:710], np.ones(20))
-            assert np.array_equiv(
-                state_dict["y"][0][2, 0, 190:210], np.ones(20)
-            )  # Entry with pick
-        else:
-            assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[1] == 500
-            assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[2] == 700
+            if shape == "box":
+                assert np.array_equiv(state_dict["y"][0][1][490:510], np.ones(20))
+                assert np.array_equiv(state_dict["y"][0][2][690:710], np.ones(20))
+            else:
+                assert np.argmax(state_dict["y"][0], axis=1)[1] == 500
+                assert np.argmax(state_dict["y"][0], axis=1)[2] == 700
             assert (
-                np.argmax(state_dict["y"][0][2, :, :], axis=-1)[0] == 200
-            )  # Entry with pick
-        assert (state_dict["y"][0][3, 0, :] == 0).all()
+                state_dict["y"][0][0] == 0
+            ).all()  # Check that NaN picks are interpreted as not present
 
-        # Fails if single sample provided for multiple windows
-        state_dict = {
-            "X": (
-                10 * np.random.rand(5, 3, 1000),
-                {
-                    "trace_p_arrival_sample": 500,
-                    "trace_s_arrival_sample": 700,
-                },
+            # Fails when multi_class specified and channel dim sum > 1
+            with pytest.raises(ValueError):
+                labeller = ProbabilisticLabeller(dim=1, shape=shape)
+                labeller(state_dict)
+
+            # Test label construction for multiple windows
+            state_dict = {
+                "X": (
+                    10 * np.random.rand(5, 3, 1000),
+                    {
+                        "trace_p_arrival_sample": np.array([500] * 5),
+                        "trace_s_arrival_sample": np.array([700] * 5),
+                        "trace_g_arrival_sample": np.array(
+                            [500, 500, 200, np.nan, 500]
+                        ),
+                    },
+                )
+            }
+            labeller = ProbabilisticLabeller(
+                dim=1, shape=shape, noise_column=noise_column
             )
-        }
-        with pytest.raises(ValueError):
-            labeller = ProbabilisticLabeller(dim=1, shape=shape)
             labeller(state_dict)
 
-        state_dict["X"] = np.random.rand(10, 5, 3, 1000)
+            if noise_column:
+                assert state_dict["y"][0].shape == (5, 4, 1000)
+            else:
+                assert state_dict["y"][0].shape == (5, 3, 1000)
+            if shape == "box":
+                assert np.array_equiv(state_dict["y"][0][3, 1, 490:510], np.ones(20))
+                assert np.array_equiv(state_dict["y"][0][3, 2, 690:710], np.ones(20))
+                assert np.array_equiv(
+                    state_dict["y"][0][2, 0, 190:210], np.ones(20)
+                )  # Entry with pick
+            else:
+                assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[1] == 500
+                assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[2] == 700
+                assert (
+                    np.argmax(state_dict["y"][0][2, :, :], axis=-1)[0] == 200
+                )  # Entry with pick
+            assert (state_dict["y"][0][3, 0, :] == 0).all()
 
-        # Fails if non-compatible input data dimensions are provided
-        with pytest.raises(ValueError):
-            labeller = ProbabilisticLabeller(dim=1, shape=shape)
-            labeller(state_dict)
+            # Fails if single sample provided for multiple windows
+            state_dict = {
+                "X": (
+                    10 * np.random.rand(5, 3, 1000),
+                    {
+                        "trace_p_arrival_sample": 500,
+                        "trace_s_arrival_sample": 700,
+                    },
+                )
+            }
+            with pytest.raises(ValueError):
+                labeller = ProbabilisticLabeller(dim=1, shape=shape)
+                labeller(state_dict)
+
+            state_dict["X"] = np.random.rand(10, 5, 3, 1000)
+
+            # Fails if non-compatible input data dimensions are provided
+            with pytest.raises(ValueError):
+                labeller = ProbabilisticLabeller(dim=1, shape=shape)
+                labeller(state_dict)
 
 
 def test_step_labeller():
@@ -831,6 +854,29 @@ def test_probabilistic_pick_labeller_overlap():
     labeller(state_dict)
 
     assert np.allclose(np.sum(state_dict["y"][0], axis=0), 1)  # Sum is always 1
+    assert np.isclose(
+        np.min(state_dict["y"][0]), 0
+    )  # Minimum is close to 0, in particular noise is never negative
+
+
+def test_probabilistic_pick_labeller_without_noise_column():
+    # Test
+    np.random.seed(42)
+    state_dict = {
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {
+                "trace_p_arrival_sample": 500,
+                "trace_s_arrival_sample": 500,
+                "trace_g_arrival_sample": np.nan,
+            },
+        )
+    }
+
+    labeller = ProbabilisticLabeller(dim=0, sigma=50, noise_column=False)
+    labeller(state_dict)
+
+    assert ~np.allclose(np.sum(state_dict["y"][0], axis=0), 1)  # Sum is not 1
     assert np.isclose(
         np.min(state_dict["y"][0]), 0
     )  # Minimum is close to 0, in particular noise is never negative
@@ -1046,7 +1092,6 @@ def test_colums_to_dict_and_labels():
 
 
 def test_swap_dimension_order():
-
     arr = np.zeros((6, 3, 100))
     assert ProbabilisticLabeller._swap_dimension_order(
         arr, current_dim="NCW", expected_dim="CNW"
@@ -1707,7 +1752,6 @@ def test_standard_labeller_no_labels_in_metadata():
 
 
 def test_copy():
-
     state_dict = {"X": (5 * np.random.rand(3, 1000), None)}
 
     # Default params copy
