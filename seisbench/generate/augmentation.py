@@ -386,6 +386,11 @@ class ChannelDropout:
                     drop_channels = np.expand_dims(drop_channels, -1)
 
             np.put_along_axis(x, drop_channels, 0, axis=axis)
+            if np.isclose(np.sum(x), 0):
+                # if all channels are zeros, ignore original phase arrivals
+                for key in metadata.keys():
+                    if key.endswith("_arrival_sample"):
+                        metadata[key] = np.nan
 
         state_dict[self.key[1]] = (x, metadata)
 
