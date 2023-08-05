@@ -401,15 +401,18 @@ class AddGap:
                 Otherwise, a 2-tuple is expected, with the first string indicating the key to
                 read from and the second one the key to write to.
     :type key: str, tuple[str, str]
+    :param check_arrivals_in_gap: If true, set the phase arrivals in the gap to NaN.
+    :type check_arrivals_in_gap: bool
     """
 
-    def __init__(self, axis=-1, key="X"):
+    def __init__(self, axis=-1, key="X", check_arrivals_in_gap=False):
         if isinstance(key, str):
             self.key = (key, key)
         else:
             self.key = key
 
         self.axis = axis
+        self.check_arrivals_in_gap = check_arrivals_in_gap
 
     def __call__(self, state_dict):
         x, metadata = state_dict[self.key[0]]
@@ -436,7 +439,11 @@ class AddGap:
                 gap = np.expand_dims(gap, -1)
 
         np.put_along_axis(x, gap, 0, axis=axis)
-
+        if self.check_arrivals_in_gap:
+            for key in metadata.keys():
+                if key.endswith("_arrival_sample"):
+                    if gap_start <= metadata[key] and metadata[key] < gap_end:
+                        metadata[key] = np.nan
         state_dict[self.key[1]] = (x, metadata)
 
 
