@@ -395,7 +395,12 @@ class ChannelDropout:
                     # if all channels are zeros, ignore original phase arrivals
                     for key in metadata.keys():
                         if key.endswith("_arrival_sample"):
-                            metadata[key] = np.nan
+                            if isinstance(metadata[key], (int, np.integer, float)):
+                                # single window case
+                                metadata[key] = np.nan
+                            else:
+                                # multi-window case
+                                metadata[key] = [np.nan] * len(metadata[key])
 
         state_dict[self.key[1]] = (x, metadata)
 
@@ -460,11 +465,28 @@ class AddGap:
         if self.picks_in_gap_thre is not None:
             for key in metadata.keys():
                 if key.endswith("_arrival_sample"):
-                    if (
-                        min(metadata[key] - gap_start, gap_end - 1 - metadata[key])
-                        >= self.picks_in_gap_thre
-                    ):
-                        metadata[key] = np.nan
+                    if isinstance(metadata[key], (int, np.integer, float)):
+                        # Handle single window case
+                        if (
+                            min(metadata[key] - gap_start, gap_end - 1 - metadata[key])
+                            >= self.picks_in_gap_thre
+                        ):
+                            metadata[key] = np.nan
+                    else:
+                        # Handle multi-window case
+                        for j in range(len(metadata[key])):
+                            if (
+                                min(
+                                    metadata[key][j] - gap_start,
+                                    gap_end - 1 - metadata[key][j],
+                                )
+                                >= self.picks_in_gap_thre
+                            ):
+                                try:
+                                    metadata[key][j] = np.nan
+                                except ValueError:
+                                    metadata[key] = metadata[key].astype(np.float64)
+                                    metadata[key][j] = np.nan
         state_dict[self.key[1]] = (x, metadata)
 
 
