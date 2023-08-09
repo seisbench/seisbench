@@ -1410,6 +1410,60 @@ def test_channel_dropout():
     assert "y" in new_state_dict
 
 
+def test_channel_dropout_with_picks_in_gap():
+    np.random.seed(42)  # With seed 42, the channels 1 and 2 will be dropped
+    # single window
+    dropout = seisbench.generate.ChannelDropout(
+        axis=0, check_picks_in_gap=True
+    )  # Positively defined axis
+    state_dict = {
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {
+                "trace_p_arrival_sample": 500,
+                "trace_s_arrival_sample": 590,
+            },
+        )
+    }
+    state_dict["X"][0][0, :] = 0  # set the first component to zeros
+    assert not np.allclose(state_dict["X"][0], 0)
+    assert not np.isnan(state_dict["X"][1]["trace_p_arrival_sample"])
+    assert not np.isnan(state_dict["X"][1]["trace_s_arrival_sample"])
+
+    dropout(state_dict)
+    # after channel dropping, all traces are zeros now
+    assert np.allclose(state_dict["X"][0], 0)
+    assert np.isnan(state_dict["X"][1]["trace_p_arrival_sample"])
+    assert np.isnan(state_dict["X"][1]["trace_s_arrival_sample"])
+    labeller = ProbabilisticLabeller(dim=-2, noise_column=True)
+    labeller(state_dict)
+    assert np.allclose(state_dict["y"][0][0:2, :], 0)
+
+    # multiple windows
+    dropout = seisbench.generate.ChannelDropout(axis=-2, check_picks_in_gap=True)
+    state_dict = {
+        "X": (
+            10 * np.random.rand(5, 3, 1000),
+            {
+                "trace_p_arrival_sample": np.array([150, 190, 300, 400, 500]),
+                "trace_s_arrival_sample": np.array([160, 250, 350, np.nan, 550]),
+            },
+        )
+    }
+    state_dict["X"][0][:, 0, :] = 0
+    assert not np.isnan(state_dict["X"][1]["trace_p_arrival_sample"][0])
+    assert not np.isnan(state_dict["X"][1]["trace_s_arrival_sample"][0])
+    assert not np.allclose(state_dict["X"][0], 0)
+    dropout(state_dict)
+    assert np.allclose(state_dict["X"][0], 0)
+    for i in range(5):
+        assert np.isnan(state_dict["X"][1]["trace_p_arrival_sample"][i])
+        assert np.isnan(state_dict["X"][1]["trace_s_arrival_sample"][i])
+    labeller = ProbabilisticLabeller(dim=-2, noise_column=True)
+    labeller(state_dict)
+    assert np.allclose(state_dict["y"][0][:, 0:2, :], 0)
+
+
 def test_add_gap():
     np.random.seed(42)
 
@@ -1445,6 +1499,73 @@ def test_add_gap():
     assert (state_dict["X"][0] == new_state_dict["X"][0]).all()
     assert state_dict["X"][1] == new_state_dict["X"][1]
     assert "y" in new_state_dict
+
+
+def test_add_gap_with_picks_in_gap():
+    np.random.seed(42)
+    # single window
+    gap = seisbench.generate.AddGap(axis=-1, picks_in_gap_thre=10)
+    with patch("numpy.random.randint") as randint:
+        randint.side_effect = [400, 600]
+        state_dict = {
+            "X": (
+                10 * np.random.rand(3, 1000),
+                {
+                    "trace_p_arrival_sample": 500,
+                    "trace_s_arrival_sample": 590,
+                },
+            )
+        }
+        assert not np.isnan(state_dict["X"][1]["trace_p_arrival_sample"])
+        assert not np.isnan(state_dict["X"][1]["trace_s_arrival_sample"])
+        gap(state_dict)
+        assert np.isnan(state_dict["X"][1]["trace_p_arrival_sample"])
+        assert not np.isnan(state_dict["X"][1]["trace_s_arrival_sample"])
+
+        labeller = ProbabilisticLabeller(dim=-2, noise_column=True)
+        labeller(state_dict)
+        assert np.allclose(state_dict["y"][0][0, 400:600], 0)
+        assert np.isclose(state_dict["y"][0][1, 590], 1)
+
+        assert state_dict["X"][0].shape == (3, 1000)
+        assert (state_dict["X"][0][:, 400:600] == 0).all()  # Correct part is blinded
+        assert not (
+            state_dict["X"][0][:, :400] == 0
+        ).all()  # Before are non-zero entries
+        assert not (
+            state_dict["X"][0][:, 600:] == 0
+        ).all()  # After are non-zero entries
+
+    # multiple windows
+    gap = seisbench.generate.AddGap(axis=-1, picks_in_gap_thre=10)
+    with patch("numpy.random.randint") as randint:
+        randint.side_effect = [100, 200]
+        state_dict = {
+            "X": (
+                10 * np.random.rand(5, 3, 1000),
+                {
+                    "trace_p_arrival_sample": np.array([150, 190, 300, 400, 500]),
+                    "trace_s_arrival_sample": np.array([160, 250, 350, np.nan, 550]),
+                },
+            )
+        }
+        gap(state_dict)
+        assert np.isnan(state_dict["X"][1]["trace_p_arrival_sample"][0])
+        assert np.isnan(state_dict["X"][1]["trace_s_arrival_sample"][0])
+        labeller = ProbabilisticLabeller(dim=-2, noise_column=True)
+        labeller(state_dict)
+        assert np.allclose(state_dict["y"][0][0, 0:2, :], 0)
+        assert np.isclose(state_dict["y"][0][1, 0, 190], 1)
+        assert np.isclose(state_dict["y"][0][1, 1, 250], 1)
+
+        assert state_dict["X"][0].shape == (5, 3, 1000)
+        assert (state_dict["X"][0][:, :, 100:200] == 0).all()  # Correct part is blinded
+        assert not (
+            state_dict["X"][0][:, :, :100] == 0
+        ).all()  # Before are non-zero entries
+        assert not (
+            state_dict["X"][0][:, :, 200:] == 0
+        ).all()  # After are non-zero entries
 
 
 def test_random_array_rotation_keys():
