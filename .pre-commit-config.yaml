@@ -6,8 +6,9 @@ repos:
     args: ['--maxkb=1000']
   - id: check-toml
   - id: check-json
-  - id: pretty-format-json
-    args: [--autofix]
+# Hook shows incompatibility with ipynb files
+#  - id: pretty-format-json
+#    args: [--autofix]
   - id: end-of-file-fixer
   - id: trailing-whitespace
 - repo: https://github.com/pycqa/isort
