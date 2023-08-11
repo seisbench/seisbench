@@ -81,7 +81,11 @@ class SupervisedLabeller(ABC):
         return sample_dim, channel_dim, width_dim
 
     def _check_labels(self, y, metadata):
-        if self.label_type == "multi_class" and self.label_method == "probabilistic":
+        if (
+            self.label_type == "multi_class"
+            and self.label_method == "probabilistic"
+            and getattr(self, "noise_column", True)
+        ):
             if (y.sum(self.dim) > 1).any():
                 raise ValueError(
                     f"More than one label provided. For multi_class problems, only one label can be provided per input."
@@ -129,6 +133,7 @@ class PickLabeller(SupervisedLabeller, ABC):
 
     def __init__(self, label_columns=None, noise_column=True, **kwargs):
         self.label_columns = label_columns
+        self.noise_column = noise_column
         if label_columns is not None:
             (
                 self.label_columns,
@@ -231,7 +236,7 @@ class ProbabilisticLabeller(PickLabeller):
                 self.label_columns,
                 self.labels,
                 self.label_ids,
-            ) = self._colums_to_dict_and_labels(label_columns)
+            ) = self._colums_to_dict_and_labels(label_columns, self.noise_column)
 
         sample_dim, channel_dim, width_dim = self._get_dimension_order_from_config(
             config, self.ndim
@@ -290,20 +295,24 @@ class ProbabilisticLabeller(PickLabeller):
                     ] = 0  # Set non-present pick probabilities to 0
                     y[j, i, :] = np.maximum(y[j, i, :], label_val)
 
-        y /= np.maximum(
-            1, np.nansum(y, axis=channel_dim, keepdims=True)
-        )  # Ensure total probability mass is at most 1
+        if self.noise_column:
+            y /= np.maximum(
+                1, np.nansum(y, axis=channel_dim, keepdims=True)
+            )  # Ensure total probability mass is at most 1
+            # Construct noise label
+            if self.ndim == 2:
+                y[self.label_ids["Noise"], :] = 1 - np.nansum(y, axis=channel_dim)
+            elif self.ndim == 3:
+                y[:, self.label_ids["Noise"], :] = 1 - np.nansum(y, axis=channel_dim)
 
         # Construct noise label
         if self.ndim == 2:
-            y[self.label_ids["Noise"], :] = 1 - np.nansum(y, axis=channel_dim)
             y = self._swap_dimension_order(
                 y,
                 current_dim="CW",
                 expected_dim=config["dimension_order"].replace("N", ""),
             )
         elif self.ndim == 3:
-            y[:, self.label_ids["Noise"], :] = 1 - np.nansum(y, axis=channel_dim)
             y = self._swap_dimension_order(
                 y, current_dim="NCW", expected_dim=config["dimension_order"]
             )
