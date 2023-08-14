@@ -7,15 +7,15 @@ name = "seisbench"
 dynamic = ["version"]
 description = "The seismological machine learning benchmark collection"
 readme = "README.md"
-license = {text = "GPLv3"}
+license = { text = "GPLv3" }
 requires-python = ">=3.7"
 authors = [
-    {name = "Jack Woolam", email = "jack.woollam@kit.edu"},
-    {name = "Jannes Münchmeyer", email = "munchmej@gfz-potsdam.de"}
+    { name = "Jack Woolam", email = "jack.woollam@kit.edu" },
+    { name = "Jannes Münchmeyer", email = "munchmej@gfz-potsdam.de" },
 ]
 maintainers = [
-    {name = "Jack Woolam", email = "jack.woollam@kit.edu"},
-    {name = "Jannes Münchmeyer", email = "munchmej@gfz-potsdam.de"}
+    { name = "Jack Woolam", email = "jack.woollam@kit.edu" },
+    { name = "Jannes Münchmeyer", email = "munchmej@gfz-potsdam.de" },
 ]
 keywords = ["seismology", "machine learning", "signal processing", "earthquake"]
 classifiers = [
@@ -23,7 +23,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
     "Programming Language :: Python :: 3.7",
     "Operating System :: OS Independent",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)"
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
 ]
 dependencies = [
     "numpy>=1.21.6",
@@ -33,7 +33,8 @@ dependencies = [
     "tqdm>=4.52",
     "torch>=1.10.0",
     "scipy>=1.5",
-    "nest_asyncio>=1.5.3"
+    "nest_asyncio>=1.5.3",
+    "bottleneck>=1.3",
 ]
 
 [tool.setuptools.packages.find]

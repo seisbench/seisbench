@@ -349,15 +349,19 @@ class ChannelDropout:
                 Otherwise, a 2-tuple is expected, with the first string indicating the key to
                 read from and the second one the key to write to.
     :type key: str, tuple[str, str]
+    :param check_picks_in_gap: If true, check whether all channels are zero after channel
+                               dropping and if so, set phase arrivals to NaN.
+    :type check_picks_in_gap: bool
     """
 
-    def __init__(self, axis=-2, key="X"):
+    def __init__(self, axis=-2, key="X", check_picks_in_gap=False):
         if isinstance(key, str):
             self.key = (key, key)
         else:
             self.key = key
 
         self.axis = axis
+        self.check_picks_in_gap = check_picks_in_gap
 
     def __call__(self, state_dict):
         x, metadata = state_dict[self.key[0]]
@@ -386,6 +390,17 @@ class ChannelDropout:
                     drop_channels = np.expand_dims(drop_channels, -1)
 
             np.put_along_axis(x, drop_channels, 0, axis=axis)
+            if self.check_picks_in_gap:
+                if np.allclose(x, 0):
+                    # if all channels are zeros, ignore original phase arrivals
+                    for key in metadata.keys():
+                        if key.endswith("_arrival_sample"):
+                            if isinstance(metadata[key], (int, np.integer, float)):
+                                # single window case
+                                metadata[key] = np.nan
+                            else:
+                                # multi-window case
+                                metadata[key] = [np.nan] * len(metadata[key])
 
         state_dict[self.key[1]] = (x, metadata)
 
@@ -401,15 +416,23 @@ class AddGap:
                 Otherwise, a 2-tuple is expected, with the first string indicating the key to
                 read from and the second one the key to write to.
     :type key: str, tuple[str, str]
+    :param picks_in_gap_threshold: If a pick is within the gap and the distance from the pick to the
+                                   gap border is larger than `picks_in_gap_thre` (unit: sample), this
+                                   pick will be ignored and the corresponding arrival sample in the
+                                   metadata will be set to NaN. If `picks_in_gap_thre` is None, skip
+                                   the check.
+    :type picks_in_gap_threshold: int, None
     """
 
-    def __init__(self, axis=-1, key="X"):
+    def __init__(self, axis=-1, key="X", picks_in_gap_threshold=None):
         if isinstance(key, str):
             self.key = (key, key)
         else:
             self.key = key
 
         self.axis = axis
+
+        self.picks_in_gap_threshold = picks_in_gap_threshold
 
     def __call__(self, state_dict):
         x, metadata = state_dict[self.key[0]]
@@ -436,7 +459,31 @@ class AddGap:
                 gap = np.expand_dims(gap, -1)
 
         np.put_along_axis(x, gap, 0, axis=axis)
-
+        if self.picks_in_gap_threshold is not None:
+            for key in metadata.keys():
+                if key.endswith("_arrival_sample"):
+                    if isinstance(metadata[key], (int, np.integer, float)):
+                        # Handle single window case
+                        if (
+                            min(metadata[key] - gap_start, gap_end - 1 - metadata[key])
+                            >= self.picks_in_gap_threshold
+                        ):
+                            metadata[key] = np.nan
+                    else:
+                        # Handle multi-window case
+                        for j in range(len(metadata[key])):
+                            if (
+                                min(
+                                    metadata[key][j] - gap_start,
+                                    gap_end - 1 - metadata[key][j],
+                                )
+                                >= self.picks_in_gap_threshold
+                            ):
+                                try:
+                                    metadata[key][j] = np.nan
+                                except ValueError:
+                                    metadata[key] = metadata[key].astype(np.float64)
+                                    metadata[key][j] = np.nan
         state_dict[self.key[1]] = (x, metadata)
 
 

@@ -11,6 +11,7 @@ from pathlib import Path
 from queue import PriorityQueue
 from urllib.parse import urljoin
 
+import bottleneck as bn
 import nest_asyncio
 import numpy as np
 import obspy
@@ -23,7 +24,12 @@ from packaging import version
 
 import seisbench
 import seisbench.util as util
-from seisbench.util import log_lifecycle
+from seisbench.util import in_notebook, log_lifecycle
+
+if in_notebook():
+    # Jupyter notebooks have their own asyncio loop and will crash `annotate/classify`
+    # if not patched with nest_asyncio
+    nest_asyncio.apply()
 
 
 def _cache_migration_v0_v3():
@@ -943,7 +949,6 @@ class WaveformModel(SeisBenchModel, ABC):
         self._verify_argdict(kwargs)
 
         if parallelism is None:
-            nest_asyncio.apply()
             call = self._annotate_async(stream, **kwargs)
             return asyncio.run(call)
         else:
@@ -1748,10 +1753,10 @@ class WaveformModel(SeisBenchModel, ABC):
                     warnings.filterwarnings(
                         action="ignore", message="Mean of empty slice"
                     )
-                    preds = np.nanmean(pred_merge, axis=-1)
+                    preds = bn.nanmean(pred_merge, axis=-1)
                 elif stack_method == "max":
                     warnings.filterwarnings(action="ignore", message="All-NaN")
-                    preds = np.nanmax(pred_merge, axis=-1)
+                    preds = bn.nanmax(pred_merge, axis=-1)
                 # Case of stack_method not in avg or max is caught by assert above
 
             if self._grouping.grouping == "channel":
@@ -1858,6 +1863,11 @@ class WaveformModel(SeisBenchModel, ABC):
         finally:
             if train_mode:
                 self.train()
+
+        # Explicit synchronisation can help profiling the stack
+        # if torch.cuda.is_available():
+        #    torch.cuda.synchronize()
+
         preds = self._recursive_torch_to_numpy(preds)
         # Unbatch window predictions
         reshaped_preds = [pred for pred in self._recursive_slice_pred(preds)]
