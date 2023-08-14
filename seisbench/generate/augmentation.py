@@ -453,13 +453,13 @@ class AddGap:
                 Otherwise, a 2-tuple is expected, with the first string indicating the key to
                 read from and the second one the key to write to.
     :type key: str, tuple[str, str]
-    :param meta_picks_in_gap_thre: If it is not None, check whether the picks in the metadata
+    :param metadata_picks_in_gap_threshold: If it is not None, check whether the picks in the metadata
                                    is within the gap. If a pick is within the gap and the
                                    distance from the pick to the gap border is larger than
-                                   `meta_picks_in_gap_thre` (unit: sample), the corresponding
+                                   `metadata_picks_in_gap_threshold` (unit: sample), the corresponding
                                    arrival sample in the metadata will be set to NaN.
                                    If it is None, the metadata will not be modified
-    :type meta_picks_in_gap_thre: int, None
+    :type metadata_picks_in_gap_threshold: int, None
     :param label_keys: Specify the labels to which the gap is applied
     :type label_keys: str, tuple[str,str], None
     :param noise_id: {key of labels containing noise --> index of the noise column}. For example,
@@ -472,7 +472,7 @@ class AddGap:
         self,
         axis=-1,
         key="X",
-        meta_picks_in_gap_thre=None,
+        metadata_picks_in_gap_threshold=None,
         label_keys=None,
         noise_id={"y": -1},
     ):
@@ -497,10 +497,10 @@ class AddGap:
                 self.label_keys.append((key, key))
         self.noise_id = noise_id
 
-        if isinstance(meta_picks_in_gap_thre, int):
-            self.meta_picks_in_gap_thre = meta_picks_in_gap_thre
+        if isinstance(metadata_picks_in_gap_threshold, int):
+            self.metadata_picks_in_gap_threshold = metadata_picks_in_gap_threshold
         else:
-            self.meta_picks_in_gap_thre = None
+            self.metadata_picks_in_gap_threshold = None
 
     def __call__(self, state_dict):
         x, metadata = state_dict[self.key[0]]
@@ -528,14 +528,14 @@ class AddGap:
 
         np.put_along_axis(x, gap, 0, axis=axis)
 
-        if self.meta_picks_in_gap_thre is not None:
+        if self.metadata_picks_in_gap_threshold is not None:
             for key in metadata.keys():
                 if key.endswith("_arrival_sample"):
                     if isinstance(metadata[key], (int, np.integer, float)):
                         # Handle single window case
                         if (
                             min(metadata[key] - gap_start, gap_end - 1 - metadata[key])
-                            >= self.meta_picks_in_gap_thre
+                            >= self.metadata_picks_in_gap_threshold
                         ):
                             metadata[key] = np.nan
                     else:
@@ -546,7 +546,7 @@ class AddGap:
                                     metadata[key][j] - gap_start,
                                     gap_end - 1 - metadata[key][j],
                                 )
-                                >= self.meta_picks_in_gap_thre
+                                >= self.metadata_picks_in_gap_threshold
                             ):
                                 try:
                                     metadata[key][j] = np.nan

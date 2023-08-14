@@ -657,113 +657,112 @@ def test_change_dtype():
     )  # Metadata was copied and not only a pointer was copies
 
 
-def test_probabilistic_pick_labeller():
-    for noise_column in [True, False]:
-        for shape in ["gaussian", "triangle", "box"]:
-            np.random.seed(42)
-            state_dict = {
-                "X": (
-                    10 * np.random.rand(3, 1000),
-                    {
-                        "trace_p_arrival_sample": 500,
-                        "trace_s_arrival_sample": 700,
-                        "trace_g_arrival_sample": np.nan,
-                    },
-                )
-            }
+@pytest.mark.parametrize(
+    "noise_column,shape",
+    [
+        (True, "gaussian"),
+        (True, "triangle"),
+        (True, "box"),
+        (False, "gaussian"),
+        (False, "triangle"),
+        (False, "box"),
+    ],
+)
+def test_probabilistic_pick_labeller(noise_column, shape):
+    np.random.seed(42)
+    state_dict = {
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {
+                "trace_p_arrival_sample": 500,
+                "trace_s_arrival_sample": 700,
+                "trace_g_arrival_sample": np.nan,
+            },
+        )
+    }
 
-            # Assumes standard config['dimension_order'] = 'NCW'
-            # Test label construction for single window, handling NaN values
-            labeller = ProbabilisticLabeller(
-                dim=0, shape=shape, noise_column=noise_column
-            )
-            labeller(state_dict)
+    # Assumes standard config['dimension_order'] = 'NCW'
+    # Test label construction for single window, handling NaN values
+    labeller = ProbabilisticLabeller(dim=0, shape=shape, noise_column=noise_column)
+    labeller(state_dict)
 
-            if noise_column:
-                assert state_dict["y"][0].shape == (4, 1000)
-                assert np.allclose(
-                    np.sum(state_dict["y"][0], axis=0), 1
-                )  # Sum is always 1
-            else:
-                assert state_dict["y"][0].shape == (3, 1000)
-                assert ~np.allclose(
-                    np.sum(state_dict["y"][0], axis=0), 1
-                )  # Sum may not be 1
-            assert np.isclose(
-                np.min(state_dict["y"][0]), 0
-            )  # Minimum is close to 0, in particular noise is never negative
+    if noise_column:
+        assert state_dict["y"][0].shape == (4, 1000)
+        assert np.allclose(np.sum(state_dict["y"][0], axis=0), 1)  # Sum is always 1
+    else:
+        assert state_dict["y"][0].shape == (3, 1000)
+        assert ~np.allclose(np.sum(state_dict["y"][0], axis=0), 1)  # Sum may not be 1
+    assert np.isclose(
+        np.min(state_dict["y"][0]), 0
+    )  # Minimum is close to 0, in particular noise is never negative
 
-            if shape == "box":
-                assert np.array_equiv(state_dict["y"][0][1][490:510], np.ones(20))
-                assert np.array_equiv(state_dict["y"][0][2][690:710], np.ones(20))
-            else:
-                assert np.argmax(state_dict["y"][0], axis=1)[1] == 500
-                assert np.argmax(state_dict["y"][0], axis=1)[2] == 700
-            assert (
-                state_dict["y"][0][0] == 0
-            ).all()  # Check that NaN picks are interpreted as not present
+    if shape == "box":
+        assert np.array_equiv(state_dict["y"][0][1][490:510], np.ones(20))
+        assert np.array_equiv(state_dict["y"][0][2][690:710], np.ones(20))
+    else:
+        assert np.argmax(state_dict["y"][0], axis=1)[1] == 500
+        assert np.argmax(state_dict["y"][0], axis=1)[2] == 700
+    assert (
+        state_dict["y"][0][0] == 0
+    ).all()  # Check that NaN picks are interpreted as not present
 
-            # Fails when multi_class specified and channel dim sum > 1
-            with pytest.raises(ValueError):
-                labeller = ProbabilisticLabeller(dim=1, shape=shape)
-                labeller(state_dict)
+    # Fails when multi_class specified and channel dim sum > 1
+    with pytest.raises(ValueError):
+        labeller = ProbabilisticLabeller(dim=1, shape=shape)
+        labeller(state_dict)
 
-            # Test label construction for multiple windows
-            state_dict = {
-                "X": (
-                    10 * np.random.rand(5, 3, 1000),
-                    {
-                        "trace_p_arrival_sample": np.array([500] * 5),
-                        "trace_s_arrival_sample": np.array([700] * 5),
-                        "trace_g_arrival_sample": np.array(
-                            [500, 500, 200, np.nan, 500]
-                        ),
-                    },
-                )
-            }
-            labeller = ProbabilisticLabeller(
-                dim=1, shape=shape, noise_column=noise_column
-            )
-            labeller(state_dict)
+    # Test label construction for multiple windows
+    state_dict = {
+        "X": (
+            10 * np.random.rand(5, 3, 1000),
+            {
+                "trace_p_arrival_sample": np.array([500] * 5),
+                "trace_s_arrival_sample": np.array([700] * 5),
+                "trace_g_arrival_sample": np.array([500, 500, 200, np.nan, 500]),
+            },
+        )
+    }
+    labeller = ProbabilisticLabeller(dim=1, shape=shape, noise_column=noise_column)
+    labeller(state_dict)
 
-            if noise_column:
-                assert state_dict["y"][0].shape == (5, 4, 1000)
-            else:
-                assert state_dict["y"][0].shape == (5, 3, 1000)
-            if shape == "box":
-                assert np.array_equiv(state_dict["y"][0][3, 1, 490:510], np.ones(20))
-                assert np.array_equiv(state_dict["y"][0][3, 2, 690:710], np.ones(20))
-                assert np.array_equiv(
-                    state_dict["y"][0][2, 0, 190:210], np.ones(20)
-                )  # Entry with pick
-            else:
-                assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[1] == 500
-                assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[2] == 700
-                assert (
-                    np.argmax(state_dict["y"][0][2, :, :], axis=-1)[0] == 200
-                )  # Entry with pick
-            assert (state_dict["y"][0][3, 0, :] == 0).all()
+    if noise_column:
+        assert state_dict["y"][0].shape == (5, 4, 1000)
+    else:
+        assert state_dict["y"][0].shape == (5, 3, 1000)
+    if shape == "box":
+        assert np.array_equiv(state_dict["y"][0][3, 1, 490:510], np.ones(20))
+        assert np.array_equiv(state_dict["y"][0][3, 2, 690:710], np.ones(20))
+        assert np.array_equiv(
+            state_dict["y"][0][2, 0, 190:210], np.ones(20)
+        )  # Entry with pick
+    else:
+        assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[1] == 500
+        assert np.argmax(state_dict["y"][0][3, :, :], axis=-1)[2] == 700
+        assert (
+            np.argmax(state_dict["y"][0][2, :, :], axis=-1)[0] == 200
+        )  # Entry with pick
+    assert (state_dict["y"][0][3, 0, :] == 0).all()
 
-            # Fails if single sample provided for multiple windows
-            state_dict = {
-                "X": (
-                    10 * np.random.rand(5, 3, 1000),
-                    {
-                        "trace_p_arrival_sample": 500,
-                        "trace_s_arrival_sample": 700,
-                    },
-                )
-            }
-            with pytest.raises(ValueError):
-                labeller = ProbabilisticLabeller(dim=1, shape=shape)
-                labeller(state_dict)
+    # Fails if single sample provided for multiple windows
+    state_dict = {
+        "X": (
+            10 * np.random.rand(5, 3, 1000),
+            {
+                "trace_p_arrival_sample": 500,
+                "trace_s_arrival_sample": 700,
+            },
+        )
+    }
+    with pytest.raises(ValueError):
+        labeller = ProbabilisticLabeller(dim=1, shape=shape)
+        labeller(state_dict)
 
-            state_dict["X"] = np.random.rand(10, 5, 3, 1000)
+    state_dict["X"] = np.random.rand(10, 5, 3, 1000)
 
-            # Fails if non-compatible input data dimensions are provided
-            with pytest.raises(ValueError):
-                labeller = ProbabilisticLabeller(dim=1, shape=shape)
-                labeller(state_dict)
+    # Fails if non-compatible input data dimensions are provided
+    with pytest.raises(ValueError):
+        labeller = ProbabilisticLabeller(dim=1, shape=shape)
+        labeller(state_dict)
 
 
 def test_step_labeller():
@@ -1440,7 +1439,7 @@ def test_channel_dropout_with_picks_in_gap():
     assert np.allclose(state_dict["y"][0][0:2, :], 0)
 
     # multiple windows
-    dropout = seisbench.generate.ChannelDropout(axis=-2, check_picks_in_gap=True)
+    dropout = seisbench.generate.ChannelDropout(axis=-2, check_meta_picks_in_gap=True)
     state_dict = {
         "X": (
             10 * np.random.rand(5, 3, 1000),
@@ -1574,7 +1573,7 @@ def test_add_gap():
 def test_add_gap_with_picks_in_gap():
     np.random.seed(42)
     # single window
-    gap = seisbench.generate.AddGap(axis=-1, meta_picks_in_gap_thre=10)
+    gap = seisbench.generate.AddGap(axis=-1, metadata_picks_in_gap_threshold=10)
     with patch("numpy.random.randint") as randint:
         randint.side_effect = [400, 600]
         state_dict = {
@@ -1607,7 +1606,7 @@ def test_add_gap_with_picks_in_gap():
         ).all()  # After are non-zero entries
 
     # multiple windows
-    gap = seisbench.generate.AddGap(axis=-1, meta_picks_in_gap_thre=10)
+    gap = seisbench.generate.AddGap(axis=-1, metadata_picks_in_gap_threshold=10)
     with patch("numpy.random.randint") as randint:
         randint.side_effect = [100, 200]
         state_dict = {
@@ -1641,7 +1640,7 @@ def test_add_gap_with_picks_in_gap():
 def test_add_gap_to_waveform_and_labels():
     np.random.seed(42)
     gap = seisbench.generate.AddGap(
-        axis=-1, label_keys=["y", "detections"], meta_picks_in_gap_thre=None
+        axis=-1, label_keys=["y", "detections"], metadata_picks_in_gap_threshold=None
     )  # Negatively defined axis
     with patch("numpy.random.randint") as randint:
         randint.side_effect = [400, 600]
@@ -1702,7 +1701,7 @@ def test_add_gap_to_waveform_and_labels():
 
     # multiple windows
     gap = seisbench.generate.AddGap(
-        axis=-1, label_keys=["y", "detections"], meta_picks_in_gap_thre=5
+        axis=-1, label_keys=["y", "detections"], metadata_picks_in_gap_threshold=5
     )
     with patch("numpy.random.randint") as randint:
         randint.side_effect = [100, 200]
