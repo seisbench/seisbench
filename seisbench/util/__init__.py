@@ -1,4 +1,4 @@
-from .annotations import Detection, Pick
+from .annotations import ClassifyOutput, Detection, DetectionList, Pick, PickList
 from .auxiliary import in_notebook
 from .decorators import log_lifecycle
 from .file import (
