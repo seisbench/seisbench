@@ -29,7 +29,12 @@ class PhaseTEAM(WaveformModel):
         norm="std",
         **kwargs,
     ):
-        citation = "TBD"
+        citation = (
+            "Münchmeyer, J., Saul, J. & Tilmann, F. (2023) "
+            "Learning the deep and the shallow: Deep learning "
+            "based depth phase picking and earthquake depth estimation."
+            "Seismological Research Letters (in revision)."
+        )
 
         super().__init__(
             citation=citation,

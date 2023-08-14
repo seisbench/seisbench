@@ -681,6 +681,13 @@ class DepthPhaseNet(PhaseNet, DepthPhaseModel):
         )
         DepthPhaseModel.__init__(self, **depth_phase_args)
 
+        self._citation = (
+            "Münchmeyer, J., Saul, J. & Tilmann, F. (2023) "
+            "Learning the deep and the shallow: Deep learning "
+            "based depth phase picking and earthquake depth estimation."
+            "Seismological Research Letters (in revision)."
+        )
+
     def forward(self, x: torch.tensor, logits=False) -> torch.tensor:
         y = super().forward(x, logits=True)
         if logits:
@@ -781,6 +788,13 @@ class DepthPhaseTEAM(PhaseTEAM, DepthPhaseModel):
             **kwargs,
         )
         DepthPhaseModel.__init__(self, **depth_phase_args)
+
+        self._citation = (
+            "Münchmeyer, J., Saul, J. & Tilmann, F. (2023) "
+            "Learning the deep and the shallow: Deep learning "
+            "based depth phase picking and earthquake depth estimation."
+            "Seismological Research Letters (in revision)."
+        )
 
     def annotate(
         self,
