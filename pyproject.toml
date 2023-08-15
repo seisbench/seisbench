@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "The seismological machine learning benchmark collection"
 readme = "README.md"
 license = { text = "GPLv3" }
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 authors = [
     { name = "Jack Woolam", email = "jack.woollam@kit.edu" },
     { name = "Jannes Münchmeyer", email = "munchmej@gfz-potsdam.de" },
@@ -21,7 +21,7 @@ keywords = ["seismology", "machine learning", "signal processing", "earthquake"]
 classifiers = [
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering",
-    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.9",
     "Operating System :: OS Independent",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
 ]
