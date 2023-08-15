@@ -109,6 +109,9 @@ New minor and major versions always result from the main branch.
 In contrast, maintenance branches only contain bugfixes and do **not** contain new features.
 Bugfixes are merged from the maintenance branches into the main branch.
 
+SeisBench follows the [numpy schedule](https://numpy.org/neps/nep-0029-deprecation_policy.html) for supported python versions.
+This does not necessarily mean that new SeisBench versions will not run on older python versions, but that we will not ship wheels for these versions.
+
 ## Submitting a pull request
 
 You want to contribute to SeisBench? That's great news. Here's a quick guide.
