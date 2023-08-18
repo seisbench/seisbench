@@ -1413,7 +1413,7 @@ def test_channel_dropout_with_picks_in_gap():
     np.random.seed(42)  # With seed 42, the channels 1 and 2 will be dropped
     # single window
     dropout = seisbench.generate.ChannelDropout(
-        axis=0, check_picks_in_gap=True
+        axis=0, check_meta_picks_in_gap=True
     )  # Positively defined axis
     state_dict = {
         "X": (
@@ -1439,7 +1439,7 @@ def test_channel_dropout_with_picks_in_gap():
     assert np.allclose(state_dict["y"][0][0:2, :], 0)
 
     # multiple windows
-    dropout = seisbench.generate.ChannelDropout(axis=-2, check_picks_in_gap=True)
+    dropout = seisbench.generate.ChannelDropout(axis=-2, check_meta_picks_in_gap=True)
     state_dict = {
         "X": (
             10 * np.random.rand(5, 3, 1000),
@@ -1461,6 +1461,76 @@ def test_channel_dropout_with_picks_in_gap():
     labeller = ProbabilisticLabeller(dim=-2, noise_column=True)
     labeller(state_dict)
     assert np.allclose(state_dict["y"][0][:, 0:2, :], 0)
+
+
+def test_channel_dropout_modify_labels_directly():
+    # modify labels directly
+    np.random.seed(42)  # With seed 42, the channels 1 and 2 will be dropped
+    # single window
+    dropout = seisbench.generate.ChannelDropout(
+        axis=0, label_keys=["y", "detections"], check_meta_picks_in_gap=False
+    )  # Positively defined axis
+    state_dict = {
+        "X": (
+            10 * np.random.rand(3, 1000),
+            {
+                "trace_p_arrival_sample": 500,
+                "trace_s_arrival_sample": 590,
+            },
+        )
+    }
+    state_dict["X"][0][0, :] = 0  # set the first component to zeros
+    assert not np.allclose(state_dict["X"][0], 0)
+
+    labeller = ProbabilisticLabeller(dim=-2, noise_column=True)
+    detection_labeller = DetectionLabeller(
+        p_phases=["trace_p_arrival_sample"],
+        s_phases=["trace_s_arrival_sample"],
+        key=("X", "detections"),
+        factor=1.4,
+    )
+    labeller(state_dict)
+    detection_labeller(state_dict)
+    dropout(state_dict)
+
+    assert state_dict["y"][0].shape == (3, 1000)
+    assert state_dict["detections"][0].shape == (1, 1000)
+    assert np.allclose(state_dict["X"][0], 0)  # waveform
+    assert np.allclose(state_dict["y"][0][..., 0:-1, :], 0)  # p and s, 0
+    assert np.allclose(state_dict["y"][0][..., -1, :], 1)  # noise, 1
+    assert np.allclose(state_dict["detections"][0], 0)  # detections, 0
+
+    # multiple windows
+    dropout = seisbench.generate.ChannelDropout(
+        axis=-2, label_keys=["y", "detections"], check_meta_picks_in_gap=False
+    )
+    state_dict = {
+        "X": (
+            10 * np.random.rand(5, 3, 1000),
+            {
+                "trace_p_arrival_sample": np.array([150, 190, 300, 400, 500]),
+                "trace_s_arrival_sample": np.array([180, 250, 350, np.nan, 550]),
+            },
+        )
+    }
+    state_dict["X"][0][:, 0, :] = 0
+    assert not np.allclose(state_dict["X"][0], 0)
+    labeller = ProbabilisticLabeller(dim=-2, noise_column=True)
+    detection_labeller = DetectionLabeller(
+        p_phases=["trace_p_arrival_sample"],
+        s_phases=["trace_s_arrival_sample"],
+        key=("X", "detections"),
+        factor=1.4,
+    )
+    labeller(state_dict)
+    detection_labeller(state_dict)
+    dropout(state_dict)
+
+    assert state_dict["y"][0].shape == (5, 3, 1000)
+    assert state_dict["detections"][0].shape == (5, 1, 1000)
+    assert np.allclose(state_dict["y"][0][..., 0:-1, :], 0)  # p and s, 0
+    assert np.allclose(state_dict["y"][0][..., -1, :], 1)  # noise, 1
+    assert np.allclose(state_dict["detections"][0], 0)  # detections 0
 
 
 def test_add_gap():
@@ -1503,7 +1573,7 @@ def test_add_gap():
 def test_add_gap_with_picks_in_gap():
     np.random.seed(42)
     # single window
-    gap = seisbench.generate.AddGap(axis=-1, picks_in_gap_threshold=10)
+    gap = seisbench.generate.AddGap(axis=-1, metadata_picks_in_gap_threshold=10)
     with patch("numpy.random.randint") as randint:
         randint.side_effect = [400, 600]
         state_dict = {
@@ -1536,7 +1606,7 @@ def test_add_gap_with_picks_in_gap():
         ).all()  # After are non-zero entries
 
     # multiple windows
-    gap = seisbench.generate.AddGap(axis=-1, picks_in_gap_threshold=10)
+    gap = seisbench.generate.AddGap(axis=-1, metadata_picks_in_gap_threshold=10)
     with patch("numpy.random.randint") as randint:
         randint.side_effect = [100, 200]
         state_dict = {
@@ -1565,6 +1635,130 @@ def test_add_gap_with_picks_in_gap():
         assert not (
             state_dict["X"][0][:, :, 200:] == 0
         ).all()  # After are non-zero entries
+
+
+def test_add_gap_to_waveform_and_labels():
+    np.random.seed(42)
+    gap = seisbench.generate.AddGap(
+        axis=-1, label_keys=["y", "detections"], metadata_picks_in_gap_threshold=None
+    )  # Negatively defined axis
+    with patch("numpy.random.randint") as randint:
+        randint.side_effect = [400, 600]
+        state_dict = {
+            "X": (
+                10 * np.random.rand(3, 1000),
+                {
+                    "trace_p_arrival_sample": 399,
+                    "trace_s_arrival_sample": 600,
+                },
+            )
+        }
+        assert not np.isnan(state_dict["X"][1]["trace_p_arrival_sample"])
+        assert not np.isnan(state_dict["X"][1]["trace_s_arrival_sample"])
+
+        labeller = ProbabilisticLabeller(dim=-2, noise_column=True)
+        detection_labeller = DetectionLabeller(
+            p_phases=["trace_p_arrival_sample"],
+            s_phases=["trace_s_arrival_sample"],
+            key=("X", "detections"),
+            factor=1.4,
+        )
+        labeller(state_dict)
+        detection_labeller(state_dict)
+
+        gap(state_dict)
+
+        assert np.allclose(np.sum(state_dict["y"][0], axis=0, keepdims=True), 1)
+
+        # check shapes
+        assert state_dict["X"][0].shape == (3, 1000)
+        assert state_dict["y"][0].shape == (3, 1000)
+        assert state_dict["detections"][0].shape == (1, 1000)
+
+        # check waveform samples
+        assert (state_dict["X"][0][:, 400:600] == 0).all()  # Correct part is blinded
+        assert not (
+            state_dict["X"][0][:, :400] == 0
+        ).all()  # Before are non-zero entries
+        assert not (
+            state_dict["X"][0][:, 600:] == 0
+        ).all()  # After are non-zero entries
+
+        # check p/s/noise labels
+        assert np.allclose(state_dict["y"][0][0, 400:600], 0)  # p within the gap
+        assert np.allclose(state_dict["y"][0][1, 400:600], 0)  # s within the gap
+        assert np.allclose(state_dict["y"][0][2, 400:600], 1)  # noise within the gap
+
+        assert np.isclose(state_dict["y"][0][0, 399], 1)  # p
+        assert np.isclose(state_dict["y"][0][1, 600], 1)  # s
+
+        # check detection label
+        assert (state_dict["detections"][0][:, 400:600] == 0).all()
+        assert (
+            state_dict["detections"][0][:, 600 : int(600 + (600 - 399) * 1.4)] == 1
+        ).all()
+        assert state_dict["detections"][0][:, 399] == 1
+
+    # multiple windows
+    gap = seisbench.generate.AddGap(
+        axis=-1, label_keys=["y", "detections"], metadata_picks_in_gap_threshold=5
+    )
+    with patch("numpy.random.randint") as randint:
+        randint.side_effect = [100, 200]
+        state_dict = {
+            "X": (
+                10 * np.random.rand(5, 3, 1000),
+                {
+                    "trace_p_arrival_sample": np.array([110, 150, 50, 300, 500]),
+                    "trace_s_arrival_sample": np.array([210, 300, 190, 400, 550]),
+                },
+            )
+        }
+
+        labeller = ProbabilisticLabeller(dim=-2, noise_column=True, sigma=10)
+        detection_labeller = DetectionLabeller(
+            p_phases=["trace_p_arrival_sample"],
+            s_phases=["trace_s_arrival_sample"],
+            key=("X", "detections"),
+            factor=1.4,
+        )
+        labeller(state_dict)
+        detection_labeller(state_dict)
+        gap(state_dict)
+
+        assert np.isnan(state_dict["X"][1]["trace_p_arrival_sample"][0])
+        assert np.isnan(state_dict["X"][1]["trace_p_arrival_sample"][1])
+        assert np.isnan(state_dict["X"][1]["trace_s_arrival_sample"][2])
+
+        assert np.isclose(state_dict["y"][0][1, 0, 150], 0)
+        assert np.isclose(state_dict["y"][0][1, 1, 300], 1)
+
+        # check shapes
+        assert state_dict["X"][0].shape == (5, 3, 1000)
+        assert state_dict["y"][0].shape == (5, 3, 1000)
+
+        # check waveform samples
+        assert (state_dict["X"][0][..., 100:200] == 0).all()  # Correct part is blinded
+        assert not (
+            state_dict["X"][0][:, :, :100] == 0
+        ).all()  # Before are non-zero entries
+        assert not (
+            state_dict["X"][0][:, :, 200:] == 0
+        ).all()  # After are non-zero entries
+
+        # check labels
+        assert (state_dict["y"][0][:, :-1, 100:200] == 0).all()  # p and s labels
+        assert (state_dict["y"][0][:, -1, 100:200] == 1).all()  # noise
+        assert np.allclose(np.sum(state_dict["y"][0], axis=1, keepdims=True), 1)
+
+        assert (state_dict["detections"][0][:, :, 100:200] == 0).all()
+        assert (
+            state_dict["detections"][0][0, :, 200 : int(210 + (210 - 110) * 1.4)] == 1
+        ).all()
+        assert (state_dict["detections"][0][2, :, 50:100] == 1).all()
+        assert (
+            state_dict["detections"][0][2, :, 200 : int(190 + (190 - 50) * 1.4)] == 1
+        ).all()
 
 
 def test_random_array_rotation_keys():

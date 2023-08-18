@@ -349,19 +349,46 @@ class ChannelDropout:
                 Otherwise, a 2-tuple is expected, with the first string indicating the key to
                 read from and the second one the key to write to.
     :type key: str, tuple[str, str]
-    :param check_picks_in_gap: If true, check whether all channels are zero after channel
-                               dropping and if so, set phase arrivals to NaN.
-    :type check_picks_in_gap: bool
+    :param check_meta_picks_in_gap: If true, check whether all channels are zero after channel
+                                    dropping and if so, set phase arrivals to NaN.
+    :type check_meta_picks_in_gap: bool
+    :param label_keys: Specify the labels to which the gap is applied
+    :type label_keys: str, tuple[str,str], None
+    :param noise_id: {key of labels containing noise --> index of the noise column}. For example,
+                     `noise_id={"y", -1}` indicate that `state_dict["y"][0][..., -1, ...]` is the
+                     noise label.
+    :type noise_id: dict
     """
 
-    def __init__(self, axis=-2, key="X", check_picks_in_gap=False):
+    def __init__(
+        self,
+        axis=-2,
+        key="X",
+        check_meta_picks_in_gap=False,
+        label_keys=None,
+        noise_id={"y": -1},
+    ):
         if isinstance(key, str):
             self.key = (key, key)
         else:
             self.key = key
 
+        if not isinstance(label_keys, list):
+            if label_keys is None:
+                label_keys = []
+            else:
+                label_keys = [label_keys]
+
+        self.label_keys = []
+        for key in label_keys:
+            if isinstance(key, tuple):
+                self.label_keys.append(key)
+            else:
+                self.label_keys.append((key, key))
+        self.noise_id = noise_id
+
         self.axis = axis
-        self.check_picks_in_gap = check_picks_in_gap
+        self.check_meta_picks_in_gap = check_meta_picks_in_gap
 
     def __call__(self, state_dict):
         x, metadata = state_dict[self.key[0]]
@@ -390,7 +417,7 @@ class ChannelDropout:
                     drop_channels = np.expand_dims(drop_channels, -1)
 
             np.put_along_axis(x, drop_channels, 0, axis=axis)
-            if self.check_picks_in_gap:
+            if self.check_meta_picks_in_gap:
                 if np.allclose(x, 0):
                     # if all channels are zeros, ignore original phase arrivals
                     for key in metadata.keys():
@@ -401,6 +428,16 @@ class ChannelDropout:
                             else:
                                 # multi-window case
                                 metadata[key] = [np.nan] * len(metadata[key])
+            if self.label_keys:
+                if np.allclose(x, 0):
+                    for label_key in self.label_keys:
+                        y, _ = state_dict[label_key[0]]
+                        if label_key[0] != label_key[1]:
+                            y = y.copy()
+                        y[...] = 0
+                        if label_key[0] in self.noise_id:
+                            y[..., self.noise_id[label_key[0]], :] = 1
+                        state_dict[label_key[1]] = (y, copy.deepcopy(metadata))
 
         state_dict[self.key[1]] = (x, metadata)
 
@@ -416,15 +453,29 @@ class AddGap:
                 Otherwise, a 2-tuple is expected, with the first string indicating the key to
                 read from and the second one the key to write to.
     :type key: str, tuple[str, str]
-    :param picks_in_gap_threshold: If a pick is within the gap and the distance from the pick to the
-                                   gap border is larger than `picks_in_gap_thre` (unit: sample), this
-                                   pick will be ignored and the corresponding arrival sample in the
-                                   metadata will be set to NaN. If `picks_in_gap_thre` is None, skip
-                                   the check.
-    :type picks_in_gap_threshold: int, None
+    :param metadata_picks_in_gap_threshold: If it is not None, check whether the picks in the metadata
+                                   is within the gap. If a pick is within the gap and the
+                                   distance from the pick to the gap border is larger than
+                                   `metadata_picks_in_gap_threshold` (unit: sample), the corresponding
+                                   arrival sample in the metadata will be set to NaN.
+                                   If it is None, the metadata will not be modified
+    :type metadata_picks_in_gap_threshold: int, None
+    :param label_keys: Specify the labels to which the gap is applied
+    :type label_keys: str, tuple[str,str], None
+    :param noise_id: {key of labels containing noise --> index of the noise column}. For example,
+                     `noise_id={"y", -1}` indicate that `state_dict["y"][0][..., -1, ...]` is the
+                     noise label.
+    :type noise_id: dict
     """
 
-    def __init__(self, axis=-1, key="X", picks_in_gap_threshold=None):
+    def __init__(
+        self,
+        axis=-1,
+        key="X",
+        metadata_picks_in_gap_threshold=None,
+        label_keys=None,
+        noise_id={"y": -1},
+    ):
         if isinstance(key, str):
             self.key = (key, key)
         else:
@@ -432,7 +483,24 @@ class AddGap:
 
         self.axis = axis
 
-        self.picks_in_gap_threshold = picks_in_gap_threshold
+        if not isinstance(label_keys, list):
+            if label_keys is None:
+                label_keys = []
+            else:
+                label_keys = [label_keys]
+
+        self.label_keys = []
+        for key in label_keys:
+            if isinstance(key, tuple):
+                self.label_keys.append(key)
+            else:
+                self.label_keys.append((key, key))
+        self.noise_id = noise_id
+
+        if isinstance(metadata_picks_in_gap_threshold, int):
+            self.metadata_picks_in_gap_threshold = metadata_picks_in_gap_threshold
+        else:
+            self.metadata_picks_in_gap_threshold = None
 
     def __call__(self, state_dict):
         x, metadata = state_dict[self.key[0]]
@@ -459,14 +527,15 @@ class AddGap:
                 gap = np.expand_dims(gap, -1)
 
         np.put_along_axis(x, gap, 0, axis=axis)
-        if self.picks_in_gap_threshold is not None:
+
+        if self.metadata_picks_in_gap_threshold is not None:
             for key in metadata.keys():
                 if key.endswith("_arrival_sample"):
                     if isinstance(metadata[key], (int, np.integer, float)):
                         # Handle single window case
                         if (
                             min(metadata[key] - gap_start, gap_end - 1 - metadata[key])
-                            >= self.picks_in_gap_threshold
+                            >= self.metadata_picks_in_gap_threshold
                         ):
                             metadata[key] = np.nan
                     else:
@@ -477,7 +546,7 @@ class AddGap:
                                     metadata[key][j] - gap_start,
                                     gap_end - 1 - metadata[key][j],
                                 )
-                                >= self.picks_in_gap_threshold
+                                >= self.metadata_picks_in_gap_threshold
                             ):
                                 try:
                                     metadata[key][j] = np.nan
@@ -485,6 +554,16 @@ class AddGap:
                                     metadata[key] = metadata[key].astype(np.float64)
                                     metadata[key][j] = np.nan
         state_dict[self.key[1]] = (x, metadata)
+
+        for label_key in self.label_keys:
+            y, _ = state_dict[label_key[0]]
+            if label_key[0] != label_key[1]:
+                y = y.copy()
+            np.put_along_axis(y, gap, 0, axis=axis)
+            if label_key[0] in self.noise_id:
+                y[..., self.noise_id[label_key[0]], gap] = 1
+
+            state_dict[label_key[1]] = (y, copy.deepcopy(metadata))
 
 
 class RandomArrayRotation:
