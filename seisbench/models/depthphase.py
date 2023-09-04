@@ -151,11 +151,8 @@ class DepthPhaseModel:
             raise ValueError(f"Could not parse trace id '{trace_id}'")
 
     def _line_search_depth(
-        self,
-        annotations: obspy.Stream,
-        distances: dict[str, float],
-        probability_curves: bool,
-    ) -> Union[float, tuple[float, np.ndarray, np.ndarray]]:
+        self, annotations: obspy.Stream, distances: dict[str, float], caller_name: str
+    ) -> sbu.ClassifyOutput:
         annotations = annotations.slice(
             starttime=UTCDateTime(0)
         )  # Make sure sample 0 is at the P arrival
@@ -167,11 +164,16 @@ class DepthPhaseModel:
                     station_annotations, distances[station]
                 )
             )
+
         if len(probabilities) == 0:
-            if probability_curves:
-                return np.nan, self.depth_levels, np.nan * self.depth_levels
-            else:
-                return np.nan
+            sbu.ClassifyOutput(
+                caller_name,
+                depth=np.nana,
+                depth_levels=self.depth_levels,
+                probabilities=np.nan * self.depth_levels,
+                avg_probabilities=np.nan * self.depth_levels,
+            )
+
         probabilities = np.stack(probabilities, axis=0)
 
         avg_probabilities = scipy.stats.mstats.gmean(
@@ -182,10 +184,13 @@ class DepthPhaseModel:
 
         depth = self._qc_prediction(avg_probabilities, depth)
 
-        if probability_curves:
-            return depth, self.depth_levels, probabilities
-        else:
-            return depth
+        return sbu.ClassifyOutput(
+            caller_name,
+            depth=depth,
+            depth_levels=self.depth_levels,
+            probabilities=probabilities,
+            avg_probabilities=avg_probabilities,
+        )
 
     def _qc_prediction(self, prob: np.ndarray, depth: float) -> float:
         normed_prob = self._norm_label(prob, eps=1e-12)
@@ -499,8 +504,7 @@ class DepthFinder:
         lon: float,
         depth: float,
         origin_time: UTCDateTime,
-        details: bool = False,
-    ) -> float:
+    ) -> sbu.ClassifyOutput:
         """
         Get the depth of an event based on its preliminary latitude, longitude, depth and origin time.
         A depth estimate needs to be input, as it is required to predict preliminary P arrivals.
@@ -510,9 +514,6 @@ class DepthFinder:
         :param lon: Longitude of the event
         :param depth: Preliminary depth of the event
         :param origin_time: Preliminary origin time of the event
-        :param details: If true, returns depth, depth levels for search, depth probabilities for all stations,
-                        refined P picks, P picks from predicted travel times distances to the stations and the
-                        waveform stream.
         """
         stations = self._get_stations(origin_time)
 
@@ -529,22 +530,19 @@ class DepthFinder:
         p_picks = self._repick_dl(p_picks_tt, stream)
 
         seisbench.logger.debug("Calculating depth")
-        depth, depth_levels, probabilities = self.depth_model.classify(
-            stream, p_picks, distances, probability_curves=True
-        )
+        classify_outputs = self.depth_model.classify(stream, p_picks, distances)
 
-        if details:
-            return (
-                depth,
-                depth_levels,
-                probabilities,
-                p_picks,
-                p_picks_tt,
-                distances,
-                stream,
-            )
-        else:
-            return depth
+        return sbu.ClassifyOutput(
+            self.__class__.__name__,
+            depth=classify_outputs.depth,
+            depth_levels=classify_outputs.depth_levels,
+            probabilities=classify_outputs.probabilities,
+            avg_probabilities=classify_outputs.avg_probabilities,
+            p_picks=p_picks,
+            p_picks_tt=p_picks_tt,
+            distances=distances,
+            stream=stream,
+        )
 
     def _get_picks_tt(
         self, origin_time: UTCDateTime, depth: float, distances: dict[str, float]
@@ -733,9 +731,8 @@ class DepthPhaseNet(PhaseNet, DepthPhaseModel):
         distances: Optional[dict[str, float]] = None,
         inventory: Optional[obspy.Inventory] = None,
         epicenter: Optional[tuple[float, float]] = None,
-        probability_curves: bool = False,
         **kwargs,
-    ) -> Union[float, tuple[float, np.ndarray, np.ndarray]]:
+    ) -> sbu.ClassifyOutput:
         """
         Calculate depth of an event using depth phase picking and a line search over the depth axis.
         Can only handle one event at a time.
@@ -748,7 +745,6 @@ class DepthPhaseNet(PhaseNet, DepthPhaseModel):
         :param distances: Dictionary of epicentral distances for the stations in degrees
         :param inventory: Inventory for the stations
         :param epicenter: (latitude, longitude) of the event epicenter
-        :param probability_curves: If true, returns depth_levels and probability curves/otherwise only the depth
         """
         p_picks, distances = self._prepare_classify_args(
             p_picks, distances, inventory, epicenter
@@ -756,11 +752,7 @@ class DepthPhaseNet(PhaseNet, DepthPhaseModel):
 
         annotations = self.annotate(stream, p_picks, **kwargs)
 
-        return self._line_search_depth(
-            annotations,
-            distances,
-            probability_curves,
-        )
+        return self._line_search_depth(annotations, distances, self.name)
 
 
 class DepthPhaseTEAM(PhaseTEAM, DepthPhaseModel):
@@ -834,9 +826,8 @@ class DepthPhaseTEAM(PhaseTEAM, DepthPhaseModel):
         distances: Optional[dict[str, float]] = None,
         inventory: Optional[obspy.Inventory] = None,
         epicenter: Optional[tuple[float, float]] = None,
-        probability_curves: bool = False,
         **kwargs,
-    ) -> Union[float, tuple[float, np.ndarray, np.ndarray]]:
+    ) -> sbu.ClassifyOutput:
         """
         Calculate depth of an event using depth phase picking and a line search over the depth axis.
         Can only handle one event at a time.
@@ -849,7 +840,6 @@ class DepthPhaseTEAM(PhaseTEAM, DepthPhaseModel):
         :param distances: Dictionary of epicentral distances for the stations in degrees
         :param inventory: Inventory for the stations
         :param epicenter: (latitude, longitude) of the event epicenter
-        :param probability_curves: If true, returns depth_levels and probability curves/otherwise only the depth
         """
         p_picks, distances = self._prepare_classify_args(
             p_picks, distances, inventory, epicenter
@@ -857,8 +847,4 @@ class DepthPhaseTEAM(PhaseTEAM, DepthPhaseModel):
 
         annotations = self.annotate(stream, p_picks, **kwargs)
 
-        return self._line_search_depth(
-            annotations,
-            distances,
-            probability_curves,
-        )
+        return self._line_search_depth(annotations, distances, self.name)
