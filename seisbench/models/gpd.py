@@ -2,6 +2,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+import seisbench.util as sbu
+
 from .base import WaveformModel
 
 
@@ -110,7 +112,7 @@ class GPD(WaveformModel):
         # Add a demean step to the preprocessing
         return window - np.mean(window, axis=-1, keepdims=True)
 
-    def classify_aggregate(self, annotations, argdict):
+    def classify_aggregate(self, annotations, argdict) -> sbu.ClassifyOutput:
         """
         Converts the annotations to discrete picks using
         :py:func:`~seisbench.models.base.WaveformModel.picks_from_annotations`.
@@ -120,7 +122,7 @@ class GPD(WaveformModel):
         :param argdict: See description in superclass
         :return: List of picks
         """
-        picks = []
+        picks = sbu.PickList()
         for phase in self.phases:
             if phase == "N":
                 # Don't pick noise
@@ -133,8 +135,9 @@ class GPD(WaveformModel):
                 ),
                 phase,
             )
+        picks = sbu.PickList(sorted(picks))
 
-        return sorted(picks)
+        return sbu.ClassifyOutput(self.name, picks=picks)
 
     def get_model_args(self):
         model_args = super().get_model_args()

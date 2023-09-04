@@ -2,6 +2,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+import seisbench.util as sbu
+
 from .base import WaveformModel
 
 
@@ -112,7 +114,7 @@ class BasicPhaseAE(WaveformModel):
         pred[:, -130:] = np.nan
         return pred.T
 
-    def classify_aggregate(self, annotations, argdict):
+    def classify_aggregate(self, annotations, argdict) -> sbu.ClassifyOutput:
         """
         Converts the annotations to discrete thresholds using
         :py:func:`~seisbench.models.base.WaveformModel.picks_from_annotations`.
@@ -122,7 +124,7 @@ class BasicPhaseAE(WaveformModel):
         :param argdict: See description in superclass
         :return: List of picks
         """
-        picks = []
+        picks = sbu.PickList()
         for phase in self.labels:
             if phase == "N":
                 # Don't pick noise
@@ -135,8 +137,9 @@ class BasicPhaseAE(WaveformModel):
                 ),
                 phase,
             )
+        picks = sbu.PickList(sorted(picks))
 
-        return sorted(picks)
+        return sbu.ClassifyOutput(self.name, picks=picks)
 
     def get_model_args(self):
         model_args = super().get_model_args()

@@ -12,6 +12,7 @@ from obspy import UTCDateTime
 
 import seisbench
 import seisbench.models
+import seisbench.util as sbu
 from seisbench.models.base import ActivationLSTMCell, CustomLSTM
 from seisbench.models.team import AlphabeticFullGroupingHelper
 
@@ -905,9 +906,12 @@ def test_annotate_cred(parallelism):
 
     annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
-    model.classify(
+    output = model.classify(
         stream, parallelism=parallelism
     )  # Ensures classify succeeds even though labels are unknown
+    assert isinstance(output, sbu.ClassifyOutput)
+    assert isinstance(output.detections, sbu.DetectionList)
+    assert output.creator == model.name
 
 
 @pytest.mark.parametrize(
@@ -923,9 +927,13 @@ def test_annotate_eqtransformer(parallelism):
 
     annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
-    model.classify(
+    output = model.classify(
         stream, parallelism=parallelism
     )  # Ensures classify succeeds even though labels are unknown
+    assert isinstance(output, sbu.ClassifyOutput)
+    assert isinstance(output.picks, sbu.PickList)
+    assert isinstance(output.detections, sbu.DetectionList)
+    assert output.creator == model.name
 
 
 @pytest.mark.parametrize(
@@ -967,9 +975,12 @@ def test_annotate_gpd(parallelism):
 
     annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
-    model.classify(
+    output = model.classify(
         stream, parallelism=parallelism
     )  # Ensures classify succeeds even though labels are unknown
+    assert isinstance(output, sbu.ClassifyOutput)
+    assert isinstance(output.picks, sbu.PickList)
+    assert output.creator == model.name
 
 
 @pytest.mark.parametrize(
@@ -985,9 +996,12 @@ def test_annotate_phasenetlight(parallelism):
 
     annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
-    model.classify(
+    output = model.classify(
         stream, parallelism=parallelism
     )  # Ensures classify succeeds even though labels are unknown
+    assert isinstance(output, sbu.ClassifyOutput)
+    assert isinstance(output.picks, sbu.PickList)
+    assert output.creator == model.name
 
 
 @pytest.mark.parametrize(
@@ -1003,9 +1017,12 @@ def test_annotate_phasenet(parallelism):
 
     annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
-    model.classify(
+    output = model.classify(
         stream, parallelism=parallelism
     )  # Ensures classify succeeds even though labels are unknown
+    assert isinstance(output, sbu.ClassifyOutput)
+    assert isinstance(output.picks, sbu.PickList)
+    assert output.creator == model.name
 
 
 @pytest.mark.parametrize(
@@ -1021,9 +1038,12 @@ def test_annotate_basicphaseae(parallelism):
 
     annotations = model.annotate(stream, parallelism=parallelism)
     assert len(annotations) > 0
-    model.classify(
+    output = model.classify(
         stream, parallelism=parallelism
     )  # Ensures classify succeeds even though labels are unknown
+    assert isinstance(output, sbu.ClassifyOutput)
+    assert isinstance(output.picks, sbu.PickList)
+    assert output.creator == model.name
 
 
 def test_short_traces(caplog):

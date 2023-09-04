@@ -7,6 +7,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from packaging import version
 
+import seisbench.util as sbu
+
 from .base import Conv1dSame, WaveformModel, _cache_migration_v0_v3
 
 
@@ -206,7 +208,7 @@ class PhaseNet(WaveformModel):
             pred[-postnan:] = np.nan
         return pred
 
-    def classify_aggregate(self, annotations, argdict):
+    def classify_aggregate(self, annotations, argdict) -> sbu.ClassifyOutput:
         """
         Converts the annotations to discrete thresholds using
         :py:func:`~seisbench.models.base.WaveformModel.picks_from_annotations`.
@@ -216,7 +218,7 @@ class PhaseNet(WaveformModel):
         :param argdict: See description in superclass
         :return: List of picks
         """
-        picks = []
+        picks = sbu.PickList()
         for phase in self.labels:
             if phase == "N":
                 # Don't pick noise
@@ -230,7 +232,9 @@ class PhaseNet(WaveformModel):
                 phase,
             )
 
-        return sorted(picks)
+        picks = sbu.PickList(sorted(picks))
+
+        return sbu.ClassifyOutput(self.name, picks=picks)
 
     def get_model_args(self):
         model_args = super().get_model_args()

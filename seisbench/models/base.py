@@ -2141,7 +2141,7 @@ class WaveformModel(SeisBenchModel, ABC):
         else:
             raise ValueError(f"Can't unpack object of type {type(x)}.")
 
-    def classify(self, stream, **kwargs):
+    def classify(self, stream, **kwargs) -> util.ClassifyOutput:
         """
         Classifies the stream. The classification
 
@@ -2173,18 +2173,19 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         return stream
 
-    def classify_aggregate(self, annotations, argdict):
+    def classify_aggregate(self, annotations, argdict) -> util.ClassifyOutput:
         """
         An aggregation function that converts the annotation streams returned by :py:func:`annotate` into
-        a classification. A classification may be an arbitrary object. However, when implementing a model which already
-        exists in similar form, we recommend using the same output format. For example, all pick outputs should have
+        a classification. A classification consists of a ClassifyOutput, essentialy a namespace that can hold
+        an arbitrary set of keys. However, when implementing a model which already exists in similar form,
+        we recommend using the same output format. For example, all pick outputs should have
         the same format.
 
         :param annotations: Annotations returned from :py:func:`annotate`
         :param argdict: Dictionary of arguments
         :return: Classification object
         """
-        return annotations
+        return util.ClassifyOutput(self.name)
 
     @staticmethod
     def resample(stream, sampling_rate):
@@ -2393,7 +2394,7 @@ class WaveformModel(SeisBenchModel, ABC):
         return comp_dict, component_order
 
     @staticmethod
-    def picks_from_annotations(annotations, threshold, phase):
+    def picks_from_annotations(annotations, threshold, phase) -> util.PickList:
         """
         Converts the annotations streams for a single phase to discrete picks using a classical trigger on/off.
         The lower threshold is set to half the higher threshold.
@@ -2430,10 +2431,10 @@ class WaveformModel(SeisBenchModel, ABC):
                 )
                 picks.append(pick)
 
-        return picks
+        return util.PickList(sorted(picks))
 
     @staticmethod
-    def detections_from_annotations(annotations, threshold):
+    def detections_from_annotations(annotations, threshold) -> util.DetectionList:
         """
         Converts the annotations streams for a single phase to discrete detections using a classical trigger on/off.
         The lower threshold is set to half the higher threshold.
@@ -2461,7 +2462,7 @@ class WaveformModel(SeisBenchModel, ABC):
                 )
                 detections.append(detection)
 
-        return detections
+        return util.DetectionList(sorted(detections))
 
     def get_model_args(self):
         model_args = super().get_model_args()

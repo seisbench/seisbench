@@ -6,6 +6,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import seisbench.util as sbu
+
 from .base import ActivationLSTMCell, CustomLSTM, WaveformModel
 
 
@@ -322,7 +324,7 @@ class EQTransformer(WaveformModel):
         else:
             return list(range(self.classes))
 
-    def classify_aggregate(self, annotations, argdict):
+    def classify_aggregate(self, annotations, argdict) -> sbu.ClassifyOutput:
         """
         Converts the annotations to discrete picks using
         :py:func:`~seisbench.models.base.WaveformModel.picks_from_annotations`
@@ -334,7 +336,7 @@ class EQTransformer(WaveformModel):
         :param argdict: See description in superclass
         :return: List of picks, list of detections
         """
-        picks = []
+        picks = sbu.PickList()
         for phase in self.phases:
             picks += self.picks_from_annotations(
                 annotations.select(channel=f"{self.__class__.__name__}_{phase}"),
@@ -343,6 +345,7 @@ class EQTransformer(WaveformModel):
                 ),
                 phase,
             )
+        picks = sbu.PickList(sorted(picks))
 
         detections = self.detections_from_annotations(
             annotations.select(channel=f"{self.__class__.__name__}_Detection"),
@@ -351,7 +354,7 @@ class EQTransformer(WaveformModel):
             ),
         )
 
-        return sorted(picks), sorted(detections)
+        return sbu.ClassifyOutput(self.name, picks=picks, detections=detections)
 
     def get_model_args(self):
         model_args = super().get_model_args()

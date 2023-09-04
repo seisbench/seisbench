@@ -29,9 +29,8 @@ For example, a pure picking model will return a list of picks, while a picking a
 .. code-block:: python
 
     stream = obspy.read("my_waveforms.mseed")
-    picks = model.classify(stream)  # Returns a list of picks
-    for pick in picks:
-        print(pick)
+    outputs = model.classify(stream)  # Returns a list of picks
+    print(outputs)
 
 Both ``annotate`` and ``classify`` can be supplied with waveforms from multiple stations at once and will automatically handle the correct grouping of the traces.
 For details on how to build your own model with SeisBench, check the documentation of :py:class:`~seisbench.models.base.WaveformModel`.

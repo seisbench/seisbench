@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from scipy.signal import stft
 
+import seisbench.util as sbu
+
 from .base import WaveformModel
 
 
@@ -124,7 +126,7 @@ class CRED(WaveformModel):
         window = window / (np.std(window) + 1e-10)
         return self.waveforms_to_spectrogram(window)
 
-    def classify_aggregate(self, annotations, argdict):
+    def classify_aggregate(self, annotations, argdict) -> sbu.ClassifyOutput:
         """
         Converts the annotations to discrete detections using
         :py:func:`~seisbench.models.base.WaveformModel.detections_from_annotations`.
@@ -141,7 +143,7 @@ class CRED(WaveformModel):
             ),
         )
 
-        return detections
+        return sbu.ClassifyOutput(self.name, detections=detections)
 
     def get_model_args(self):
         model_args = super().get_model_args()

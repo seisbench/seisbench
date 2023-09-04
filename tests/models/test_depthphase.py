@@ -322,14 +322,9 @@ def test_line_search_depth(tmp_path):
             "XY.E.": 10,
         }
 
-        depth, depth_levels, probabilities = model._line_search_depth(
-            annotations, distances, probability_curves=True
-        )
-        assert probabilities.shape == (2, depth_levels.shape[0])
-        assert (
-            depth
-            == depth_levels[np.argmax(scipy.stats.mstats.gmean(probabilities, axis=0))]
-        )
+        output = model._line_search_depth(annotations, distances, "")
+        assert output.probabilities.shape == (2, output.depth_levels.shape[0])
+        assert output.depth == output.depth_levels[np.argmax(output.avg_probabilities)]
 
 
 def test_depthphaseteam():
@@ -371,5 +366,5 @@ def test_depth_finder():
         UTCDateTime("1995-12-01T03:17:04.490000Z"),
     )
 
-    depth = depth_finder.get_depth(lat, lon, depth, org_time)
-    assert isinstance(depth, float)
+    output = depth_finder.get_depth(lat, lon, depth, org_time)
+    assert isinstance(output.depth, float)

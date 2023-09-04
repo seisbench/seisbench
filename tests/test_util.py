@@ -138,6 +138,60 @@ def test_log_lifecycle(caplog):
     assert "Stopping test_func" in caplog.text
 
 
+def test_classify_outputs():
+    output = seisbench.util.ClassifyOutput("model", picks=[])
+    assert output.creator == "model"
+    assert len(output.picks) == 0
+    with pytest.raises(AttributeError):
+        output.missing_key
+
+
+def test_repr_entries():
+    picks = seisbench.util.PickList(3 * [seisbench.util.Pick("CX.PB01.", None)])
+    assert len(picks._rep_entries().split("\n")) == 3
+
+    picks = seisbench.util.PickList(100 * [seisbench.util.Pick("CX.PB01.", None)])
+    assert len(picks._rep_entries().split("\n")) == 7
+
+
+def test_pick_list_select():
+    picks = seisbench.util.PickList(
+        [
+            seisbench.util.Pick("CX.PB01.", None, peak_value=0.5, phase="P"),
+            seisbench.util.Pick("CX.PB02.", None, peak_value=0.3, phase="S"),
+            seisbench.util.Pick("CX.PB03.", None, peak_value=None, phase=None),
+        ]
+    )
+
+    assert len(picks.select(phase="P")) == 1
+    assert len(picks.select(phase="S")) == 1
+    assert len(picks.select(min_confidence=0.1)) == 2
+    assert len(picks.select(min_confidence=0.4)) == 1
+    assert len(picks.select(trace_id=r"CX\.PB0[12]\.")) == 2
+
+
+def test_detection_list_select():
+    detections = seisbench.util.DetectionList(
+        [
+            seisbench.util.Detection("CX.PB01.", None, None, peak_value=0.5),
+            seisbench.util.Detection("CX.PB02.", None, None, peak_value=0.3),
+            seisbench.util.Detection("CX.PB03.", None, None, peak_value=None),
+        ]
+    )
+
+    assert len(detections.select(min_confidence=0.1)) == 2
+    assert len(detections.select(min_confidence=0.4)) == 1
+    assert len(detections.select(trace_id=r"CX\.PB0[12]\.")) == 2
+
+
+def test_classify_output_interface_error():
+    output = seisbench.util.ClassifyOutput("model")
+    with pytest.raises(NotImplementedError):
+        iter(output)
+    with pytest.raises(NotImplementedError):
+        output[0]
+
+
 def test_fdsn_get_bulk_safe():
     bulk = [
         ("SB", "ABC1", "", "HHZ", None, None),
