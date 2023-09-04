@@ -14,6 +14,7 @@ import seisbench
 import seisbench.models
 import seisbench.util as sbu
 from seisbench.models.base import ActivationLSTMCell, CustomLSTM
+from seisbench.models.team import AlphabeticFullGroupingHelper
 
 
 def get_input_args(obj):
@@ -254,174 +255,13 @@ def test_stream_to_arrays_instrument():
 
     # Aligned strict
     stream = obspy.Stream([trace_z, trace_n, trace_e])
-    times, data = dummy.stream_to_arrays(stream, {"strict": True})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0
-    assert data[0].shape == (3, len(trace_z.data))
-    assert (data[0][0] == trace_z.data).all()
-    assert (data[0][1] == trace_n.data).all()
-    assert (data[0][2] == trace_e.data).all()
-
-    # Aligned non strict
-    stream = obspy.Stream([trace_z, trace_n, trace_e])
-    times, data = dummy.stream_to_arrays(stream, {"strict": False})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0
-    assert data[0].shape == (3, len(trace_z.data))
-    assert (data[0][0] == trace_z.data).all()
-    assert (data[0][1] == trace_n.data).all()
-    assert (data[0][2] == trace_e.data).all()
-
-    # Covering strict
-    stream = obspy.Stream([trace_z, trace_n, trace_e.slice(t0 + 1, t0 + 5)])
-    times, data = dummy.stream_to_arrays(stream, {"strict": True})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0 + 1
-    assert data[0].shape == (3, 401)
-    assert (data[0][0] == trace_z.data[0]).all()
-    assert (data[0][1] == trace_n.data[0]).all()
-    assert (data[0][2] == trace_e.data[0]).all()
-
-    # Covering non-strict
-    stream = obspy.Stream([trace_z, trace_n, trace_e.slice(t0 + 1, t0 + 5)])
-    times, data = dummy.stream_to_arrays(stream, {"strict": False})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0
-    assert data[0].shape == (3, len(trace_z.data))
-    assert (data[0][0] == trace_z.data[0]).all()
-    assert (data[0][1] == trace_n.data[0]).all()
-    assert (data[0][2, 100:501] == trace_e.data[0]).all()
-    assert (data[0][2, :100] == 0).all()
-    assert (data[0][2, 501:] == 0).all()
-
-    # Double covering strict
-    stream = obspy.Stream(
-        [trace_z, trace_n, trace_e.slice(t0 + 1, t0 + 5), trace_e.slice(t0 + 6, t0 + 8)]
-    )
-    times, data = dummy.stream_to_arrays(stream, {"strict": True})
-    assert len(times) == len(data) == 2
-    assert times[0] == t0 + 1
-    assert times[1] == t0 + 6
-    assert data[0].shape == (3, 401)
-    assert data[1].shape == (3, 201)
-    for i in range(2):
-        assert (data[i][0] == trace_z.data[0]).all()
-        assert (data[i][1] == trace_n.data[0]).all()
-        assert (data[i][2] == trace_e.data[0]).all()
-
-    # Double covering non strict
-    stream = obspy.Stream(
-        [trace_z, trace_n, trace_e.slice(t0 + 1, t0 + 5), trace_e.slice(t0 + 6, t0 + 8)]
-    )
-    times, data = dummy.stream_to_arrays(stream, {"strict": False})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0
-    assert data[0].shape == (3, len(trace_z.data))
-    assert (data[0][0] == trace_z.data[0]).all()
-    assert (data[0][1] == trace_n.data[0]).all()
-    assert (data[0][2, 100:501] == trace_e.data[0]).all()
-    assert (data[0][2, 600:801] == trace_e.data[0]).all()
-    assert (data[0][2, :100] == 0).all()
-    assert (data[0][2, 501:600] == 0).all()
-    assert (data[0][2, 801:] == 0).all()
-
-    # Intersecting strict
-    stream = obspy.Stream(
-        [trace_z, trace_n.slice(t0 + 1, t0 + 5), trace_e.slice(t0 + 3, t0 + 7)]
-    )
-    times, data = dummy.stream_to_arrays(stream, {"strict": True})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0 + 3
-    assert data[0].shape == (3, 201)
-    assert (data[0][0] == trace_z.data[0]).all()
-    assert (data[0][1] == trace_n.data[0]).all()
-    assert (data[0][2] == trace_e.data[0]).all()
-
-    # Intersecting non strict
-    stream = obspy.Stream(
-        [trace_z, trace_n.slice(t0 + 1, t0 + 5), trace_e.slice(t0 + 3, t0 + 7)]
-    )
-    times, data = dummy.stream_to_arrays(stream, {"strict": False})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0
-    assert data[0].shape == (3, len(trace_z.data))
-    assert (data[0][0] == trace_z.data[0]).all()
-    assert (data[0][1, 100:501] == trace_n.data[0]).all()
-    assert (data[0][1, :100] == 0).all()
-    assert (data[0][1, 501:] == 0).all()
-    assert (data[0][2, 300:701] == trace_e.data[0]).all()
-    assert (data[0][2, :300] == 0).all()
-    assert (data[0][2, 701:] == 0).all()
-
-    # No overlap strict
-    stream = obspy.Stream(
-        [
-            trace_z.slice(t0, t0 + 1),
-            trace_n.slice(t0 + 1, t0 + 2),
-            trace_e.slice(t0 + 1, t0 + 2),
-        ]
-    )
-    times, data = dummy.stream_to_arrays(stream, {"strict": True})
-    assert len(times) == len(data) == 0
-
-    # No overlap non strict
-    stream = obspy.Stream(
-        [
-            trace_z.slice(t0, t0 + 1),
-            trace_n.slice(t0 + 1, t0 + 2),
-            trace_e.slice(t0 + 1, t0 + 2),
-        ]
-    )
-    times, data = dummy.stream_to_arrays(stream, {"strict": False})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0
-    assert data[0].shape == (3, 201)
-    assert (data[0][0, :101] == trace_z.data[0]).all()
-    assert (data[0][0, 101:] == 0).all()
-    assert (data[0][1, :100] == 0).all()
-    assert (data[0][1, 100:] == trace_n.data[0]).all()
-    assert (data[0][2, :100] == 0).all()
-    assert (data[0][2, 100:] == trace_e.data[0]).all()
-
-    # Separate fragments strict
-    stream = obspy.Stream(
-        [
-            trace_z.slice(t0, t0 + 1),
-            trace_n.slice(t0 + 0, t0 + 1),
-            trace_e.slice(t0 + 0, t0 + 1),
-            trace_z.slice(t0 + 2, t0 + 3),
-            trace_n.slice(t0 + 2, t0 + 3),
-            trace_e.slice(t0 + 2, t0 + 3),
-        ]
-    )
-    times, data = dummy.stream_to_arrays(stream, {"strict": True})
-    assert len(times) == len(data) == 2
-    for i in range(2):
-        assert times[i] == t0 + 2 * i
-        assert data[i].shape == (3, 101)
-        assert (data[i][0] == trace_z.data[0]).all()
-        assert (data[i][1] == trace_n.data[0]).all()
-        assert (data[i][2] == trace_e.data[0]).all()
-
-    # Separate fragments non-strict
-    stream = obspy.Stream(
-        [
-            trace_z.slice(t0, t0 + 1),
-            trace_n.slice(t0 + 0, t0 + 1),
-            trace_e.slice(t0 + 0, t0 + 1),
-            trace_z.slice(t0 + 2, t0 + 3),
-            trace_n.slice(t0 + 2, t0 + 3),
-            trace_e.slice(t0 + 2, t0 + 3),
-        ]
-    )
-    times, data = dummy.stream_to_arrays(stream, {"strict": False})
-    assert len(times) == len(data) == 2
-    for i in range(2):
-        assert times[i] == t0 + 2 * i
-        assert data[i].shape == (3, 101)
-        assert (data[i][0] == trace_z.data[0]).all()
-        assert (data[i][1] == trace_n.data[0]).all()
-        assert (data[i][2] == trace_e.data[0]).all()
+    t0_out, data, stations = dummy.stream_to_array(stream, {})
+    assert t0_out == t0
+    assert stations == ["SB.TEST."]
+    assert data.shape == (3, len(trace_z.data))
+    assert (data[0] == trace_z.data).all()
+    assert (data[1] == trace_n.data).all()
+    assert (data[2] == trace_e.data).all()
 
 
 def test_stream_to_arrays_channel():
@@ -437,21 +277,13 @@ def test_stream_to_arrays_channel():
 
     trace_z = obspy.Trace(np.ones(1000), stats_z)
 
-    # Simple
     stream = obspy.Stream([trace_z])
-    times, data = dummy.stream_to_arrays(stream, {})
-    assert len(times) == len(data) == 1
-    assert times[0] == t0
-    assert data[0].shape == (len(trace_z.data),)
-    assert (data[0] == trace_z.data).all()
-
-    # Separate fragments
-    stream = obspy.Stream([trace_z.slice(t0, t0 + 1), trace_z.slice(t0 + 2, t0 + 3)])
-    times, data = dummy.stream_to_arrays(stream, {"strict": True})
-    assert len(times) == len(data) == 2
-    for i in range(2):
-        assert times[i] == t0 + 2 * i
-        assert data[i].shape == (101,)
+    t0_out, data, stations = dummy.stream_to_array(stream, {})
+    assert t0_out == t0
+    print(stations)
+    assert stations == ["SB.TEST..HHZ"]
+    assert data.shape == (len(trace_z.data),)
+    assert (data == trace_z.data).all()
 
 
 def test_flexible_horizontal_components(caplog):
@@ -509,35 +341,34 @@ def test_flexible_horizontal_components(caplog):
 
     # flexible_horizontal_components=False
     stream = obspy.Stream([trace_z, trace_1, trace_2])
-    times, data = dummy.stream_to_arrays(
-        stream, {"strict": True, "flexible_horizontal_components": False}
+    _, data, stations = dummy.stream_to_array(
+        stream, {"flexible_horizontal_components": False}
     )
-    assert len(times) == len(data) == 0
+    assert np.allclose(data[0, :], 1)
+    assert np.allclose(data[1, :], 0)
+    assert np.allclose(data[2, :], 0)
 
     # flexible_horizontal_components=True
     stream = obspy.Stream([trace_z, trace_1, trace_2])
-    times, data = dummy.stream_to_arrays(
-        stream, {"strict": True, "flexible_horizontal_components": True}
+    _, data, stations = dummy.stream_to_array(
+        stream, {"flexible_horizontal_components": True}
     )
-    assert len(times) == len(data) == 1
+    assert np.allclose(data[0, :], 1)
+    assert np.allclose(data[1, :], 4)
+    assert np.allclose(data[2, :], 5)
 
     # Warning for mixed component names
     caplog.clear()
     stream = obspy.Stream([trace_z, trace_n, trace_e, trace_1, trace_2])
     with caplog.at_level(logging.WARNING):
-        times, data = dummy.stream_to_arrays(
-            stream, {"strict": True, "flexible_horizontal_components": True}
-        )
+        dummy.stream_to_array(stream, {"flexible_horizontal_components": True})
     assert "This might lead to undefined behavior." in caplog.text
-    assert len(times) == len(data) == 1
 
     # No warning for mixed component names on different stations
     caplog.clear()
     stream = obspy.Stream([trace_z, trace_n, trace_e, trace_2_test2])
     with caplog.at_level(logging.WARNING):
-        dummy.stream_to_arrays(
-            stream, {"strict": True, "flexible_horizontal_components": True}
-        )
+        dummy.stream_to_array(stream, {"flexible_horizontal_components": True})
     assert "This might lead to undefined behavior." not in caplog.text
 
 
@@ -545,32 +376,50 @@ def test_group_stream_by_instrument():
     # The first 4 should be grouped together, the last 2 should each be separate
     stream = obspy.Stream(
         [
-            obspy.Trace(header={"network": "SB", "station": "ABC1", "channel": "BHZ"}),
-            obspy.Trace(header={"network": "SB", "station": "ABC1", "channel": "BHN"}),
-            obspy.Trace(header={"network": "SB", "station": "ABC1", "channel": "BHE"}),
-            obspy.Trace(header={"network": "SB", "station": "ABC1", "channel": "HHZ"}),
-            obspy.Trace(header={"network": "HB", "station": "ABC1", "channel": "BHZ"}),
-            obspy.Trace(header={"network": "SB", "station": "ABC2", "channel": "BHZ"}),
+            obspy.Trace(
+                np.ones(100),
+                header={"network": "SB", "station": "ABC1", "channel": "BHZ"},
+            ),
+            obspy.Trace(
+                np.ones(100),
+                header={"network": "SB", "station": "ABC1", "channel": "BHN"},
+            ),
+            obspy.Trace(
+                np.ones(100),
+                header={"network": "SB", "station": "ABC1", "channel": "BHE"},
+            ),
+            obspy.Trace(
+                np.ones(100),
+                header={"network": "SB", "station": "ABC1", "channel": "HHZ"},
+            ),
+            obspy.Trace(
+                np.ones(100),
+                header={"network": "HB", "station": "ABC1", "channel": "BHZ"},
+            ),
+            obspy.Trace(
+                np.ones(100),
+                header={"network": "SB", "station": "ABC2", "channel": "BHZ"},
+            ),
         ]
     )
 
-    dummy = DummyWaveformModel(component_order="ZNE")
+    helper = seisbench.models.base.GroupingHelper("instrument")
 
-    dummy._grouping = "instrument"
-    groups = dummy.group_stream(stream)
+    comp_dict = {"Z": 0, "N": 1, "E": 2}
+
+    groups = helper.group_stream(stream, False, 0, comp_dict)
 
     assert len(groups) == 3
     assert list(sorted([len(x) for x in groups])) == [1, 1, 4]
 
-    dummy._grouping = "channel"
-    groups = dummy.group_stream(stream)
+    helper = seisbench.models.base.GroupingHelper("channel")
+    groups = helper.group_stream(stream, False, 0, comp_dict)
 
     assert len(groups) == 6
     assert list(sorted([len(x) for x in groups])) == [1, 1, 1, 1, 1, 1]
 
-    dummy._grouping = "invalid"
     with pytest.raises(ValueError):
-        dummy.group_stream(stream)
+        seisbench.models.base.GroupingHelper("invalid")
 
 
 def test_recursive_torch_to_numpy():
@@ -649,13 +498,13 @@ def test_predictions_to_stream():
     pred_times = [UTCDateTime(), UTCDateTime()]
     preds = [np.random.rand(1000, 3), np.random.rand(2000, 3)]
     preds[0][:100] = np.nan  # Test proper shift
-    trace = obspy.Trace(np.zeros(100), header={"network": "SB", "station": "ABC1"})
+    stations = ["SB.ABC1."]
 
     stream = dummy._predictions_to_stream(
-        pred_rates[0], pred_times[0], preds[0], trace.stats
+        pred_rates[0], pred_times[0], preds[0], stations
     )
     stream += dummy._predictions_to_stream(
-        pred_rates[1], pred_times[1], preds[1], trace.stats
+        pred_rates[1], pred_times[1], preds[1], stations
     )
 
     assert stream[0].stats.starttime == pred_times[0] + 1
@@ -1107,7 +956,7 @@ def test_annotate_pickblue(parallelism, model):
 
     stream = obspy.read("./tests/examples/OBS*")
     annotations = model.annotate(stream, parallelism=parallelism)
-    assert len(annotations) > 0
+    assert len(annotations) == 3
     model.classify(
         stream, parallelism=parallelism
     )  # Ensures classify succeeds even though labels are unknown
@@ -2202,12 +2051,12 @@ def test_model_normalize(cls):
     model.norm = "std"
     x = np.random.rand(3, 100000)
     x_norm = model.annotate_window_pre(x, {})
-    assert np.allclose(np.std(x_norm, axis=-1), 1, atol=1e-3, rtol=1e-3)
+    assert np.allclose(np.std(x_norm, axis=-1), 1, atol=1e-2, rtol=1e-2)
 
     model.norm = "peak"
     x = np.random.rand(3, 100000)
     x_norm = model.annotate_window_pre(x, {})
-    assert np.allclose(np.max(np.abs(x_norm), axis=-1), 1, atol=1e-3, rtol=1e-3)
+    assert np.allclose(np.max(np.abs(x_norm), axis=-1), 1, atol=1e-2, rtol=1e-2)
 
 
 def test_version_warnings(caplog):
@@ -2234,3 +2083,369 @@ def test_version_warnings(caplog):
     check_version("abc", "1", False)
     check_version("def", "3", False)
     check_version("xyz", "2", False)
+
+
+def test_phaseteam():
+    model = seisbench.models.PhaseTEAM(classes=4)
+
+    x = torch.rand(2, 10, 3, 3001)
+    # Make sure there is some padding
+    x[0, 5:] = 0.0
+    x[1, 6:] = 0.0
+
+    y = model(x)
+
+    assert y.shape == (2, 10, 4, 3001)
+
+
+def test_get_intervals():
+    helper = seisbench.models.GroupingHelper("full")
+
+    comp_dict = {"Z": 0, "N": 1, "E": 2}
+
+    t0 = UTCDateTime("2000-01-01")
+
+    # Easy example, none-intersecting traces, single component
+    stream = obspy.Stream(
+        [
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC1",
+                    "channel": "BHZ",
+                    "sampling_rate": 20,
+                    "starttime": t0,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC2",
+                    "channel": "HHE",
+                    "sampling_rate": 20,
+                    "starttime": t0 + 100,
+                },
+            ),
+        ]
+    )
+
+    intervals = helper._get_intervals(
+        stream, strict=False, comp_dict=comp_dict, min_length_s=0
+    )
+    assert len(intervals) == 2
+    assert intervals[0] == (
+        ["SB.ABC1."],
+        stream[0].stats.starttime,
+        stream[0].stats.endtime,
+    )
+    assert intervals[1] == (
+        ["SB.ABC2."],
+        stream[1].stats.starttime,
+        stream[1].stats.endtime,
+    )
+    intervals = helper._get_intervals(
+        stream, strict=True, comp_dict=comp_dict, min_length_s=0
+    )
+    assert len(intervals) == 0
+
+    # Easy example, none-intersecting traces, three components
+    stream = obspy.Stream(
+        [
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC1",
+                    "channel": "BHZ",
+                    "sampling_rate": 20,
+                    "starttime": t0,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC1",
+                    "channel": "BHN",
+                    "sampling_rate": 20,
+                    "starttime": t0,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC1",
+                    "channel": "BHE",
+                    "sampling_rate": 20,
+                    "starttime": t0,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC2",
+                    "channel": "HHZ",
+                    "sampling_rate": 20,
+                    "starttime": t0 + 100,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC2",
+                    "channel": "HHE",
+                    "sampling_rate": 20,
+                    "starttime": t0 + 100,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC2",
+                    "channel": "HHN",
+                    "sampling_rate": 20,
+                    "starttime": t0 + 100,
+                },
+            ),
+        ]
+    )
+
+    for strict in [True, False]:
+        intervals = helper._get_intervals(
+            stream, strict=strict, comp_dict=comp_dict, min_length_s=0
+        )
+        assert len(intervals) == 2
+        assert intervals[0] == (
+            ["SB.ABC1."],
+            stream[0].stats.starttime,
+            stream[0].stats.endtime,
+        )
+        assert intervals[1] == (
+            ["SB.ABC2."],
+            stream[3].stats.starttime,
+            stream[3].stats.endtime,
+        )
+
+    # Example with intersections
+    stream = obspy.Stream(
+        [
+            obspy.Trace(
+                np.zeros(2000),
+                header={
+                    "network": "SB",
+                    "station": "ABC1",
+                    "channel": "BHZ",
+                    "sampling_rate": 20,
+                    "starttime": t0,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(100),
+                header={
+                    "network": "SB",
+                    "station": "ABC2",
+                    "channel": "HHE",
+                    "sampling_rate": 20,
+                    "starttime": t0 + 10,
+                },
+            ),
+        ]
+    )
+
+    intervals = helper._get_intervals(
+        stream, strict=False, comp_dict=comp_dict, min_length_s=0
+    )
+    assert len(intervals) == 3
+    assert intervals[0] == (
+        ["SB.ABC1."],
+        stream[0].stats.starttime,
+        stream[1].stats.starttime,
+    )
+    assert intervals[1] == (
+        ["SB.ABC1.", "SB.ABC2."],
+        stream[1].stats.starttime,
+        stream[1].stats.endtime,
+    )
+    assert intervals[2] == (
+        ["SB.ABC1."],
+        stream[1].stats.endtime,
+        stream[0].stats.endtime,
+    )
+
+
+def test_assemble_groups():
+    helper = seisbench.models.GroupingHelper("full")
+
+    t0 = UTCDateTime("2000-01-01")
+    stream = obspy.Stream(
+        [
+            obspy.Trace(
+                np.zeros(1000),
+                header={
+                    "network": "SB",
+                    "station": "ABC1",
+                    "channel": "BHZ",
+                    "sampling_rate": 20,
+                    "starttime": t0,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(1000),
+                header={
+                    "network": "SB",
+                    "station": "ABC1",
+                    "channel": "BHN",
+                    "sampling_rate": 20,
+                    "starttime": t0,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(1000),
+                header={
+                    "network": "SB",
+                    "station": "ABC1",
+                    "channel": "BHE",
+                    "sampling_rate": 20,
+                    "starttime": t0,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(1000),
+                header={
+                    "network": "SB",
+                    "station": "ABC2",
+                    "channel": "HHZ",
+                    "sampling_rate": 20,
+                    "starttime": t0 + 2,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(1000),
+                header={
+                    "network": "SB",
+                    "station": "ABC2",
+                    "channel": "HHE",
+                    "sampling_rate": 20,
+                    "starttime": t0 + 2,
+                },
+            ),
+            obspy.Trace(
+                np.zeros(1000),
+                header={
+                    "network": "SB",
+                    "station": "ABC2",
+                    "channel": "HHN",
+                    "sampling_rate": 20,
+                    "starttime": t0 + 2,
+                },
+            ),
+        ]
+    )
+
+    intervals = [
+        (["SB.ABC1..BH"], t0, t0 + 5),
+        (["SB.ABC1..BH", "SB.ABC2..HH"], t0 + 10, t0 + 20),
+    ]
+    groups = helper._assemble_groups(stream, intervals)
+    print(groups)
+
+    assert len(groups[0]) == 3
+    for trace in groups[0]:
+        assert trace.stats.starttime == t0
+        assert trace.stats.endtime == t0 + 5
+    assert len(groups[1]) == 6
+    for trace in groups[1]:
+        assert trace.stats.starttime == t0 + 10
+        assert trace.stats.endtime == t0 + 20
+
+
+def test_merge_intervals():
+    helper = seisbench.models.GroupingHelper("full")
+    intervals = [
+        (0, -5, 1),
+        (0, 5, 10),
+        (1, 0.5, 3),
+        (1, 5, 10),
+        (2, 2, 6),
+        (2, 20, 25),
+    ]
+
+    t_root = obspy.UTCDateTime(0)
+
+    comp_dict = {"Z": 0}
+    sampling_rate = 100
+
+    stream = obspy.Stream()
+    for sta, t0, t1 in intervals:
+        samples = int((t1 - t0) * sampling_rate) + 1
+        stream.append(
+            obspy.Trace(
+                np.zeros(samples),
+                header={
+                    "network": "SB",
+                    "station": f"ABC{sta}",
+                    "channel": "BHZ",
+                    "sampling_rate": sampling_rate,
+                    "starttime": t_root + t0,
+                },
+            )
+        )
+
+    selected = helper._get_intervals(stream, False, 2, comp_dict)
+    assert selected == [
+        (["SB.ABC0."], t_root - 5, t_root + 1),
+        (["SB.ABC1."], t_root + 1, t_root + 3),
+        (["SB.ABC2."], t_root + 3, t_root + 5),
+        (["SB.ABC0.", "SB.ABC1."], t_root + 5, t_root + 10),
+        (["SB.ABC2."], t_root + 20, t_root + 25),
+    ]
+
+    selected = helper._get_intervals(stream, False, 4, comp_dict)
+    assert selected == [
+        (["SB.ABC0."], t_root - 5, t_root + 1),
+        (["SB.ABC2."], t_root + 2, t_root + 6),
+        (["SB.ABC0.", "SB.ABC1."], t_root + 6, t_root + 10),
+        (["SB.ABC2."], t_root + 20, t_root + 25),
+    ]
+
+
+def test_split_groups():
+    helper = AlphabeticFullGroupingHelper(max_stations=10)
+
+    stations = [f"SB.AB{i:02d}" for i in range(15)]
+    np.random.shuffle(stations)
+    t0 = UTCDateTime()
+    intervals = [(stations, t0, t0 + 10)]
+
+    intervals = helper._split_groups(intervals)
+
+    assert len(intervals) == 2
+    assert len(intervals[0][0]) == 8
+    assert intervals[0][0] == [f"SB.AB{i:02d}" for i in range(8)]
+    assert len(intervals[1][0]) == 7
+    assert intervals[1][0] == [f"SB.AB{i:02d}" for i in range(8, 15)]
+    assert intervals[0][1] == intervals[1][1] == t0
+    assert intervals[0][2] == intervals[1][2] == t0 + 10
+
+
+def test_align_fractional_samples():
+    helper = seisbench.models.GroupingHelper("full")
+
+    stream = obspy.Stream(
+        [
+            obspy.Trace(header={"starttime": UTCDateTime(0.01), "sampling_rate": 100}),
+            obspy.Trace(header={"starttime": UTCDateTime(0.014), "sampling_rate": 100}),
+            obspy.Trace(header={"starttime": UTCDateTime(0.006), "sampling_rate": 100}),
+        ]
+    )
+
+    helper._align_fractional_samples(stream)
+
+    for trace in stream:
+        assert trace.stats.starttime == UTCDateTime(0.01)

@@ -34,6 +34,29 @@ DeepDenoiser
     :undoc-members:
     :show-inheritance:
 
+Depth phase models
+-----------------------------------
+
+.. autoclass:: seisbench.models.depthphase.DepthPhaseModel
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: seisbench.models.depthphase.DepthFinder
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: seisbench.models.depthphase.DepthPhaseNet
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: seisbench.models.depthphase.DepthPhaseTEAM
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 EQTransformer
 -----------------------------------
 

@@ -80,6 +80,19 @@ Using DeepDenoiser
 
 Denoising seismic waveform streams with DeepDenoiser in SeisBench.
 
+.. _depth_phases:
+
+Picking depth phases and determining earthquake depth
+-----------------------------------------------------
+.. raw:: html
+
+    <embed>
+        <a href="https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02c_depth_phases.ipynb">
+            <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+        </a>
+    </embed>
+
+Determining earthquake hypocentral depth using depth phase in SeisBench.
 
 .. _training_phasenet:
 

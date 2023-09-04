@@ -34,6 +34,7 @@ The easiest way of getting started is through our colab notebooks.
 | Generator Pipelines | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01c_generator_pipelines.ipynb) |
 | Applied picking | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02a_deploy_model_on_streams_example.ipynb) |
 | Using DeepDenoiser | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02b_deep_denoiser.ipynb) |
+| Depth phases and earthquake depth    | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02c_depth_phases.ipynb) |
 | Training PhaseNet (advanced) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03a_training_phasenet.ipynb) |
 | Creating a dataset (advanced) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03b_creating_a_dataset.ipynb) |
 | Building an event catalog (advanced) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03c_catalog_seisbench_gamma.ipynb) |
@@ -86,12 +87,12 @@ Check out the [contribution guidelines](https://github.com/seisbench/seisbench/b
   ```
 - On the Apple M1 and M2 chips, pytorch seems to not always work when installed directly within `pip install seisbench`.
   As a workaround, follow the instructions at (https://pytorch.org/) to install pytorch and then install SeisBench as usual through pip.
-- Some institutions and internet providers are blocking access to our data and model repository, as it is running on a non-standard port (2443).
+- Some institutions and internet providers are blocking access to our data and model repository, as it is running on a non-standard port (2880).
   This usually manifests in timeouts when trying to download data or model weights.
   To verify the issue, try accessing [https://hifis-storage.desy.de:2880/](https://hifis-storage.desy.de:2880/) directly from the same machine.
   We are working on a permanent solution for the issue.
   In the meantime, if you are having trouble, try downloading through another network/VPN if possible.
-  You can also contact your network administrator to allow access to port 2443 on our server.
+  You can also contact your network administrator to allow access to port 2880 on our server.
   Otherwise, reach out to us, and we will work on finding a solution.
 - EQTransformer model weights "original" in version 1 and 2 are incompatible with SeisBench >=0.2.3. Simply use `from_pretrained("original", version="3")` or `from_pretrained("original", update=True)`. The weights will not differ in their predictions.
 

@@ -70,9 +70,9 @@ class DeepDenoiser(WaveformModel):
         return preds
 
     @staticmethod
-    def generate_label(trace_stats):
+    def generate_label(stations):
         # Simply use channel as label
-        return trace_stats.channel
+        return stations[0].split(".")[-1]
 
     def annotate_window_pre(self, window, argdict):
         f, t, tmp_signal = scipy.signal.stft(
@@ -146,7 +146,7 @@ class DeepDenoiser(WaveformModel):
             nfft=60,
             boundary="zeros",
         )
-        return denoised_signal.reshape(-1, 1)
+        return denoised_signal
 
     def get_model_args(self):
         model_args = super().get_model_args()

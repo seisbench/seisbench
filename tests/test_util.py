@@ -3,11 +3,17 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import obspy
 import pytest
 import requests
+from obspy.clients.fdsn import Client
+from obspy.clients.fdsn.header import FDSNException
 
 import seisbench.util
-from seisbench.util.trace_ops import waveform_id_to_network_station_location
+from seisbench.util.trace_ops import (
+    fdsn_get_bulk_safe,
+    waveform_id_to_network_station_location,
+)
 
 
 def test_callback_if_uncached(tmp_path: Path):
@@ -184,3 +190,37 @@ def test_classify_output_interface_error():
         iter(output)
     with pytest.raises(NotImplementedError):
         output[0]
+
+
+def test_fdsn_get_bulk_safe():
+    bulk = [
+        ("SB", "ABC1", "", "HHZ", None, None),
+        ("SB", "ABC2", "", "HHZ", None, None),
+        ("SB", "ABC3", "", "HHZ", None, None),
+        ("SB", "ABC4", "", "HHZ", None, None),
+    ]
+
+    class MockClient:
+        @staticmethod
+        def get_waveforms_bulk(bulk):
+            stream = obspy.Stream()
+            for net, sta, loc, cha, _, _ in bulk:
+                if sta in ["ABC1", "ABC3"]:
+                    raise FDSNException("")
+                else:
+                    stream.append(
+                        obspy.Trace(
+                            header={
+                                "network": net,
+                                "station": sta,
+                                "location": loc,
+                                "channel": cha,
+                            }
+                        )
+                    )
+            return stream
+
+    stream = fdsn_get_bulk_safe(MockClient(), bulk)
+    assert len(stream) == 2
+    assert len(stream.select(station="ABC2")) == 1
+    assert len(stream.select(station="ABC4")) == 1
