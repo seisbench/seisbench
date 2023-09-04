@@ -42,6 +42,7 @@ extensions = [
     "sphinx.ext.coverage",
     "sphinx_rtd_theme",
     "sphinx.ext.viewcode",
+    "sphinx_autodoc_typehints",
     "optional_argument_helper",
 ]
 

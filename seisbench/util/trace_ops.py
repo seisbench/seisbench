@@ -1,5 +1,9 @@
 import numpy as np
+import obspy
 from obspy import ObsPyException
+from obspy.clients.fdsn import Client as FDSNClient
+from obspy.clients.fdsn.client import FDSNException, FDSNNoDataException
+from obspy.io.mseed import ObsPyMSEEDError
 
 import seisbench
 
@@ -106,3 +110,39 @@ def waveform_id_to_network_station_location(waveform_id):
         return waveform_id
     else:
         return ".".join(parts[:-1])
+
+
+def fdsn_get_bulk_safe(client: FDSNClient, bulk: list[tuple]) -> obspy.Stream:
+    """
+    A wrapper around obspy's get_waveforms_bulk that does error handling
+    and tries to download as much data as possible.
+
+    :param client: An obspy FDSN client
+    :param bulk: A bulk request as for get_waveforms_bulk
+    """
+    return _fdsn_get_bulk_safe(client, bulk, failed=False)
+
+
+def _fdsn_get_bulk_safe(
+    client: FDSNClient, bulk: list[tuple], failed: bool = False
+) -> obspy.Stream:
+    """
+    Internal wrapper to hide the failed parameter from the user.
+    """
+    if len(bulk) == 0 or (failed and len(bulk) == 1):
+        return obspy.Stream()
+
+    new_failed = False
+    if len(bulk) == 1:
+        new_failed = True
+
+    try:
+        return client.get_waveforms_bulk(bulk)
+    except FDSNNoDataException:
+        return obspy.Stream()
+    except (FDSNException, ObsPyMSEEDError, Exception):
+        # Send off requests for each half to isolate the error
+        m = len(bulk) // 2
+        return _fdsn_get_bulk_safe(client, bulk[:m], new_failed) + _fdsn_get_bulk_safe(
+            client, bulk[m:], new_failed
+        )
