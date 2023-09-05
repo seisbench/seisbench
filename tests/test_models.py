@@ -2449,3 +2449,16 @@ def test_align_fractional_samples():
 
     for trace in stream:
         assert trace.stats.starttime == UTCDateTime(0.01)
+
+
+def test_get_intervals_empty():
+    helper = seisbench.models.GroupingHelper("instrument")
+
+    helper._get_intervals(
+        obspy.Stream(), strict=False, min_length_s=1, comp_dict={"Z": 0}
+    )
+
+    trace = obspy.Trace(np.zeros(0))
+    helper._get_intervals(
+        obspy.Stream([trace]), strict=False, min_length_s=1, comp_dict={"Z": 0}
+    )

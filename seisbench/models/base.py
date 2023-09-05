@@ -2967,6 +2967,8 @@ class GroupingHelper:
             + [trace.stats.endtime for trace in stream]
         )
         coords = sorted(list(coords))
+        if len(coords) <= 1:
+            return []
 
         if channel:
             n_comp = 1
