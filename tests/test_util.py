@@ -1,12 +1,12 @@
 import logging
 import os
+import pickle
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import obspy
 import pytest
 import requests
-from obspy.clients.fdsn import Client
 from obspy.clients.fdsn.header import FDSNException
 
 import seisbench.util
@@ -224,3 +224,16 @@ def test_fdsn_get_bulk_safe():
     assert len(stream) == 2
     assert len(stream.select(station="ABC2")) == 1
     assert len(stream.select(station="ABC4")) == 1
+
+
+def test_classify_output_pickle(tmp_path):
+    output = seisbench.util.ClassifyOutput(creator="Test", bla="abc")
+    path = tmp_path / "test.pkl"
+    with open(path, "wb") as f:
+        pickle.dump(output, f)
+
+    with open(path, "rb") as f:
+        reloaded = pickle.load(f)
+
+    assert reloaded.creator == output.creator
+    assert reloaded.bla == output.bla

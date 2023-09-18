@@ -32,6 +32,15 @@ class ClassifyOutput(SimpleNamespace):
     def __getitem__(self, item):
         self._raise_breaking_change_error()
 
+    def __reduce__(self):
+        """
+        Overwrite reduce function to allow pickling of the output.
+        See https://stackoverflow.com/questions/51519351/typeerror-on-pickle-load-with-class-derived-from-simplenamespace
+        for details on the underlying issue.
+        """
+        out = super().__reduce__()
+        return out[0], (self.creator,), out[2]
+
 
 class PickList(list):
     """
