@@ -18,6 +18,7 @@ from seisbench.util.trace_ops import (
 
 from .base import BenchmarkDataset
 
+
 class GEOFON(BenchmarkDataset):
     """
     GEOFON dataset consisting of both regional and teleseismic picks. Mostly contains P arrivals,
