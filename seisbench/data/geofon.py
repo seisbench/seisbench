@@ -79,8 +79,8 @@ class GEOFON(BenchmarkDataset):
     """
 
     start_train = "2010-01-01"
-    start_dev   = "2012-11-01"
-    start_test  = "2013-03-15"
+    start_dev = "2012-11-01"
+    start_test = "2013-03-15"
 
     def __init__(self, **kwargs):
         # TODO: Add citation
@@ -149,7 +149,16 @@ class GEOFON(BenchmarkDataset):
                         continue
                     if weight < 0.5:
                         continue
-                    if arrival.phase not in ["P", "Pn", "Pg", "pP", "sP", "S", "Sn", "Sg"]:
+                    if arrival.phase not in [
+                        "P",
+                        "Pn",
+                        "Pg",
+                        "pP",
+                        "sP",
+                        "S",
+                        "Sn",
+                        "Sg"
+                    ]:
                         # We skip pwP, pwwP, PcP, core phases
                         continue
                     pick_ids.append(arrival.pick_id)
@@ -234,8 +243,10 @@ class GEOFON(BenchmarkDataset):
                 event_params["source_focal_mechanism_n_plunge"] = n_axis.plunge
                 event_params["source_focal_mechanism_n_length"] = n_axis.length
             except AttributeError:
-                print("There was an issue retrieving the focal mechanism for event",
-                      event.resource_id, file=sys.stderr)
+                print(
+                    "There was an issue retrieving the focal mechanism for event",
+                    event.resource_id,
+                    file=sys.stderr)
                 # There seem to be a few broken xml files. In this case, just ignore the focal mechanism.
                 pass
         return event_params
@@ -392,7 +403,11 @@ class LocationHelper:
             trace_id = row["id"]
             network, station, location, channel = trace_id.split(".")
             try:
-                if row["sensitivity"] is None or row["sensitivity"] == "None" or "sensitivity" not in row:
+                if (
+                    row["sensitivity"] is None
+                    or row["sensitivity"] == "None"
+                    or "sensitivity" not in row
+                ):
                     sensitivity = np.nan
                 else:
                     sensitivity = float(row["sensitivity"])
@@ -414,10 +429,17 @@ class LocationHelper:
             )
 
         if (self.path / "station_list_additional.csv").exists():
-            station_list_additional = pd.read_csv(self.path / "station_list_additional.csv")
+            station_list_additional = pd.read_csv(
+                self.path / "station_list_additional.csv"
+            )
             for _, row in station_list_additional.iterrows():
                 netsta = row["id"]
-                self.short_dict[netsta] = (row["lat"], row["lon"], row["elevation"], np.nan)
+                self.short_dict[netsta] = (
+                    row["lat"],
+                    row["lon"],
+                    row["elevation"],
+                    np.nan
+                )
 
     def find(self, trace_id):
         if trace_id in self.full_dict:
@@ -437,5 +459,5 @@ class GEOFONv2(GEOFON):
     """
 
     start_train = "2010-01-01"
-    start_dev   = "2022-01-01"
-    start_test  = "2023-01-01"
+    start_dev = "2022-01-01"
+    start_test = "2023-01-01"
