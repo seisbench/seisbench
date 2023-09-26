@@ -157,7 +157,7 @@ class GEOFON(BenchmarkDataset):
                         "sP",
                         "S",
                         "Sn",
-                        "Sg"
+                        "Sg",
                     ]:
                         # We skip pwP, pwwP, PcP, core phases
                         continue
@@ -246,7 +246,8 @@ class GEOFON(BenchmarkDataset):
                 print(
                     "There was an issue retrieving the focal mechanism for event",
                     event.resource_id,
-                    file=sys.stderr)
+                    file=sys.stderr,
+                )
                 # There seem to be a few broken xml files. In this case, just ignore the focal mechanism.
                 pass
         return event_params
@@ -438,7 +439,7 @@ class LocationHelper:
                     row["lat"],
                     row["lon"],
                     row["elevation"],
-                    np.nan
+                    np.nan,
                 )
 
     def find(self, trace_id):
