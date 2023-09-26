@@ -1,4 +1,5 @@
 import copy
+import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -17,13 +18,69 @@ from seisbench.util.trace_ops import (
 
 from .base import BenchmarkDataset
 
-
 class GEOFON(BenchmarkDataset):
     """
     GEOFON dataset consisting of both regional and teleseismic picks. Mostly contains P arrivals,
     but a few S arrivals are annotated as well. Contains data from 2010-2013. The dataset will be
     downloaded from the SeisBench repository on first usage.
+
+    The GEOFON dataset is organized in folders, each containing data for one
+    event. The name of each event folder is the event ID.
+
+    GEOFON event ID's are formed using as prefix "gfz" followed by the year as
+    four digits and by a four-character string. For instance, the GEOFON event
+    ID of the 2012 Mw 8.6 Wharton basin earthquake is 'gfz2012hdex'.
+
+    Parametric data (of which we only need the picks) are provided as SeisComP
+    XML. The name of the XML file is the event ID plus '-preferred-only.xml'.
+    This naming is because originally there is also an XML file containing the
+    full processing history, but we don't need that one.
+
+    The waveforms are provided as plain MiniSEED files of approximately 12
+    minutes length, ranging in time from 6 minutes before until 6 minutes after
+    the P onset. There is one MiniSEED file for each combination of network,
+    station, location and channel code. Note that there may not be waveform
+    data for every pick, as some of the waveforms are restricted and we can
+    only make open data available.
+
+    To sum up, for event 'gfz2012hdex' the data directory looks like
+
+    gfz2012hdex/
+        gfz2012hdex-preferred-only.xml
+        AD.DLV..BHE.mseed
+        AD.DLV..BHN.mseed
+        AD.DLV..BHZ.mseed
+        AD.SIM..BHE.mseed
+        AD.SIM..BHN.mseed
+        AD.SIM..BHZ.mseed
+        AD.SZP..BHE.mseed
+        AD.SZP..BHN.mseed
+        AD.SZP..BHZ.mseed
+        AF.CER..BHE.mseed
+        AF.CER..BHN.mseed
+        AF.CER..BHZ.mseed
+        ...
+        ... many more mseed files ...
+        ...
+        WM.MELI..BHE.mseed
+        WM.MELI..BHN.mseed
+        WM.MELI..BHZ.mseed
+        WM.UCM..BHE.mseed
+        WM.UCM..BHN.mseed
+        WM.UCM..BHZ.mseed
+
+    In order to use the GEOFON dataset, in addition to the raw data as
+    described above, there needs to be an inventory file (as FDSN Station XML)
+    for all stream-time combinations. Data files for which no corresponding
+    inventory entries are found will be ignored. The inventory doesn't need to
+    contain instrument responses, as the latter are not needed. The inventory
+    file is currently expected as file with name
+    'inventory_without_response.xml'.
     """
+
+    start_train = "2010-01-01"
+    start_dev   = "2012-11-01"
+    start_test  = "2013-03-15"
 
     def __init__(self, **kwargs):
         # TODO: Add citation
@@ -58,56 +115,77 @@ class GEOFON(BenchmarkDataset):
             str(basepath / "inventory_without_response.xml")
         )
 
-        for event_path in sorted(basepath.iterdir()):
-            if not event_path.is_dir():
+        # Data are organized in year folders to make handling easier.
+        for year_path in sorted(basepath.glob("20??")):
+            if int(year_path.name) < 2010:
                 continue
-            quakeml = [
-                x for x in event_path.iterdir() if x.name.endswith("preferred-only.xml")
-            ]
-            if len(quakeml) != 1:
-                continue
-
-            quakeml = quakeml[0]
-
-            catalog = obspy.read_events(str(quakeml))
-            if len(catalog) != 1:
-                seisbench.logger.warning(
-                    f"Found multiple events in catalog for {event_path.name}. Skipping."
-                )
-                continue
-
-            event = catalog[0]
-
-            event_params = self._get_event_params(event)
-
-            station_groups = defaultdict(list)
-            for pick in event.picks:
-                if pick.phase_hint is None:
+            print("Working on year", year_path.name)
+            for event_path in sorted(year_path.glob("gfz" + year_path.name + "*")):
+                if not event_path.is_dir():
+                    continue
+                quakeml = event_path / (event_path.name + "-preferred-only.xml")
+                if not quakeml.exists():
                     continue
 
-                if pick.waveform_id.network_code == "IA":
-                    # Skip restricted IA data
+                catalog = obspy.read_events(str(quakeml))
+                if len(catalog) != 1:
+                    seisbench.logger.warning(
+                        f"Found multiple events in catalog for {event_path.name}. Skipping."
+                    )
                     continue
 
-                if not isinstance(pick.waveform_id.network_code, str):
-                    # Skip traces with invalid network code
-                    continue
+                event = catalog[0]
 
-                station_groups[pick.waveform_id.id[:-1]].append(pick)
+                event_params = self._get_event_params(event)
 
-            for picks in station_groups.values():
-                self._write_picks(
-                    picks,
-                    event_params,
-                    event_path,
-                    writer,
-                    location_helper,
-                    inventory,
-                    component_order=component_order,
-                )
+                pick_ids = list()
+                origin = event.preferred_origin()
+                for arrival in origin.arrivals:
+                    try:
+                        weight = arrival.time_weight
+                    except AttributeError:
+                        continue
+                    if weight is None:
+                        continue
+                    if weight < 0.5:
+                        continue
+                    if arrival.phase not in ["P", "Pn", "Pg", "pP", "sP", "S", "Sn", "Sg"]:
+                        # We skip pwP, pwwP, PcP, core phases
+                        continue
+                    pick_ids.append(arrival.pick_id)
 
-    @staticmethod
-    def _get_event_params(event):
+                station_groups = defaultdict(list)
+                for pick in event.picks:
+                    if pick.resource_id not in pick_ids:
+                        continue
+                    if pick.phase_hint is None:
+                        continue
+                    if pick.evaluation_mode != "manual":
+                        continue
+                    if pick.waveform_id.network_code == "IA":
+                        # Skip restricted IA data
+                        continue
+                    if pick.waveform_id.channel_code[:2] not in ["BH", "HH"]:
+                        continue
+                    if not isinstance(pick.waveform_id.network_code, str):
+                        # Skip traces with invalid network code
+                        continue
+
+                    station_groups[pick.waveform_id.id[:-1]].append(pick)
+
+                for picks in station_groups.values():
+                    self._write_picks(
+                        picks,
+                        event_params,
+                        event_path,
+                        writer,
+                        location_helper,
+                        inventory,
+                        component_order=component_order,
+                    )
+
+    @classmethod
+    def _get_event_params(c, event):
         origin = event.preferred_origin()
         mag = event.preferred_magnitude()
         fm = event.preferred_focal_mechanism()
@@ -123,11 +201,11 @@ class GEOFON(BenchmarkDataset):
             "source_depth_uncertainty_km": origin.depth_errors["uncertainty"] / 1e3,
         }
 
-        if str(origin.time) < "2012-11-01":
+        if c.start_train <= str(origin.time) < c.start_dev:
             split = "train"
-        elif str(origin.time) < "2013-03-15":
+        elif c.start_dev <= str(origin.time) < c.start_test:
             split = "dev"
-        else:
+        else:  # if c.start_test <= str(origin.time)
             split = "test"
         event_params["split"] = split
 
@@ -156,6 +234,8 @@ class GEOFON(BenchmarkDataset):
                 event_params["source_focal_mechanism_n_plunge"] = n_axis.plunge
                 event_params["source_focal_mechanism_n_length"] = n_axis.length
             except AttributeError:
+                print("There was an issue retrieving the focal mechanism for event",
+                      event.resource_id, file=sys.stderr)
                 # There seem to be a few broken xml files. In this case, just ignore the focal mechanism.
                 pass
         return event_params
@@ -311,10 +391,15 @@ class LocationHelper:
         for _, row in station_list.iterrows():
             trace_id = row["id"]
             network, station, location, channel = trace_id.split(".")
-            if row["sensitivity"] is None or row["sensitivity"] == "None":
-                sensitivity = np.nan
-            else:
-                sensitivity = float(row["sensitivity"])
+            try:
+                if row["sensitivity"] is None or row["sensitivity"] == "None" or "sensitivity" not in row:
+                    sensitivity = np.nan
+                else:
+                    sensitivity = float(row["sensitivity"])
+            except:
+                print(row.keys())
+                raise
+
             self.full_dict[trace_id] = (
                 row["lat"],
                 row["lon"],
@@ -328,10 +413,11 @@ class LocationHelper:
                 np.nan,
             )
 
-        station_list_additional = pd.read_csv(self.path / "station_list_additional.csv")
-        for _, row in station_list_additional.iterrows():
-            netsta = row["id"]
-            self.short_dict[netsta] = (row["lat"], row["lon"], row["elevation"], np.nan)
+        if (self.path / "station_list_additional.csv").exists():
+            station_list_additional = pd.read_csv(self.path / "station_list_additional.csv")
+            for _, row in station_list_additional.iterrows():
+                netsta = row["id"]
+                self.short_dict[netsta] = (row["lat"], row["lon"], row["elevation"], np.nan)
 
     def find(self, trace_id):
         if trace_id in self.full_dict:
@@ -343,3 +429,13 @@ class LocationHelper:
                 return self.short_dict[netsta]
             else:
                 return np.nan, np.nan, np.nan, np.nan
+
+
+class GEOFONv2(GEOFON):
+    """
+    New version with additional data after 2013.
+    """
+
+    start_train = "2010-01-01"
+    start_dev   = "2022-01-01"
+    start_test  = "2023-01-01"
