@@ -139,6 +139,8 @@ class GEOFON(BenchmarkDataset):
 
                 event_params = self._get_event_params(event)
 
+                # A list of public id's of candidate picks that we will
+                # retrieve from the arrivals of the preferred origin.
                 pick_ids = list()
                 origin = event.preferred_origin()
                 for arrival in origin.arrivals:
@@ -152,6 +154,8 @@ class GEOFON(BenchmarkDataset):
                         continue
                     if arrival.phase not in [
                         "P",
+                        "Pdif",
+                        "Pdiff",
                         "Pn",
                         "Pg",
                         "pP",
@@ -168,12 +172,7 @@ class GEOFON(BenchmarkDataset):
                 for pick in event.picks:
                     if pick.resource_id not in pick_ids:
                         continue
-                    if pick.phase_hint is None:
-                        continue
                     if pick.evaluation_mode != "manual":
-                        continue
-                    if pick.waveform_id.network_code == "IA":
-                        # Skip restricted IA data
                         continue
                     if pick.waveform_id.channel_code[:2] not in ["BH", "HH"]:
                         continue
@@ -453,13 +452,3 @@ class LocationHelper:
                 return self.short_dict[netsta]
             else:
                 return np.nan, np.nan, np.nan, np.nan
-
-
-class GEOFONv2(GEOFON):
-    """
-    New version with additional data after 2013.
-    """
-
-    start_train = "2010-01-01"
-    start_dev = "2022-01-01"
-    start_test = "2023-01-01"
