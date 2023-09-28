@@ -32,7 +32,7 @@ dependencies = [
     "obspy>=1.3.1",
     "tqdm>=4.52",
     "torch>=1.10.0",
-    "scipy>=1.5",
+    "scipy>=1.9",
     "nest_asyncio>=1.5.3",
     "bottleneck>=1.3",
 ]
