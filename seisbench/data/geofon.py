@@ -1,5 +1,4 @@
 import copy
-import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -21,28 +20,28 @@ from .base import BenchmarkDataset
 
 class GEOFON(BenchmarkDataset):
     """
-    GEOFON dataset consisting of both regional and teleseismic picks. Mostly contains P arrivals,
-    but a few S arrivals are annotated as well. Contains data from 2010-2013. The dataset will be
-    downloaded from the SeisBench repository on first usage.
+    GEOFON dataset consisting of both regional and teleseismic picks. Mostly contains
+    P arrivals, but a few S arrivals are annotated as well. It contains data from
+    2010-2013. The dataset will be downloaded from the SeisBench repository on first
+    usage.
 
-    The GEOFON dataset is organized in folders, each containing data for one
-    event. The name of each event folder is the event ID.
+    The GEOFON dataset is organized in folders, each containing data for one event.
+    The name of each event folder is the event ID.
 
-    GEOFON event ID's are formed using as prefix "gfz" followed by the year as
-    four digits and by a four-character string. For instance, the GEOFON event
-    ID of the 2012 Mw 8.6 Wharton basin earthquake is 'gfz2012hdex'.
+    GEOFON event ID's are formed using as prefix "gfz" followed by the year as four
+    digits and by a four-character string. For instance, the GEOFON event ID of the
+    2012 Mw 8.6 Wharton basin earthquake is 'gfz2012hdex'.
 
-    Parametric data (of which we only need the picks) are provided as SeisComP
-    XML. The name of the XML file is the event ID plus '-preferred-only.xml'.
-    This naming is because originally there is also an XML file containing the
-    full processing history, but we don't need that one.
+    Parametric data (of which we only need the picks) are provided as SeisComP XML.
+    The name of the XML file is the event ID plus '-preferred-only.xml'. This naming
+    is because originally there is also an XML file containing the full processing
+    history, but we don't need that one.
 
-    The waveforms are provided as plain MiniSEED files of approximately 12
-    minutes length, ranging in time from 6 minutes before until 6 minutes after
-    the P onset. There is one MiniSEED file for each combination of network,
-    station, location and channel code. Note that there may not be waveform
-    data for every pick, as some of the waveforms are restricted and we can
-    only make open data available.
+    The waveforms are provided as plain MiniSEED files of approximately 12 minutes
+    length, ranging in time from 6 minutes before until 6 minutes after the P onset.
+    There is one MiniSEED file for each combination of network, station, location and
+    channel code. Note that there may not be waveform data for every pick, as some of
+    the waveforms are restricted and we can only make open data available.
 
     To sum up, for event 'gfz2012hdex' the data directory looks like
 
@@ -70,12 +69,11 @@ class GEOFON(BenchmarkDataset):
         WM.UCM..BHN.mseed
         WM.UCM..BHZ.mseed
 
-    In order to use the GEOFON dataset, in addition to the raw data as
-    described above, there needs to be an inventory file (as FDSN Station XML)
-    for all stream-time combinations. Data files for which no corresponding
-    inventory entries are found will be ignored. The inventory doesn't need to
-    contain instrument responses, as the latter are not needed. The inventory
-    file is currently expected as file with name
+    In order to use the GEOFON dataset, in addition to the raw data as described above,
+    there needs to be an inventory file (as FDSN Station XML) for all stream-time
+    combinations. Data files for which no corresponding inventory entries are found
+    will be ignored. The inventory doesn't need to contain instrument responses, as the
+    latter are not needed. The inventory file is currently expected as file with name
     'inventory_without_response.xml'.
     """
 
@@ -93,10 +91,11 @@ class GEOFON(BenchmarkDataset):
     ):
         if basepath is None:
             raise ValueError(
-                "'basepath' needs to be set in the download_kwargs to start dataset conversion for source. "
-                "If you are seeing this error, the SeisBench remote root might be unavailable. "
-                "If it is available and you are still seeing this error, "
-                "please get in touch with the developers."
+                "'basepath' needs to be set in the download_kwargs to start "
+                "dataset conversion for source. If you are seeing this error, "
+                "the SeisBench remote root might be unavailable. If it is "
+                "available and you are still seeing this error, please get in "
+                "touch with the developers."
             )
 
         component_order = "ZNE"
@@ -120,7 +119,7 @@ class GEOFON(BenchmarkDataset):
         for year_path in sorted(basepath.glob("20??")):
             if int(year_path.name) < 2010:
                 continue
-            print("Working on year", year_path.name)
+            seisbench.logger.info(f"Working on year {year_path.name}")
             for event_path in sorted(year_path.glob("gfz" + year_path.name + "*")):
                 if not event_path.is_dir():
                     continue
@@ -131,7 +130,8 @@ class GEOFON(BenchmarkDataset):
                 catalog = obspy.read_events(str(quakeml))
                 if len(catalog) != 1:
                     seisbench.logger.warning(
-                        f"Found multiple events in catalog for {event_path.name}. Skipping."
+                        f"Found multiple events in catalog for {event_path.name}. "
+                        f"Skipping."
                     )
                     continue
 
@@ -234,21 +234,19 @@ class GEOFON(BenchmarkDataset):
                 event_params["source_focal_mechanism_t_azimuth"] = t_axis.azimuth
                 event_params["source_focal_mechanism_t_plunge"] = t_axis.plunge
                 event_params["source_focal_mechanism_t_length"] = t_axis.length
-
                 event_params["source_focal_mechanism_p_azimuth"] = p_axis.azimuth
                 event_params["source_focal_mechanism_p_plunge"] = p_axis.plunge
                 event_params["source_focal_mechanism_p_length"] = p_axis.length
-
                 event_params["source_focal_mechanism_n_azimuth"] = n_axis.azimuth
                 event_params["source_focal_mechanism_n_plunge"] = n_axis.plunge
                 event_params["source_focal_mechanism_n_length"] = n_axis.length
             except AttributeError:
-                print(
-                    "There was an issue retrieving the focal mechanism for event",
-                    event.resource_id,
-                    file=sys.stderr,
+                seisbench.logger.warning(
+                    f"There was an issue retrieving the focal mechanism for "
+                    f"event {event.resource_id}"
                 )
-                # There seem to be a few broken xml files. In this case, just ignore the focal mechanism.
+                # There seem to be a few broken xml files. In this case,
+                # just ignore the focal mechanism.
                 pass
         return event_params
 
@@ -292,7 +290,8 @@ class GEOFON(BenchmarkDataset):
         suffix="",
     ):
         picks = sorted(picks, key=lambda x: x.time)
-        # For stations where spacing between two picks is larger than (time_before + time_after), write multiple traces
+        # For stations where spacing between two picks is larger than
+        # (time_before + time_after), write multiple traces
         for i, _ in enumerate(picks[:-1]):
             if picks[i + 1].time - picks[i].time > time_before + time_after:
                 self._write_picks(
@@ -324,9 +323,9 @@ class GEOFON(BenchmarkDataset):
         trace_params.update(
             self._get_trace_params(picks, location_helper, event_params)
         )
-        trace_params[
-            "trace_name"
-        ] = f"{event_params['source_id']}_{picks[0].waveform_id.id[:-1]}{suffix}"
+        trace_params["trace_name"] = (
+            f"{event_params['source_id']}_{picks[0].waveform_id.id[:-1]}{suffix}"
+        )
 
         stream = obspy.Stream()
         loaded = set()
@@ -348,14 +347,16 @@ class GEOFON(BenchmarkDataset):
 
         if len(stream) == 0:
             seisbench.logger.warning(
-                f'Found no waveforms for {picks[0].waveform_id.id[:-1]} in event {event_params["source_id"]}'
+                f'Found no waveforms for {picks[0].waveform_id.id[:-1]} in '
+                f'event {event_params["source_id"]}'
             )
             return
 
         sampling_rate = stream[0].stats.sampling_rate
         if any(trace.stats.sampling_rate != sampling_rate for trace in stream):
             seisbench.logger.warning(
-                f"Found inconsistent sampling rates for {picks[0].waveform_id.id[:-1]} "
+                f"Found inconsistent sampling rates for "
+                f"{picks[0].waveform_id.id[:-1]} "
                 f'in event {event_params["source_id"]}'
             )
             return
@@ -369,15 +370,18 @@ class GEOFON(BenchmarkDataset):
 
         if len(stream) == 0:
             seisbench.logger.warning(
-                f'Found no waveforms for {picks[0].waveform_id.id[:-1]} in event {event_params["source_id"]}'
+                f"Found no waveforms for {picks[0].waveform_id.id[:-1]} "
+                f'in event {event_params["source_id"]}'
             )
             return
 
         actual_t_start, data, completeness = stream_to_array(stream, component_order)
 
-        if int((t_end - t_start) * sampling_rate) + 1 > data.shape[1]:
-            # Traces appear to be complete, but do not cover the intended time range
-            completeness *= data.shape[1] / (int((t_end - t_start) * sampling_rate) + 1)
+        expected_length = int((t_end - t_start) * sampling_rate) + 1
+        if data.shape[1] < expected_length:
+            # Traces appear to be complete, but do not cover the intended
+            # time range
+            completeness *= data.shape[1] / expected_length
 
         trace_params["trace_sampling_rate_hz"] = sampling_rate
         trace_params["trace_completeness"] = completeness
@@ -403,18 +407,10 @@ class LocationHelper:
         for _, row in station_list.iterrows():
             trace_id = row["id"]
             network, station, location, channel = trace_id.split(".")
-            try:
-                if (
-                    row["sensitivity"] is None
-                    or row["sensitivity"] == "None"
-                    or "sensitivity" not in row
-                ):
-                    sensitivity = np.nan
-                else:
-                    sensitivity = float(row["sensitivity"])
-            except:
-                print(row.keys())
-                raise
+            if row["sensitivity"] in [None, "None"]:
+                sensitivity = np.nan
+            else:
+                sensitivity = float(row["sensitivity"])
 
             self.full_dict[trace_id] = (
                 row["lat"],
