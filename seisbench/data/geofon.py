@@ -323,9 +323,9 @@ class GEOFON(BenchmarkDataset):
         trace_params.update(
             self._get_trace_params(picks, location_helper, event_params)
         )
-        trace_params["trace_name"] = (
-            f"{event_params['source_id']}_{picks[0].waveform_id.id[:-1]}{suffix}"
-        )
+        trace_params[
+            "trace_name"
+        ] = f"{event_params['source_id']}_{picks[0].waveform_id.id[:-1]}{suffix}"
 
         stream = obspy.Stream()
         loaded = set()
@@ -347,7 +347,7 @@ class GEOFON(BenchmarkDataset):
 
         if len(stream) == 0:
             seisbench.logger.warning(
-                f'Found no waveforms for {picks[0].waveform_id.id[:-1]} in '
+                f"Found no waveforms for {picks[0].waveform_id.id[:-1]} in "
                 f'event {event_params["source_id"]}'
             )
             return
