@@ -69,7 +69,7 @@ LenDB dataset
     :undoc-members:
     :show-inheritance:
 
-NEIC dataset
+NEIC datasets
 -----------------------------------
 
 .. automodule:: seisbench.data.neic
@@ -85,7 +85,7 @@ OBS dataset
     :undoc-members:
     :show-inheritance:
 
-PNW dataset
+PNW datasets
 -----------------------------------
 
 .. automodule:: seisbench.data.pnw

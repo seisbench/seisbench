@@ -13,7 +13,7 @@ from .instance import InstanceCounts, InstanceCountsCombined, InstanceGM, Instan
 from .iquique import Iquique
 from .isc_ehb import ISC_EHB_DepthPhases
 from .lendb import LenDB
-from .neic import NEIC
+from .neic import MLAAPDE, NEIC
 from .obs import OBS
 from .pnw import PNW, PNWAccelerometers, PNWExotic, PNWNoise
 from .scedc import SCEDC, Meier2019JGR, Ross2018GPD, Ross2018JGRFM, Ross2018JGRPick
