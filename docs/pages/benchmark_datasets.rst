@@ -158,12 +158,38 @@ below.
     *  Paper: https://doi.org/10.1016/j.aiig.2020.04.001
 
 
+MLAAPDE
+-------
+
+.. figure::  ../_static/mlaapde_mapplot.png
+   :align:   center
+
+The :py:class:`~seisbench.data.neic.MLAAPDE` dataset is a global, mostly teleseismic dataset with detailed phase
+annotations. It contains 1.9 million phase labels. Most label phases are P arrivals with some labels for detailed
+phases.
+
+.. admonition:: Citation
+
+    Cole, H. M., Yeck, W. L., & Benz, H. M. (2023). MLAAPDE: A Machine Learning Dataset for Determining
+    Global Earthquake Source Parameters. Seismological Research Letters, 94(5), 2489-2499.
+    https://doi.org/10.1785/0220230021
+
+    Cole H. M. and W. L. Yeck, 2022, Global Earthquake Machine Learning Dataset:
+    Machine Learning Asset Aggregation of the PDE (MLAAPDE): U.S. Geological Survey data release.
+    https://doi.org/10.5066/P96FABIB
+
 NEIC
 ----
 
 The National Earthquake Information Centre (NEIC) benchmark dataset comprises ~1.3 million seismic phase arrivals with
 global source-station paths. As information on the trace start-time and station information is missing for this dataset,
-it is stored in the SeisBench format, but without this normally required information
+it is stored in the SeisBench format, but without this normally required information.
+
+.. warning::
+
+    The NEIC dataset has been superseded by the more comprehensive MLAAPDE dataset. Unless you are aiming for exact
+    comparison to previous work, we recommend using the MLAAPDE dataset instead. This dataset is larger and contains
+    more comprehensive metadata.
 
 
 .. admonition:: Citation
