@@ -216,6 +216,11 @@ class MLAAPDE(BenchmarkDataset):
     """
     MLAAPDE dataset from Cole et al. (2023)
 
+    Note that the SeisBench version is not identical to the precompiled version
+    distributed directly through USGS but uses a different data selection.
+    In addition, custom versions of MLAAPDE can be compiled with the software
+    provided by the original authors. These datasets can be exported in
+    SeisBench format.
     """
 
     def __init__(self, **kwargs):
