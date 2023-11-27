@@ -705,6 +705,9 @@ class DepthPhaseNet(PhaseNet, DepthPhaseModel):
         1970-01-01 00:00:00.
         The probability curves are not normalized, there absolute value is therefore meaningless.
 
+        .. warning::
+            This class does not expose an 'annotate_async` function directly.
+
         :param stream: Obspy stream to annotate
         :param p_picks: Dictionary of P pick times. Station codes will be truncated to `NET.STA.LOC`.
         :param kwargs: All kwargs are passed to the annotate function of the superclass.
@@ -739,6 +742,9 @@ class DepthPhaseNet(PhaseNet, DepthPhaseModel):
 
         For the line search, the epicentral distances of the stations to the event is required.
         These can either be provided directly or through an inventory and the event epicenter.
+
+        .. warning::
+            This class does not expose an 'classify_async` function directly.
 
         :param stream: Obspy stream to classify
         :param p_picks: Dictionary of P pick times. Station codes will be truncated to `NET.STA.LOC`.

@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import logging
 from collections import defaultdict
@@ -2462,3 +2463,20 @@ def test_get_intervals_empty():
     helper._get_intervals(
         obspy.Stream([trace]), strict=False, min_length_s=1, comp_dict={"Z": 0}
     )
+
+
+def test_phasenet_async():
+    # Tests that the annotate/classify functions run without crashes and annotate produces an output
+    model = seisbench.models.PhaseNet(
+        sampling_rate=400
+    )  # Higher sampling rate ensures trace is long enough
+    stream = obspy.read()
+
+    annotations = asyncio.run(model.annotate_async(stream))
+    assert len(annotations) > 0
+    output = asyncio.run(
+        model.classify_async(stream)
+    )  # Ensures classify succeeds even though labels are unknown
+    assert isinstance(output, sbu.ClassifyOutput)
+    assert isinstance(output.picks, sbu.PickList)
+    assert output.creator == model.name
