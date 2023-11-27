@@ -183,41 +183,21 @@ class ProbabilisticLabeller(PickLabeller):
     Create supervised labels from picks. The picks in example are represented
     probabilistically with shapes of:
 
-    *  gaussian:
+    .. figure::  ../../_static/label_width.png
+        :align:   center
 
-        .. math::
-           X \sim \mathcal{N}(\mu,\,\sigma^{2})
-
-    *  triangle::
-
-           #         / \
-           #        /   \
-           #       /     \
-           #      /       \
-           #     /         \
-           # ___/           \___
-           #    ----- | -----
-           #      2*sigma (sigma = half width)
-
-    *  box::
-
-           #        ------------
-           #        |          |
-           #        |          |
-           #        |          |
-           #---------          --------
-           #        ---- | ----
-           #         2*sigma (sigma = half width)
+    Note that the parameter sigma has a different meaning depending on the chosen shape.
+    In particular, the total probability mass of the picks will not be constant.
 
     All picks with NaN sample are treated as not present.
     The noise class is automatically created as :math:`\max \left(0, 1 - \sum_{n=1}^{c} y_{j} \right)`.
 
-    :param sigma: Variance of Gaussian (gaussian), half-width of triangle ('triangle')
-                or box function ('box') label representation in samples, defaults to 10.
-    :type sigma: int, optional
+    :param shape: Shape of the label. One of `gaussian`, `triangle`, or `box`.
+    :param sigma: Variance of Gaussian (gaussian), half-width of triangle (triangle)
+                or box function (box) label representation in samples, defaults to 10.
     """
 
-    def __init__(self, shape="gaussian", sigma=10, **kwargs):
+    def __init__(self, shape: str = "gaussian", sigma: int = 10, **kwargs):
         self.label_method = "probabilistic"
         self.sigma = sigma
         self.shape = shape
