@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
 from queue import PriorityQueue
+from typing import Optional
 from urllib.parse import urljoin
 
 import bottleneck as bn
@@ -946,10 +947,9 @@ class WaveformModel(SeisBenchModel, ABC):
             parallelism = None
 
         self._check_parallelism_annotate(stream, parallelism)
-        self._verify_argdict(kwargs)
 
         if parallelism is None:
-            call = self._annotate_async(stream, **kwargs)
+            call = self.annotate_async(stream, **kwargs)
             return asyncio.run(call)
         else:
             return self._annotate_processes(
@@ -998,11 +998,13 @@ class WaveformModel(SeisBenchModel, ABC):
             ):
                 seisbench.logger.warning(f"Unknown argument '{key}' will be ignored.")
 
-    async def _annotate_async(self, stream, **kwargs):
+    async def annotate_async(self, stream, **kwargs):
         """
         `annotate` implementation based on asyncio
         Parameters as for :py:func:`annotate`.
         """
+        self._verify_argdict(kwargs)
+
         cut_fragments, reassemble_blocks = self._get_annotate_functions()[0]
 
         # Kwargs overwrite default args
@@ -1132,6 +1134,8 @@ class WaveformModel(SeisBenchModel, ABC):
         `annotate` implementation based on processes
         Parameters as for :py:func:`annotate`.
         """
+        self._verify_argdict(kwargs)
+
         cut_fragments, reassemble_blocks = self._get_annotate_functions()[1]
 
         # Kwargs overwrite default args
@@ -2141,21 +2145,43 @@ class WaveformModel(SeisBenchModel, ABC):
         else:
             raise ValueError(f"Can't unpack object of type {type(x)}.")
 
-    def classify(self, stream, **kwargs) -> util.ClassifyOutput:
+    async def classify_async(
+        self, stream: obspy.Stream, **kwargs
+    ) -> util.ClassifyOutput:
         """
-        Classifies the stream. The classification
+        Async interface to the :py:func:`classify` function. See details there.
+        """
+        argdict = self.default_args.copy()
+        argdict.update(kwargs)
 
-        :param stream: Obspy stream to classify
-        :type stream: obspy.core.Stream
-        :param kwargs:
-        :return: A classification for the full stream, e.g., a list of picks or the source magnitude.
-        """
+        stream = self.classify_stream_pre(stream, argdict)
+        annotations = await self.annotate_async(stream, **argdict)
+        return self.classify_aggregate(annotations, argdict)
+
+    def _classify_parallel(self, stream: obspy.Stream, **kwargs) -> util.ClassifyOutput:
         argdict = self.default_args.copy()
         argdict.update(kwargs)
 
         stream = self.classify_stream_pre(stream, argdict)
         annotations = self.annotate(stream, **argdict)
         return self.classify_aggregate(annotations, argdict)
+
+    def classify(
+        self, stream: obspy.Stream, parallelism: Optional[int] = None, **kwargs
+    ) -> util.ClassifyOutput:
+        """
+        Classifies the stream. The classification can contain any information,
+        but should be consistent with existing models.
+
+        :param stream: Obspy stream to classify
+        :type stream: obspy.core.Stream
+        :param kwargs:
+        :return: A classification for the full stream, e.g., a list of picks or the source magnitude.
+        """
+        if parallelism is None:
+            return asyncio.run(self.classify_async(stream, **kwargs))
+        else:
+            return self._classify_parallel(stream, parallelism=parallelism, **kwargs)
 
     def classify_stream_pre(self, stream, argdict):
         """
