@@ -26,11 +26,6 @@ cache_data_root = cache_root / "datasets"
 cache_model_root = cache_root / "models" / "v3"
 cache_aux_root = cache_root / "auxiliary"
 
-remote_root = "https://hifis-storage.desy.de:2880/Helmholtz/HelmholtzAI/SeisBench/"
-
-remote_data_root = _urljoin(remote_root, "datasets/")
-remote_model_root = _urljoin(remote_root, "models/v3/")
-
 if not cache_root.is_dir():
     cache_root.mkdir(parents=True, exist_ok=True)
 
@@ -52,3 +47,33 @@ _ch.setFormatter(
     _logging.Formatter("%(asctime)s | %(name)s | %(levelname)s | %(message)s")
 )
 logger.addHandler(_ch)
+
+
+default_remote_root = (
+    "https://hifis-storage.desy.de:2880/Helmholtz/HelmholtzAI/SeisBench/"
+)
+backup_remote_root = "https://seisbench.gfz-potsdam.de/mirror/"
+
+remote_root = config.get("remote_root", default_remote_root)
+
+remote_data_root = _urljoin(remote_root, "datasets/")
+remote_model_root = _urljoin(remote_root, "models/v3/")
+
+
+def use_backup_repository(backup: str = backup_remote_root):
+    """
+    Use the backup repository instead of the original one. This is helpful if the main repository is unavailable
+    or if your institution/provider blocks access to the main repository. However, this might lead to degraded
+    download speeds.
+
+    :param backup: URL of the backup repository. The default is hard-coded.
+    """
+    logger.warning(
+        f"Setting remote root to: {backup}\n"
+        f"Please note that this can affect you download speed."
+    )
+    global remote_root, remote_model_root, remote_data_root
+    remote_root = backup
+
+    remote_data_root = _urljoin(backup, "datasets/")
+    remote_model_root = _urljoin(backup, "models/v3/")
