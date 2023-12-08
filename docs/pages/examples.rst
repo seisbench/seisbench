@@ -123,8 +123,8 @@ Creating a dataset
 
 Learn how to create a dataset in SeisBench, using build-in functions and the obspy FDSN client as data source.
 
-Building an event catalog
--------------------------
+Building an event catalog with GaMMA
+------------------------------------
 .. raw:: html
 
     <embed>
@@ -134,3 +134,16 @@ Building an event catalog
     </embed>
 
 Learn how to create an event catalog from raw waveforms and the metadata using SeisBench and the GaMMA associator.
+
+
+Building an event catalog with PyOcto
+-------------------------------------
+.. raw:: html
+
+    <embed>
+        <a href="https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03d_catalog_seisbench_pyocto.ipynb">
+            <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+        </a>
+    </embed>
+
+Learn how to create an event catalog from raw waveforms and the metadata using SeisBench and the PyOcto associator.
