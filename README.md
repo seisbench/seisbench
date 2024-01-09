@@ -80,7 +80,7 @@ Check out the [contribution guidelines](https://github.com/seisbench/seisbench/b
   To verify the issue, try accessing [https://hifis-storage.desy.de:2880/](https://hifis-storage.desy.de:2880/) directly from the same machine.
   As a mitigation, you can use our backup repository. Just run `seisbench.use_backup_repository()`.
   Please note that the backup repository will usually show lower download speeds.
-  We recommend contacting your network administrator to allow access to port 2880 on our server as a more performant solution.
+  We recommend contacting your network administrator to allow outgoing access to TCP port 2880 on our server as a higher performance solution.
 - We've recently changed the URL of the SeisBench repository. To use the new URL update to SeisBench 0.4.1.
   It this is not possible, you can use the following commands within your runtime to update the URL manually:
   ```python

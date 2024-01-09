@@ -70,7 +70,7 @@ def use_backup_repository(backup: str = backup_remote_root):
     """
     logger.warning(
         f"Setting remote root to: {backup}\n"
-        f"Please note that this can affect you download speed."
+        f"Please note that this can affect your download speed."
     )
     global remote_root, remote_model_root, remote_data_root
     remote_root = backup
