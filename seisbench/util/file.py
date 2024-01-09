@@ -92,7 +92,9 @@ def precheck_url(url, timeout):
             f"This is not an error itself, but might indicate a subsequent error. "
             f"If you encounter an error, this might be caused by the firewall setup of your "
             f"network. "
-            f"Please check https://github.com/seisbench/seisbench#known-issues for details."
+            f"Please check https://github.com/seisbench/seisbench#known-issues for details.\n\n"
+            f"As a mitigation, you might be able to switch to our backup repository at the cost "
+            f"of lower download speeds. To switch, run 'seisbench.use_backup_repository'."
         )
 
 
