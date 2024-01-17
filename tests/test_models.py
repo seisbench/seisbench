@@ -2480,3 +2480,32 @@ def test_phasenet_async():
     assert isinstance(output, sbu.ClassifyOutput)
     assert isinstance(output.picks, sbu.PickList)
     assert output.creator == model.name
+
+
+def test_annotate_empty():
+    model = seisbench.models.PhaseNet()
+    ann = model.annotate(obspy.Stream())
+    assert len(ann) == 0
+
+
+@pytest.mark.parametrize(
+    "parallelism",
+    [None, 1],
+)
+def test_overlap_mismatching_records_empty(parallelism):
+    model = seisbench.models.PhaseNet()
+
+    header = {
+        "network": "XX",
+        "station": "STA",
+        "location": "00",
+        "channel": f"HHZ",
+        "sampling_rate": 100.0,
+    }
+
+    trace1 = obspy.Trace(np.ones(10000), header=header)
+    trace2 = obspy.Trace(np.zeros(10000), header=header)
+
+    ann = model.annotate(obspy.Stream([trace1, trace2]), parallelism=parallelism)
+
+    assert len(ann) == 0

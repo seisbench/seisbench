@@ -1024,6 +1024,9 @@ class WaveformModel(SeisBenchModel, ABC):
         # Validate stream
         stream = self.annotate_stream_validate(stream, argdict)
 
+        if len(stream) == 0:
+            return output
+
         # Sampling rate of the data. Equal to self.sampling_rate is this is not None
         sampling_rate = stream[0].stats.sampling_rate
         argdict["sampling_rate"] = sampling_rate
@@ -1154,6 +1157,9 @@ class WaveformModel(SeisBenchModel, ABC):
 
         # Validate stream
         stream = self.annotate_stream_validate(stream, argdict)
+
+        if len(stream) == 0:
+            return output
 
         # Sampling rate of the data. Equal to self.sampling_rate is this is not None
         sampling_rate = stream[0].stats.sampling_rate
