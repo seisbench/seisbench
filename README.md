@@ -55,20 +55,25 @@ Simply run:
 pip install seisbench
 ```
 
-SeisBench is build on pytorch.
-As of pytorch 1.13.0, pytorch is by default shipped with CUDA dependencies which increases the size of the installation considerably.
-If you want to install a pure CPU version, the easiest workaround for now is to use:
-```
-pip install torch==1.12.1 seisbench
-```
-We are working on a [more permanent solution](https://github.com/seisbench/seisbench/issues/141) that allows to use the latest pytorch version in a pure CPU context.
-
 Alternatively, you can install the latest version from source.
 For this approach, clone the repository, switch to the repository root and run:
 ```
 pip install .
 ```
 which will install SeisBench in your current python environment.
+
+### CPU only installation
+
+SeisBench is built on pytorch, which in turn runs on CUDA for GPU acceleration.
+Sometimes, it might be preferable to install pytorch without CUDA, for example, because CUDA will not be used and the CUDA binaries are rather large.
+To install such a pure CPU version, the easiest way is to follow a two-step installation.
+First, install pytorch in a pure CPU version [as explained here](https://pytorch.org/).
+Second, install SeisBench the regular way through pip.
+Example instructions would be:
+```
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+pip install seisbench
+```
 
 ## Contributing
 There are many ways to contribute to SeisBench and we are always looking forward to your contributions.
