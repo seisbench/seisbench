@@ -892,6 +892,7 @@ class WaveformModel(SeisBenchModel, ABC):
         self,
         stream,
         parallelism=None,
+        copy=True,
         **kwargs,
     ):
         """
@@ -939,6 +940,8 @@ class WaveformModel(SeisBenchModel, ABC):
                             subjob, i.e., parallelism=2 would start each subjob twice. See the warning above for a
                             discussion on parallelism for annotate.
         :type parallelism: None, int
+        :param copy: If true, copies the input stream. Otherwise, the input stream is modified in place.
+        :type copy: bool
         :param kwargs:
         :return: Obspy stream of annotations
         """
@@ -949,12 +952,13 @@ class WaveformModel(SeisBenchModel, ABC):
         self._check_parallelism_annotate(stream, parallelism)
 
         if parallelism is None:
-            call = self.annotate_async(stream, **kwargs)
+            call = self.annotate_async(stream, copy=copy, **kwargs)
             return asyncio.run(call)
         else:
             return self._annotate_processes(
                 stream,
                 parallelism=parallelism,
+                copy=copy,
                 **kwargs,
             )
 
@@ -998,7 +1002,7 @@ class WaveformModel(SeisBenchModel, ABC):
             ):
                 seisbench.logger.warning(f"Unknown argument '{key}' will be ignored.")
 
-    async def annotate_async(self, stream, **kwargs):
+    async def annotate_async(self, stream, copy=True, **kwargs):
         """
         `annotate` implementation based on asyncio
         Parameters as for :py:func:`annotate`.
@@ -1011,7 +1015,8 @@ class WaveformModel(SeisBenchModel, ABC):
         argdict = self.default_args.copy()
         argdict.update(kwargs)
 
-        stream = stream.copy()
+        if copy:
+            stream = stream.copy()
         stream.merge(-1)
 
         output = obspy.Stream()
@@ -1131,6 +1136,7 @@ class WaveformModel(SeisBenchModel, ABC):
         self,
         stream,
         parallelism=1,
+        copy=True,
         **kwargs,
     ):
         """
@@ -1145,7 +1151,8 @@ class WaveformModel(SeisBenchModel, ABC):
         argdict = self.default_args.copy()
         argdict.update(kwargs)
 
-        stream = stream.copy()
+        if copy:
+            stream = stream.copy()
         stream.merge(-1)
 
         output = obspy.Stream()
