@@ -69,16 +69,6 @@ def test_get_component_mapping():
     assert dummy._get_component_mapping("ZNE", "ZNEH") == [0, 1, 2]
 
 
-def test_pad_packed_sequence():
-    seq = [np.ones((5, 1)), np.ones((6, 3)), np.ones((1, 2)), np.ones((7, 2))]
-
-    packed = seisbench.data.WaveformDataset._pad_packed_sequence(seq)
-
-    assert packed.shape == (4, 7, 3)
-    assert np.sum(packed == 1) == sum(x.size for x in seq)
-    assert np.sum(packed == 0) == packed.size - sum(x.size for x in seq)
-
-
 def test_preload():
     dummy = seisbench.data.DummyDataset(cache="trace")
     assert len(dummy._waveform_cache) == 0

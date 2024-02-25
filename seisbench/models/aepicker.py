@@ -1,3 +1,5 @@
+from typing import Any
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -99,6 +101,24 @@ class BasicPhaseAE(WaveformModel):
             return x_out
         else:
             return self.softmax(x_out)
+
+    def annotate_batch_pre(
+        self, batch: torch.Tensor, argdict: dict[str, Any]
+    ) -> torch.Tensor:
+        batch = batch - batch.mean(axis=-1, keepdims=True)
+
+        std = batch.std(axis=-1, keepdims=True)
+        batch = batch / std.clip(1e-10)
+
+        return batch
+
+    def annotate_batch_post(
+        self, batch: torch.Tensor, piggyback: Any, argdict: dict[str, Any]
+    ) -> torch.Tensor:
+        # Transpose predictions to correct shape
+        batch[..., 130] = np.nan
+        batch[..., -130:] = np.nan
+        return torch.transpose(batch, -1, -2)
 
     def annotate_window_pre(self, window, argdict):
         # Add a demean and normalize step to the preprocessing

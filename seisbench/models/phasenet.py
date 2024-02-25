@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 import numpy as np
 import scipy.signal
@@ -195,6 +196,39 @@ class PhaseNet(WaveformModel):
                 window = window / peak
 
         return window
+
+    def annotate_batch_pre(
+        self, batch: torch.Tensor, argdict: dict[str, Any]
+    ) -> torch.Tensor:
+        batch = batch - batch.mean(axis=-1, keepdims=True)
+        if self.norm_detrend:
+            batch = sbu.torch_detrend(batch)
+        if self.norm_amp_per_comp:
+            peak = batch.abs().max(axis=-1, keepdims=True)[0]
+            batch = batch / (peak + 1e-10)
+        else:
+            if self.norm == "std":
+                std = batch.std(axis=-1, keepdims=True)
+                batch = batch / (std + 1e-10)
+            elif self.norm == "peak":
+                peak = batch.abs().max(axis=-1, keepdims=True)[0]
+                batch = batch / (peak + 1e-10)
+
+        return batch
+
+    def annotate_batch_post(
+        self, batch: torch.Tensor, piggyback: Any, argdict: dict[str, Any]
+    ) -> torch.Tensor:
+        # Transpose predictions to correct shape
+        batch = torch.transpose(batch, -1, -2)
+        prenan, postnan = argdict.get(
+            "blinding", self._annotate_args.get("blinding")[1]
+        )
+        if prenan > 0:
+            batch[:, prenan] = np.nan
+        if postnan > 0:
+            batch[:, -postnan:] = np.nan
+        return batch
 
     def annotate_window_post(self, pred, piggyback=None, argdict=None):
         # Transpose predictions to correct shape

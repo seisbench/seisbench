@@ -48,3 +48,11 @@ Auxiliary functions
     :members:
     :undoc-members:
     :show-inheritance:
+
+Array tools
+------------------------------------------------------------
+
+.. automodule:: seisbench.util.arraytools
+    :members:
+    :undoc-members:
+    :show-inheritance:

@@ -1,4 +1,5 @@
 import warnings
+from typing import Any
 
 import numpy as np
 import scipy.signal
@@ -7,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import seisbench.util as sbu
+import seisbench.util.arraytools
 
 from .base import ActivationLSTMCell, CustomLSTM, WaveformModel
 
@@ -289,6 +291,46 @@ class EQTransformer(WaveformModel):
         if postnan > 0:
             pred[-postnan:] = np.nan
         return pred
+
+    def annotate_batch_post(
+        self, batch: torch.Tensor, piggyback: Any, argdict: dict[str, Any]
+    ) -> torch.Tensor:
+        # Transpose predictions to correct shape
+        batch = torch.stack(batch, dim=-1)
+        prenan, postnan = argdict.get(
+            "blinding", self._annotate_args.get("blinding")[1]
+        )
+        if prenan > 0:
+            batch[:, :prenan] = np.nan
+        if postnan > 0:
+            batch[:, -postnan:] = np.nan
+        return batch
+
+    def annotate_batch_pre(
+        self, batch: torch.Tensor, argdict: dict[str, Any]
+    ) -> torch.Tensor:
+        batch = batch - batch.mean(axis=-1, keepdims=True)
+        if self.norm_detrend:
+            batch = sbu.torch_detrend(batch)
+        if self.norm_amp_per_comp:
+            peak = batch.abs().max(axis=-1, keepdims=True)[0]
+            batch = batch / (peak + 1e-10)
+        else:
+            if self.norm == "std":
+                std = batch.std(axis=(-1, -2), keepdims=True)
+                batch = batch / (std + 1e-10)
+            elif self.norm == "peak":
+                peak = batch.abs().max(axis=-1, keepdims=True)[0]
+                batch = batch / (peak + 1e-10)
+
+        # Cosine taper (very short, i.e., only six samples on each side)
+        tap = 0.5 * (
+            1 + torch.cos(torch.linspace(np.pi, 2 * np.pi, 6, device=batch.device))
+        )
+        batch[:, :, :6] *= tap
+        batch[:, :, -6:] *= tap.flip(dims=(0,))
+
+        return batch
 
     def annotate_window_pre(self, window, argdict):
         # Add a demean and an amplitude normalization step to the preprocessing

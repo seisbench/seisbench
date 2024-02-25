@@ -894,42 +894,34 @@ def test_default_labels():
     assert model.labels == [0, 1, 2]
 
 
-@pytest.mark.parametrize(
-    "parallelism",
-    [None, 1],
-)
-def test_annotate_cred(parallelism):
+def test_annotate_cred():
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.CRED(
         sampling_rate=400
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
-    annotations = model.annotate(stream, parallelism=parallelism)
+    annotations = model.annotate(stream)
     assert len(annotations) > 0
     output = model.classify(
-        stream, parallelism=parallelism
+        stream
     )  # Ensures classify succeeds even though labels are unknown
     assert isinstance(output, sbu.ClassifyOutput)
     assert isinstance(output.detections, sbu.DetectionList)
     assert output.creator == model.name
 
 
-@pytest.mark.parametrize(
-    "parallelism",
-    [None, 1],
-)
-def test_annotate_eqtransformer(parallelism):
+def test_annotate_eqtransformer():
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.EQTransformer(
         sampling_rate=400
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
-    annotations = model.annotate(stream, parallelism=parallelism)
+    annotations = model.annotate(stream)
     assert len(annotations) > 0
     output = model.classify(
-        stream, parallelism=parallelism
+        stream
     )  # Ensures classify succeeds even though labels are unknown
     assert isinstance(output, sbu.ClassifyOutput)
     assert isinstance(output.picks, sbu.PickList)
@@ -938,15 +930,13 @@ def test_annotate_eqtransformer(parallelism):
 
 
 @pytest.mark.parametrize(
-    "parallelism,model",
+    "model",
     [
-        (None, "phasenet"),
-        (1, "phasenet"),
-        (None, "eqtransformer"),
-        (1, "eqtransformer"),
+        "phasenet",
+        "eqtransformer",
     ],
 )
-def test_annotate_pickblue(parallelism, model):
+def test_annotate_pickblue(model):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     with patch(
         "seisbench.models.SeisBenchModel._check_version_requirement"
@@ -956,91 +946,75 @@ def test_annotate_pickblue(parallelism, model):
     model.sampling_rate = 400  # Higher sampling rate ensures trace is long enough
 
     stream = obspy.read("./tests/examples/OBS*")
-    annotations = model.annotate(stream, parallelism=parallelism)
+    annotations = model.annotate(stream)
     assert len(annotations) == 3
     model.classify(
-        stream, parallelism=parallelism
+        stream,
     )  # Ensures classify succeeds even though labels are unknown
 
 
-@pytest.mark.parametrize(
-    "parallelism",
-    [None, 1],
-)
-def test_annotate_gpd(parallelism):
+def test_annotate_gpd():
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.GPD(
         sampling_rate=100
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
-    annotations = model.annotate(stream, parallelism=parallelism)
+    annotations = model.annotate(stream)
     assert len(annotations) > 0
     output = model.classify(
-        stream, parallelism=parallelism
+        stream
     )  # Ensures classify succeeds even though labels are unknown
     assert isinstance(output, sbu.ClassifyOutput)
     assert isinstance(output.picks, sbu.PickList)
     assert output.creator == model.name
 
 
-@pytest.mark.parametrize(
-    "parallelism",
-    [None, 1],
-)
-def test_annotate_phasenetlight(parallelism):
+def test_annotate_phasenetlight():
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.PhaseNetLight(
         sampling_rate=400
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
-    annotations = model.annotate(stream, parallelism=parallelism)
+    annotations = model.annotate(stream)
     assert len(annotations) > 0
     output = model.classify(
-        stream, parallelism=parallelism
+        stream
     )  # Ensures classify succeeds even though labels are unknown
     assert isinstance(output, sbu.ClassifyOutput)
     assert isinstance(output.picks, sbu.PickList)
     assert output.creator == model.name
 
 
-@pytest.mark.parametrize(
-    "parallelism",
-    [None, 1],
-)
-def test_annotate_phasenet(parallelism):
+def test_annotate_phasenet():
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.PhaseNet(
         sampling_rate=400
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
-    annotations = model.annotate(stream, parallelism=parallelism)
+    annotations = model.annotate(stream)
     assert len(annotations) > 0
     output = model.classify(
-        stream, parallelism=parallelism
+        stream
     )  # Ensures classify succeeds even though labels are unknown
     assert isinstance(output, sbu.ClassifyOutput)
     assert isinstance(output.picks, sbu.PickList)
     assert output.creator == model.name
 
 
-@pytest.mark.parametrize(
-    "parallelism",
-    [None, 1],
-)
-def test_annotate_basicphaseae(parallelism):
+def test_annotate_basicphaseae():
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.BasicPhaseAE(
         sampling_rate=400
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
-    annotations = model.annotate(stream, parallelism=parallelism)
+    annotations = model.annotate(stream)
     assert len(annotations) > 0
     output = model.classify(
-        stream, parallelism=parallelism
+        stream
     )  # Ensures classify succeeds even though labels are unknown
     assert isinstance(output, sbu.ClassifyOutput)
     assert isinstance(output.picks, sbu.PickList)
@@ -1072,15 +1046,11 @@ def test_deep_denoiser():
     seisbench.models.DeepDenoiser()
 
 
-@pytest.mark.parametrize(
-    "parallelism",
-    [None, 1],
-)
-def test_annotate_deep_denoiser(parallelism):
+def test_annotate_deep_denoiser():
     stream = obspy.read()
 
     model = seisbench.models.DeepDenoiser()
-    annotations = model.annotate(stream, parallelism=parallelism)
+    annotations = model.annotate(stream)
 
     assert len(annotations) == 3
     for i in range(3):
@@ -1352,51 +1322,6 @@ def test_save_load_model_updated_after_construction_inheritence_compatible(tmp_p
     model_loaded = model_orig.load(tmp_path / "gpd_changed")
 
     assert model_orig.component_order == model_loaded.component_order
-
-
-def test_check_parallelism_annotate(caplog):
-    t0 = UTCDateTime(0)
-    stats = {
-        "network": "SB",
-        "station": "TEST",
-        "channel": "HHZ",
-        "sampling_rate": 100,
-        "starttime": t0,
-    }
-
-    trace0 = obspy.Trace(np.zeros(1000), stats)
-    trace1 = obspy.Trace(np.ones(1000), stats)
-    stream_small = obspy.Stream([trace0, trace1])
-
-    trace0 = obspy.Trace(np.zeros(int(3e7)), stats)
-    trace1 = obspy.Trace(np.zeros(int(3e7)), stats)
-    stream_large = obspy.Stream([trace0, trace1])
-
-    with caplog.at_level(logging.WARNING):
-        seisbench.models.WaveformModel._check_parallelism_annotate(
-            stream_small, parallelism=None
-        )
-    assert "Consider activating parallelisation. " not in caplog.text
-
-    with caplog.at_level(logging.WARNING):
-        seisbench.models.WaveformModel._check_parallelism_annotate(
-            stream_large, parallelism=None
-        )
-    assert "Consider activating parallelisation. " in caplog.text
-
-    caplog.clear()
-
-    with caplog.at_level(logging.WARNING):
-        seisbench.models.WaveformModel._check_parallelism_annotate(
-            stream_large, parallelism=1
-        )
-    assert "Consider using the sequential asyncio implementation. " not in caplog.text
-
-    with caplog.at_level(logging.WARNING):
-        seisbench.models.WaveformModel._check_parallelism_annotate(
-            stream_small, parallelism=1
-        )
-    assert "Consider using the sequential asyncio implementation. " in caplog.text
 
 
 def test_get_versions_from_files():
@@ -2014,9 +1939,8 @@ def test_eqtransformer_forward():
 
 def test_cred_forward():
     model = seisbench.models.CRED()
-    x = np.random.rand(3, 3000)
-    x = np.expand_dims(model.waveforms_to_spectrogram(x), 0).astype(np.float32)
-    x = torch.from_numpy(x)
+    x = np.random.rand(2, 3, 3000)
+    x = model.waveforms_to_spectrogram(torch.tensor(x, dtype=torch.float32))
 
     with torch.no_grad():
         pred = model(x).numpy()
@@ -2488,11 +2412,7 @@ def test_annotate_empty():
     assert len(ann) == 0
 
 
-@pytest.mark.parametrize(
-    "parallelism",
-    [None, 1],
-)
-def test_overlap_mismatching_records_empty(parallelism):
+def test_overlap_mismatching_records_empty():
     model = seisbench.models.PhaseNet()
 
     header = {
@@ -2506,6 +2426,20 @@ def test_overlap_mismatching_records_empty(parallelism):
     trace1 = obspy.Trace(np.ones(10000), header=header)
     trace2 = obspy.Trace(np.zeros(10000), header=header)
 
-    ann = model.annotate(obspy.Stream([trace1, trace2]), parallelism=parallelism)
+    ann = model.annotate(obspy.Stream([trace1, trace2]))
 
     assert len(ann) == 0
+
+
+def test_predict_buffer_padding():
+    # Note: Normally, for PhaseNet we don't want the model to do padding.
+    model = seisbench.models.PhaseNet()
+
+    buffer = [np.random.rand(i, 3001) for i in range(1, 4)]
+
+    model.allow_padding = False
+    with pytest.raises(ValueError):
+        model._predict_buffer(buffer, {})
+
+    model.allow_padding = True
+    model._predict_buffer(buffer, {})
