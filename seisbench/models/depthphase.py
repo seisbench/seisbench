@@ -168,7 +168,7 @@ class DepthPhaseModel:
         if len(probabilities) == 0:
             sbu.ClassifyOutput(
                 caller_name,
-                depth=np.nana,
+                depth=np.nan,
                 depth_levels=self.depth_levels,
                 probabilities=np.nan * self.depth_levels,
                 avg_probabilities=np.nan * self.depth_levels,
