@@ -18,3 +18,4 @@ from .obs import OBS
 from .pnw import PNW, PNWAccelerometers, PNWExotic, PNWNoise
 from .scedc import SCEDC, Meier2019JGR, Ross2018GPD, Ross2018JGRFM, Ross2018JGRPick
 from .stead import STEAD
+from .txed import TXED

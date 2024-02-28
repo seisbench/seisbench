@@ -108,3 +108,11 @@ STEAD dataset
     :members:
     :undoc-members:
     :show-inheritance:
+
+TXED dataset
+-----------------------------------
+
+.. automodule:: seisbench.data.txed
+    :members:
+    :undoc-members:
+    :show-inheritance:

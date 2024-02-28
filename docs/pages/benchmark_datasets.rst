@@ -281,3 +281,25 @@ are noise examples and the remaining contain seismic arrivals. 450,000 earthquak
     A Global Data Set of Seismic Signals for AI, IEEE Access.
 
     https://doi.org/10.1109/ACCESS.2019.2947848
+
+TXED
+-----
+
+.. figure::  ../_static/txed_mapplot.png
+   :align:   center
+
+The :py:class:`~seisbench.data.txed.TXED` dataset is a benchmark dataset of local seismic signals in the state of Texas.
+In total there are ~500,000 time series encompassing 20,000 earthquakes (~300,000 traces) and noise traces (~200,000 traces).
+
+.. warning::
+
+    Dataset size: waveforms.hdf5 **~70Gb**, metadata.csv **120Mb**
+
+.. admonition:: Citation
+
+    Chen, Y., A. Savvaidis, O. M. Saad, G.-C. D. Huang, D. Siervo, V. O’Sullivan, C. McCabe, B. Uku, P. Fleck,
+    G. Burke, N. L. Alvarez, J. Domino, and I. Grigoratos,
+    TXED: the texas earthquake dataset for AI,
+    Seismological Research Letters, vol. 1, no. 1, p. doi: 10.1785/0220230327, 2024.
+
+    https://doi.org/10.1785/0220230327
