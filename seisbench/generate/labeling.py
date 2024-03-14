@@ -168,6 +168,9 @@ class PickLabeller(SupervisedLabeller, ABC):
         Always appends a noise column at the end.
 
         :param label_columns: List of label columns or dict[label_columns -> labels]
+        :param noise_column: If False, disables normalization of phases and noise label, default is True
+        :param model_labels: Phase labels of the loaded or created model, default is None.
+                             Get labels from model by model.labels
         :return: dict[label_columns -> labels], list[labels], dict[labels -> ids]
         """
         if not isinstance(label_columns, dict):
