@@ -1053,10 +1053,7 @@ def test_standard_pick_labeller_pickgroups():
 
 @pytest.mark.parametrize(
     "model_labels",
-    [
-        "psn",
-        "nps",
-    ],
+    ["psn", "nps", None],
 )
 def test_colums_to_dict_and_labels(model_labels):
     label_columns = ["trace_p_arrival_sample", "trace_s_arrival_sample"]
@@ -1077,6 +1074,8 @@ def test_colums_to_dict_and_labels(model_labels):
         assert label_ids == {"p": 0, "s": 1, "Noise": 2}
     elif model_labels == "nps":
         assert label_ids == {"Noise": 0, "p": 1, "s": 2}
+    else:
+        assert label_ids == {"p": 0, "s": 1, "Noise": 2}
 
     label_columns = {
         "trace_p_arrival_sample": "p",
