@@ -80,19 +80,19 @@ class SupervisedLabeller(ABC):
 
         return sample_dim, channel_dim, width_dim
 
-    def _check_labels(self, y, metadata):
+    def _check_labels(self, y, metadata, eps=1e-8):
         if (
             self.label_type == "multi_class"
             and self.label_method == "probabilistic"
             and getattr(self, "noise_column", True)
         ):
-            if (y.sum(self.dim) > 1).any():
+            if (y.sum(self.dim) > 1 + eps).any():
                 raise ValueError(
                     f"More than one label provided. For multi_class problems, only one label can be provided per input."
                 )
 
         if self.label_type == "binary":
-            if (y.sum(self.dim) > 1).any():
+            if (y.sum(self.dim) > 1 + eps).any():
                 raise ValueError(f"Binary labels should lie within 0-1 range.")
 
         for label in self.label_columns:
