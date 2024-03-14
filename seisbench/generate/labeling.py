@@ -143,7 +143,7 @@ class PickLabeller(SupervisedLabeller, ABC):
                 self.labels,
                 self.label_ids,
             ) = self._colums_to_dict_and_labels(
-                label_columns, noise_column=noise_column, model_labels=self.model_labels
+                label_columns, noise_column=noise_column, model_labels=model_labels
             )
         else:
             self.labels = None
