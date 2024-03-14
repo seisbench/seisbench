@@ -1051,14 +1051,21 @@ def test_standard_pick_labeller_pickgroups():
         labeller(state_dict)
 
 
-def test_colums_to_dict_and_labels():
+@pytest.mark.parametrize(
+    "model_labels",
+    [
+        "psn",
+        "nps",
+    ],
+)
+def test_colums_to_dict_and_labels(model_labels):
     label_columns = ["trace_p_arrival_sample", "trace_s_arrival_sample"]
     (
         label_columns,
         labels,
         label_ids,
     ) = seisbench.generate.labeling.PickLabeller._colums_to_dict_and_labels(
-        label_columns
+        label_columns, model_labels=model_labels
     )
 
     assert label_columns == {
@@ -1066,7 +1073,10 @@ def test_colums_to_dict_and_labels():
         "trace_s_arrival_sample": "s",
     }
     assert labels == ["p", "s", "Noise"]
-    assert label_ids == {"p": 0, "s": 1, "Noise": 2}
+    if model_labels == "psn":
+        assert label_ids == {"p": 0, "s": 1, "Noise": 2}
+    elif model_labels == "nps":
+        assert label_ids == {"Noise": 0, "p": 1, "s": 2}
 
     label_columns = {
         "trace_p_arrival_sample": "p",
