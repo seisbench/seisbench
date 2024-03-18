@@ -312,6 +312,14 @@ class WaveformDataset:
     def component_order(self, value):
         if value is None:
             value = seisbench.config["component_order"]
+            seisbench.logger.warning(
+                f"Component order not specified, defaulting to '{value}'."
+            )
+            # Use get to avoid error if no component_order is set.
+            if value != self.data_format.get("component_order"):
+                seisbench.logger.warning(
+                    f"Default component order '{value}' does not match dataset component order '{self.data_format.get('component_order')}'."
+                )
 
         if self.missing_components is not None:
             # In init, missing_components will be None in the first call,
