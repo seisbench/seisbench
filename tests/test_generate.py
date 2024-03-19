@@ -1061,7 +1061,7 @@ def test_colums_to_dict_and_labels(model_labels):
         label_columns,
         labels,
         label_ids,
-    ) = seisbench.generate.labeling.PickLabeller._colums_to_dict_and_labels(
+    ) = seisbench.generate.labeling.PickLabeller._columns_to_dict_and_labels(
         label_columns, model_labels=model_labels
     )
 
@@ -1086,7 +1086,7 @@ def test_colums_to_dict_and_labels(model_labels):
         label_columns,
         labels,
         label_ids,
-    ) = seisbench.generate.labeling.PickLabeller._colums_to_dict_and_labels(
+    ) = seisbench.generate.labeling.PickLabeller._columns_to_dict_and_labels(
         label_columns
     )
 
@@ -1097,6 +1097,31 @@ def test_colums_to_dict_and_labels(model_labels):
     }
     assert labels == ["p", "s", "Noise"]
     assert label_ids == {"p": 0, "s": 1, "Noise": 2}
+
+
+@pytest.mark.parametrize(
+    "noise_column",
+    [True, False],
+)
+def test_colums_to_dict_and_labels_noise_column(noise_column):
+    model_labels = "ebcad"
+    label_columns = [f"trace_{x}_arrival" for x in model_labels]
+    (
+        label_columns,
+        labels,
+        label_ids,
+    ) = seisbench.generate.labeling.PickLabeller._columns_to_dict_and_labels(
+        label_columns, model_labels=model_labels, noise_column=noise_column
+    )
+
+    if noise_column:
+        assert label_columns == {f"trace_{x}_arrival": x for x in model_labels}
+        assert labels == [*sorted(model_labels), "Noise"]
+        assert label_ids == {"e": 0, "b": 1, "c": 2, "a": 3, "d": 4, "Noise": 5}
+    else:
+        assert label_columns == {f"trace_{x}_arrival": x for x in model_labels}
+        assert labels == [*sorted(model_labels)]
+        assert label_ids == {"e": 0, "b": 1, "c": 2, "a": 3, "d": 4}
 
 
 def test_swap_dimension_order():

@@ -1,6 +1,7 @@
 import copy
 import re
 from abc import ABC, abstractmethod
+from typing import Union
 
 import numpy as np
 
@@ -127,12 +128,19 @@ class PickLabeller(SupervisedLabeller, ABC):
                           This allows to group phases, e.g., Pg, Pn, pP all being labeled as P phase.
                           Multiple phases present within a window can lead to the labeller annotating multiple picks
                           for the same label.
-    :type label_columns: list or dict, optional
+    :param noise_column: If False, disables normalization of phases and noise label, default is True
+    :param model_labels: Order of the labels, defaults to None.
+                         If None, the labels will be in alphabetical order with Noise as the last label.
+                         To get the labels from a WaveformModel, use by model.labels.
     :param kwargs: Kwargs are passed to the SupervisedLabeller superclass
     """
 
     def __init__(
-        self, label_columns=None, noise_column=True, model_labels=None, **kwargs
+        self,
+        label_columns: Union[list[str], dict[str, str]] = None,
+        noise_column: bool = True,
+        model_labels: Union[str, list[str]] = None,
+        **kwargs,
     ):
         self.label_columns = label_columns
         self.noise_column = noise_column
@@ -142,7 +150,7 @@ class PickLabeller(SupervisedLabeller, ABC):
                 self.label_columns,
                 self.labels,
                 self.label_ids,
-            ) = self._colums_to_dict_and_labels(
+            ) = self._columns_to_dict_and_labels(
                 label_columns, noise_column=noise_column, model_labels=model_labels
             )
         else:
@@ -162,15 +170,20 @@ class PickLabeller(SupervisedLabeller, ABC):
         )
 
     @staticmethod
-    def _colums_to_dict_and_labels(label_columns, noise_column=True, model_labels=None):
+    def _columns_to_dict_and_labels(
+        label_columns,
+        noise_column: bool = True,
+        model_labels: Union[str, list[str]] = None,
+    ):
         """
         Generate label columns dict and list of labels from label_columns list or dict.
         Always appends a noise column at the end.
 
         :param label_columns: List of label columns or dict[label_columns -> labels]
         :param noise_column: If False, disables normalization of phases and noise label, default is True
-        :param model_labels: Phase labels of the loaded or created model, default is None.
-                             Get labels from model by model.labels
+        :param model_labels: Order of the labels, defaults to None.
+                             If None, the labels will be in alphabetical order with Noise as the last label.
+                             To get the labels from a WaveformModel, use by model.labels.
         :return: dict[label_columns -> labels], list[labels], dict[labels -> ids]
         """
         if not isinstance(label_columns, dict):
@@ -183,7 +196,10 @@ class PickLabeller(SupervisedLabeller, ABC):
                 label: [*model_labels].index(label) for label in labels
             }  # label ids for P and S
             if noise_column:
-                label_ids["Noise"] = len(model_labels) - sum(list(label_ids.values()))
+                if "n" in [*model_labels]:
+                    label_ids["Noise"] = [*model_labels].index("n")
+                else:
+                    label_ids["Noise"] = max(*label_ids.values()) + 1
                 labels.append("Noise")
         else:
             if noise_column:
@@ -231,7 +247,7 @@ class ProbabilisticLabeller(PickLabeller):
                 self.label_columns,
                 self.labels,
                 self.label_ids,
-            ) = self._colums_to_dict_and_labels(
+            ) = self._columns_to_dict_and_labels(
                 label_columns, self.noise_column, self.model_labels
             )
 
@@ -340,7 +356,7 @@ class StepLabeller(PickLabeller):
                 self.label_columns,
                 self.labels,
                 self.label_ids,
-            ) = self._colums_to_dict_and_labels(
+            ) = self._columns_to_dict_and_labels(
                 label_columns, noise_column=False, model_labels=self.model_labels
             )
 
@@ -695,7 +711,7 @@ class StandardLabeller(PickLabeller):
                 self.label_columns,
                 self.labels,
                 self.label_ids,
-            ) = self._colums_to_dict_and_labels(
+            ) = self._columns_to_dict_and_labels(
                 label_columns, model_labels=self.model_labels
             )
 
