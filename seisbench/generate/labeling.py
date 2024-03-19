@@ -1,6 +1,7 @@
 import copy
 import re
 from abc import ABC, abstractmethod
+from typing import Union
 
 import numpy as np
 
@@ -80,19 +81,19 @@ class SupervisedLabeller(ABC):
 
         return sample_dim, channel_dim, width_dim
 
-    def _check_labels(self, y, metadata):
+    def _check_labels(self, y, metadata, eps=1e-8):
         if (
             self.label_type == "multi_class"
             and self.label_method == "probabilistic"
             and getattr(self, "noise_column", True)
         ):
-            if (y.sum(self.dim) > 1).any():
+            if (y.sum(self.dim) > 1 + eps).any():
                 raise ValueError(
                     f"More than one label provided. For multi_class problems, only one label can be provided per input."
                 )
 
         if self.label_type == "binary":
-            if (y.sum(self.dim) > 1).any():
+            if (y.sum(self.dim) > 1 + eps).any():
                 raise ValueError(f"Binary labels should lie within 0-1 range.")
 
         for label in self.label_columns:
@@ -127,20 +128,30 @@ class PickLabeller(SupervisedLabeller, ABC):
                           This allows to group phases, e.g., Pg, Pn, pP all being labeled as P phase.
                           Multiple phases present within a window can lead to the labeller annotating multiple picks
                           for the same label.
-    :type label_columns: list or dict, optional
+    :param noise_column: If False, disables normalization of phases and noise label, default is True
+    :param model_labels: Order of the labels, defaults to None.
+                         If None, the labels will be in alphabetical order with Noise as the last label.
+                         To get the labels from a WaveformModel, use by model.labels.
     :param kwargs: Kwargs are passed to the SupervisedLabeller superclass
     """
 
-    def __init__(self, label_columns=None, noise_column=True, **kwargs):
+    def __init__(
+        self,
+        label_columns: Union[list[str], dict[str, str]] = None,
+        noise_column: bool = True,
+        model_labels: Union[str, list[str]] = None,
+        **kwargs,
+    ):
         self.label_columns = label_columns
         self.noise_column = noise_column
+        self.model_labels = model_labels
         if label_columns is not None:
             (
                 self.label_columns,
                 self.labels,
                 self.label_ids,
-            ) = self._colums_to_dict_and_labels(
-                label_columns, noise_column=noise_column
+            ) = self._columns_to_dict_and_labels(
+                label_columns, noise_column=noise_column, model_labels=model_labels
             )
         else:
             self.labels = None
@@ -159,21 +170,41 @@ class PickLabeller(SupervisedLabeller, ABC):
         )
 
     @staticmethod
-    def _colums_to_dict_and_labels(label_columns, noise_column=True):
+    def _columns_to_dict_and_labels(
+        label_columns,
+        noise_column: bool = True,
+        model_labels: Union[str, list[str]] = None,
+    ):
         """
         Generate label columns dict and list of labels from label_columns list or dict.
         Always appends a noise column at the end.
 
         :param label_columns: List of label columns or dict[label_columns -> labels]
+        :param noise_column: If False, disables normalization of phases and noise label, default is True
+        :param model_labels: Order of the labels, defaults to None.
+                             If None, the labels will be in alphabetical order with Noise as the last label.
+                             To get the labels from a WaveformModel, use by model.labels.
         :return: dict[label_columns -> labels], list[labels], dict[labels -> ids]
         """
         if not isinstance(label_columns, dict):
             label_columns = {label: label.split("_")[1] for label in label_columns}
 
         labels = sorted(list(np.unique(list(label_columns.values()))))
-        if noise_column:
-            labels.append("Noise")
-        label_ids = {label: i for i, label in enumerate(labels)}
+
+        if model_labels:
+            label_ids = {
+                label: [*model_labels].index(label) for label in labels
+            }  # label ids for P and S
+            if noise_column:
+                if "n" in [*model_labels]:
+                    label_ids["Noise"] = [*model_labels].index("n")
+                else:
+                    label_ids["Noise"] = max(*label_ids.values()) + 1
+                labels.append("Noise")
+        else:
+            if noise_column:
+                labels.append("Noise")
+            label_ids = {label: i for i, label in enumerate(labels)}
 
         return label_columns, labels, label_ids
 
@@ -216,7 +247,9 @@ class ProbabilisticLabeller(PickLabeller):
                 self.label_columns,
                 self.labels,
                 self.label_ids,
-            ) = self._colums_to_dict_and_labels(label_columns, self.noise_column)
+            ) = self._columns_to_dict_and_labels(
+                label_columns, self.noise_column, self.model_labels
+            )
 
         sample_dim, channel_dim, width_dim = self._get_dimension_order_from_config(
             config, self.ndim
@@ -323,7 +356,9 @@ class StepLabeller(PickLabeller):
                 self.label_columns,
                 self.labels,
                 self.label_ids,
-            ) = self._colums_to_dict_and_labels(label_columns, noise_column=False)
+            ) = self._columns_to_dict_and_labels(
+                label_columns, noise_column=False, model_labels=self.model_labels
+            )
 
         sample_dim, channel_dim, width_dim = self._get_dimension_order_from_config(
             config, self.ndim
@@ -676,7 +711,9 @@ class StandardLabeller(PickLabeller):
                 self.label_columns,
                 self.labels,
                 self.label_ids,
-            ) = self._colums_to_dict_and_labels(label_columns)
+            ) = self._columns_to_dict_and_labels(
+                label_columns, model_labels=self.model_labels
+            )
 
         sample_dim, _, width_dim = self._get_dimension_order_from_config(
             config, self.ndim
