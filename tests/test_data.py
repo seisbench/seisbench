@@ -374,8 +374,8 @@ def test_unify_sampling_rate(caplog):
         dummy._unify_sampling_rate()
     assert "Sampling rate not specified in data set." in caplog.text
 
-    caplog.clear()
     dummy = seisbench.data.DummyDataset()
+    caplog.clear()
     dummy._metadata["trace_sampling_rate_hz"] = 20.0
     dummy._data_format["sampling_rate"] = 40.0
     with caplog.at_level(logging.WARNING):
@@ -385,8 +385,8 @@ def test_unify_sampling_rate(caplog):
         in caplog.text
     )
 
-    caplog.clear()
     dummy = seisbench.data.DummyDataset()
+    caplog.clear()
     del dummy._metadata["trace_sampling_rate_hz"]
     dummy._metadata["trace_dt_s"] = 1 / 20.0
     dummy._data_format["sampling_rate"] = 40.0
@@ -397,8 +397,8 @@ def test_unify_sampling_rate(caplog):
         in caplog.text
     )
 
-    caplog.clear()
     dummy = seisbench.data.DummyDataset()
+    caplog.clear()
     dummy._metadata["trace_sampling_rate_hz"] = 40.0
     dummy._metadata["trace_dt_s"] = 1 / 20.0
     del dummy._data_format["sampling_rate"]
@@ -410,8 +410,8 @@ def test_unify_sampling_rate(caplog):
     )
 
     # Small deviations do not cause warnings
-    caplog.clear()
     dummy = seisbench.data.DummyDataset()
+    caplog.clear()
     dummy._metadata["trace_sampling_rate_hz"] = 20.0
     dummy._metadata["trace_dt_s"] = 1 / 20.00001
     del dummy._data_format["sampling_rate"]
@@ -419,8 +419,8 @@ def test_unify_sampling_rate(caplog):
         dummy._unify_sampling_rate()
     assert caplog.text == ""
 
-    caplog.clear()
     dummy = seisbench.data.DummyDataset()
+    caplog.clear()
     dummy._metadata["trace_sampling_rate_hz"] = 20.0
     dummy._metadata["trace_sampling_rate_hz"].values[:20] = np.nan
     dummy._metadata["trace_dt_s"] = 1 / 20.0
@@ -429,8 +429,8 @@ def test_unify_sampling_rate(caplog):
         dummy._unify_sampling_rate()
     assert caplog.text == ""
 
-    caplog.clear()
     dummy = seisbench.data.DummyDataset()
+    caplog.clear()
     dummy._metadata["trace_sampling_rate_hz"] = 20.0
     dummy._metadata["trace_sampling_rate_hz"].values[:20] = np.nan
     del dummy._data_format["sampling_rate"]
@@ -438,8 +438,8 @@ def test_unify_sampling_rate(caplog):
         dummy._unify_sampling_rate()
     assert "Found some traces with undefined sampling rates." in caplog.text
 
-    caplog.clear()
     dummy = seisbench.data.DummyDataset()
+    caplog.clear()
     dummy._metadata["trace_sampling_rate_hz"] = 20.0
     dummy._metadata["trace_sampling_rate_hz"].values[:20] = 40.0
     del dummy._data_format["sampling_rate"]
@@ -450,8 +450,8 @@ def test_unify_sampling_rate(caplog):
         in caplog.text
     )
 
-    caplog.clear()
     dummy = seisbench.data.DummyDataset()
+    caplog.clear()
     dummy._metadata["trace_sampling_rate_hz"] = 20.0
     del dummy._data_format["sampling_rate"]
     with caplog.at_level(logging.WARNING):
@@ -469,8 +469,8 @@ def test_unify_component_order(caplog):
     assert "Component order not specified in data set." in caplog.text
 
     # Component order inconsistent
-    caplog.clear()
     dummy = seisbench.data.DummyDataset()
+    caplog.clear()
     dummy._metadata["trace_component_order"] = "ZNE"
     dummy._metadata["trace_component_order"].values[10] = "ZEN"
     dummy._data_format["component_order"] = "ZNE"
@@ -484,8 +484,8 @@ def test_unify_component_order(caplog):
     assert (dummy._metadata["trace_component_order"].values == order).all()
 
     # Component order only in data_format
-    caplog.clear()
     dummy = seisbench.data.DummyDataset()
+    caplog.clear()
     del dummy._metadata["trace_component_order"]
     dummy._data_format["component_order"] = "ZNE"
     with caplog.at_level(logging.WARNING):
