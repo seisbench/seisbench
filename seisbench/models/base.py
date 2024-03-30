@@ -1,9 +1,9 @@
 import asyncio
 import json
-import logging
 import math
 import os
 import re
+import tempfile
 import warnings
 from abc import ABC, abstractmethod
 from collections import defaultdict
@@ -24,7 +24,7 @@ from packaging import version
 
 import seisbench
 import seisbench.util as util
-from seisbench.util import in_notebook, log_lifecycle
+from seisbench.util import in_notebook
 
 if in_notebook():
     # Jupyter notebooks have their own asyncio loop and will crash `annotate/classify`
@@ -57,50 +57,6 @@ def _cache_migration_v0_v3():
         (seisbench.cache_model_root / "phasenet").rename(
             seisbench.cache_model_root / "phasenetlight"
         )
-
-
-@log_lifecycle(logging.DEBUG)
-def _watchdog(queue_watchdog, tasks):
-    """
-    Watchdog that terminates jobs once jobs in level before have been terminated.
-
-    :param queue_watchdog: Signal queue for watchdog
-    :param tasks: List of tasks.
-                  Each tasks consist of a 4-tuple: `key`, `target_queue`, `n_inputs`, `n_outputs`
-                  `key` is the key to track on the watchdog.
-                  `target_queue` is the queue to send `None` values to once condition is met.
-                  Can also be a list of queues. In this case, `n_outputs` stop commands are sent to each queue.
-                  `n_input` is the number of times `key` needs to be received before, i.e., the number of jobs that will
-                  send `key`.
-                  `n_outputs` is the number of `None` value to send to `target_queue`, i.e., the number of dependent
-                  jobs to terminate.
-    :return: None
-    """
-    task_counter = {
-        key: n_inputs for key, _, n_inputs, _ in tasks
-    }  # Count down how often a job existed
-    on_complete = {
-        key: (target_queue, n_outputs) for key, target_queue, _, n_outputs in tasks
-    }  # Action once condition is met
-
-    while True:
-        elem = queue_watchdog.get()
-        if elem is None:
-            break
-
-        task_counter[elem] -= 1
-        if task_counter[elem] == 0:
-            target_queues, n_outputs = on_complete[elem]
-            if not isinstance(target_queues, list):
-                target_queues = [target_queues]
-
-            for target_queue in target_queues:
-                target_queue.join()  # Makes sure everything in this queue is actually processed
-                for _ in range(n_outputs):
-                    target_queue.put(None)
-
-
-import tempfile
 
 
 class SeisBenchModel(nn.Module):
@@ -1557,41 +1513,6 @@ class WaveformModel(SeisBenchModel, ABC):
         :return: Postprocessed predictions
         """
         return batch
-
-    def annotate_window_pre(self, window, argdict):
-        """
-        Deprecated in favour of :py:func:`annotate_batch_pre`.
-        Only remains for documentation and compatibility checks.
-
-        Runs preprocessing on window level for the annotate function, e.g., normalization.
-        By default returns the input window.
-        Can alternatively return a tuple of the input window and piggyback information that is returned at
-        :py:func:`annotate_window_post`.
-        This can for example be used to transfer normalization information.
-        Inheriting classes should overwrite this function if necessary.
-
-        :param window: Input window
-        :type window: numpy.array
-        :param argdict: Dictionary of arguments
-        :return: Preprocessed window and optionally piggyback information that is passed to annotate window post
-        """
-        return window
-
-    def annotate_window_post(self, pred, piggyback=None, argdict=None):
-        """
-        Deprecated in favour of :py:func:`annotate_batch_post`.
-        Only remains for documentation and compatibility checks.
-
-        Runs postprocessing on the predictions of a window for the annotate function, e.g., reformatting them.
-        By default returns the original prediction.
-        Inheriting classes should overwrite this function if necessary.
-
-        :param pred: Predictions for one window. The data type depends on the model.
-        :param argdict: Dictionary of arguments
-        :param piggyback: Piggyback information, by default None.
-        :return: Postprocessed predictions
-        """
-        return pred
 
     @staticmethod
     def _trim_nan(x):

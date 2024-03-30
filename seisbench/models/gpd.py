@@ -115,10 +115,6 @@ class GPD(WaveformModel):
     ) -> torch.Tensor:
         return batch - batch.mean(axis=-1, keepdims=True)
 
-    def annotate_window_pre(self, window, argdict):
-        # Add a demean step to the preprocessing
-        return window - np.mean(window, axis=-1, keepdims=True)
-
     def classify_aggregate(self, annotations, argdict) -> sbu.ClassifyOutput:
         """
         Converts the annotations to discrete picks using

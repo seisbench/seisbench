@@ -120,20 +120,6 @@ class BasicPhaseAE(WaveformModel):
         batch[..., -130:] = np.nan
         return torch.transpose(batch, -1, -2)
 
-    def annotate_window_pre(self, window, argdict):
-        # Add a demean and normalize step to the preprocessing
-        window = window - np.mean(window, axis=-1, keepdims=True)
-        std = np.std(window, axis=-1, keepdims=True)
-        std[std == 0] = 1  # Avoid NaN errors
-        window = window / std
-        return window
-
-    def annotate_window_post(self, pred, piggyback=None, argdict=None):
-        # Transpose predictions to correct shape
-        pred[:, 130] = np.nan
-        pred[:, -130:] = np.nan
-        return pred.T
-
     def classify_aggregate(self, annotations, argdict) -> sbu.ClassifyOutput:
         """
         Converts the annotations to discrete thresholds using

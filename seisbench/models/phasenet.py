@@ -172,31 +172,6 @@ class PhaseNet(WaveformModel):
 
         return torch.cat([skip, x_resize], dim=1)
 
-    def annotate_window_pre(self, window, argdict):
-        # Add a demean and normalize step to the preprocessing
-        window = window - np.mean(window, axis=-1, keepdims=True)
-        if self.norm_detrend:
-            detrended = np.zeros(window.shape)
-            for i, a in enumerate(window):
-                detrended[i, :] = scipy.signal.detrend(a)
-            window = detrended
-        if self.norm_amp_per_comp:
-            amp_normed = np.zeros(window.shape)
-            for i, a in enumerate(window):
-                amp = a / (np.max(np.abs(a)) + 1e-10)
-                amp_normed[i, :] = amp
-            window = amp_normed
-        else:
-            if self.norm == "std":
-                std = np.std(window, axis=-1, keepdims=True)
-                std[std == 0] = 1  # Avoid NaN errors
-                window = window / std
-            elif self.norm == "peak":
-                peak = np.max(np.abs(window), axis=-1, keepdims=True) + 1e-10
-                window = window / peak
-
-        return window
-
     def annotate_batch_pre(
         self, batch: torch.Tensor, argdict: dict[str, Any]
     ) -> torch.Tensor:
@@ -225,22 +200,10 @@ class PhaseNet(WaveformModel):
             "blinding", self._annotate_args.get("blinding")[1]
         )
         if prenan > 0:
-            batch[:, prenan] = np.nan
+            batch[:, :prenan] = np.nan
         if postnan > 0:
             batch[:, -postnan:] = np.nan
         return batch
-
-    def annotate_window_post(self, pred, piggyback=None, argdict=None):
-        # Transpose predictions to correct shape
-        pred = pred.T
-        prenan, postnan = argdict.get(
-            "blinding", self._annotate_args.get("blinding")[1]
-        )
-        if prenan > 0:
-            pred[:prenan] = np.nan
-        if postnan > 0:
-            pred[-postnan:] = np.nan
-        return pred
 
     def classify_aggregate(self, annotations, argdict) -> sbu.ClassifyOutput:
         """
