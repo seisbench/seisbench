@@ -1057,60 +1057,79 @@ def test_annotate_deep_denoiser():
         assert annotations[i].data.shape == (3000,)
 
 
-def test_eqtransformer_annotate_window_post():
+def test_eqtransformer_annotate_batch_post():
     model = seisbench.models.EQTransformer()
 
-    pred = 3 * [np.ones(1000)]
+    pred = 3 * [torch.ones(5, 1000)]
 
     # No blinding
-    blinded = model.annotate_window_post(pred, argdict={"blinding": (0, 0)})
+    blinded = model.annotate_batch_post(
+        pred, None, argdict={"blinding": (0, 0)}
+    ).numpy()
     assert (blinded == 1).all()
 
     # Front blinding
-    blinded = model.annotate_window_post(pred, argdict={"blinding": (100, 0)})
-    assert np.isnan(blinded[:100]).all()
-    assert (blinded[100:] == 1).all()
+    blinded = model.annotate_batch_post(
+        pred, None, argdict={"blinding": (100, 0)}
+    ).numpy()
+    assert np.isnan(blinded[:, :100]).all()
+    assert (blinded[:, 100:] == 1).all()
 
     # End blinding
-    blinded = model.annotate_window_post(pred, argdict={"blinding": (0, 100)})
-    assert (blinded[:900] == 1).all()
-    assert np.isnan(blinded[900:]).all()
+    blinded = model.annotate_batch_post(
+        pred, None, argdict={"blinding": (0, 100)}
+    ).numpy()
+    assert (blinded[:, :900] == 1).all()
+    assert np.isnan(blinded[:, 900:]).all()
 
     # Two sided blinding
-    blinded = model.annotate_window_post(pred, argdict={"blinding": (100, 100)})
-    assert np.isnan(blinded[:100]).all()
-    assert (blinded[100:900] == 1).all()
-    assert np.isnan(blinded[900:]).all()
+    blinded = model.annotate_batch_post(
+        pred, None, argdict={"blinding": (100, 100)}
+    ).numpy()
+    assert np.isnan(blinded[:, :100]).all()
+    assert (blinded[:, 100:900] == 1).all()
+    assert np.isnan(blinded[:, 900:]).all()
 
 
-def test_phasenet_annotate_window_post():
+def test_phasenet_annotate_batch_post():
     model = seisbench.models.PhaseNet()
 
-    pred = np.ones((3, 1000))
-
     # Default: No blinding
-    blinded = model.annotate_window_post(pred.copy(), argdict={})
+    pred = torch.ones((5, 3, 1000))
+    blinded = model.annotate_batch_post(pred, None, argdict={}).numpy()
     assert (blinded == 1).all()
 
     # No blinding
-    blinded = model.annotate_window_post(pred.copy(), argdict={"blinding": (0, 0)})
+    pred = torch.ones((5, 3, 1000))
+    blinded = model.annotate_batch_post(
+        pred, None, argdict={"blinding": (0, 0)}
+    ).numpy()
     assert (blinded == 1).all()
 
     # Front blinding
-    blinded = model.annotate_window_post(pred.copy(), argdict={"blinding": (100, 0)})
-    assert np.isnan(blinded[:100]).all()
-    assert (blinded[100:] == 1).all()
+    pred = torch.ones((5, 3, 1000))
+    blinded = model.annotate_batch_post(
+        pred, None, argdict={"blinding": (100, 0)}
+    ).numpy()
+    assert np.isnan(blinded[:, :100]).all()
+    assert (blinded[:, 100:] == 1).all()
 
     # End blinding
-    blinded = model.annotate_window_post(pred.copy(), argdict={"blinding": (0, 100)})
-    assert (blinded[:900] == 1).all()
-    assert np.isnan(blinded[900:]).all()
+    pred = torch.ones((5, 3, 1000))
+    blinded = model.annotate_batch_post(
+        pred, None, argdict={"blinding": (0, 100)}
+    ).numpy()
+    assert (blinded[:, :900] == 1).all()
+    assert np.isnan(blinded[:, 900:]).all()
 
     # Two sided blinding
-    blinded = model.annotate_window_post(pred.copy(), argdict={"blinding": (100, 100)})
-    assert np.isnan(blinded[:100]).all()
-    assert (blinded[100:900] == 1).all()
-    assert np.isnan(blinded[900:]).all()
+    pred = torch.ones((5, 3, 1000))
+    blinded = model.annotate_batch_post(
+        pred, None, argdict={"blinding": (100, 100)}
+    ).numpy()
+    assert np.isnan(blinded[:, :100]).all()
+    assert (blinded[:, 100:900] == 1).all()
+    assert np.isnan(blinded[:, 900:]).all()
 
 
 def test_save_load_gpd(tmp_path):
@@ -1974,13 +1993,13 @@ def test_model_normalize(cls):
     model = cls()
 
     model.norm = "std"
-    x = np.random.rand(3, 100000)
-    x_norm = model.annotate_window_pre(x, {})
+    x = np.random.rand(5, 3, 100000)
+    x_norm = model.annotate_batch_pre(torch.tensor(x), {}).numpy()
     assert np.allclose(np.std(x_norm, axis=-1), 1, atol=1e-2, rtol=1e-2)
 
     model.norm = "peak"
-    x = np.random.rand(3, 100000)
-    x_norm = model.annotate_window_pre(x, {})
+    x = np.random.rand(5, 3, 100000)
+    x_norm = model.annotate_batch_pre(torch.tensor(x), {}).numpy()
     assert np.allclose(np.max(np.abs(x_norm), axis=-1), 1, atol=1e-2, rtol=1e-2)
 
 
