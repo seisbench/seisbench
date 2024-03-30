@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
 from queue import PriorityQueue
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urljoin
 
 import bottleneck as bn
@@ -17,7 +17,6 @@ import nest_asyncio
 import numpy as np
 import obspy
 import torch
-import torch.multiprocessing as torchmp
 import torch.nn as nn
 import torch.nn.functional as F
 from obspy.signal.trigger import trigger_onset
@@ -753,12 +752,15 @@ class WaveformModel(SeisBenchModel, ABC):
     :param grouping: Level of grouping for annotating streams. Supports "instrument", "channel" and "full".
                      Alternatively, a custom GroupingHelper can be passed.
     :type grouping: Union[str, GroupingHelper]
+    :param allow_padding: If True, annotate will pad different windows if they have different sizes.
+                          This is useful, for example, for multi-station methods.
+    :type allow_padding: bool
     :param kwargs: Kwargs are passed to the superclass
     """
 
     # Optional arguments for annotate/classify: key -> (documentation, default_value)
     _annotate_args = {
-        "batch_size": ("Batch size for the model", 64),
+        "batch_size": ("Batch size for the model", 256),
         "overlap": (
             "Overlap between prediction windows in samples (only for window prediction models)",
             0,
@@ -799,6 +801,7 @@ class WaveformModel(SeisBenchModel, ABC):
         filter_args=None,
         filter_kwargs=None,
         grouping="instrument",
+        allow_padding=False,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -830,6 +833,7 @@ class WaveformModel(SeisBenchModel, ABC):
             grouping = GroupingHelper(grouping)
 
         self._grouping: GroupingHelper = grouping
+        self.allow_padding = allow_padding
 
         # Validate pred sample
         if output_type == "point" and not isinstance(pred_sample, (int, float)):
@@ -850,18 +854,12 @@ class WaveformModel(SeisBenchModel, ABC):
 
         self._annotate_function_mapping = {
             "point": (
-                (self._async_cut_fragments_point, self._async_reassemble_blocks_point),
-                (
-                    self._process_cut_fragments_point,
-                    self._process_reassemble_blocks_point,
-                ),
+                self._async_cut_fragments_point,
+                self._async_reassemble_blocks_point,
             ),
             "array": (
-                (self._async_cut_fragments_array, self._async_reassemble_blocks_array),
-                (
-                    self._process_cut_fragments_array,
-                    self._process_reassemble_blocks_array,
-                ),
+                self._async_cut_fragments_array,
+                self._async_reassemble_blocks_array,
             ),
         }
 
@@ -891,7 +889,6 @@ class WaveformModel(SeisBenchModel, ABC):
     def annotate(
         self,
         stream,
-        parallelism=None,
         copy=True,
         **kwargs,
     ):
@@ -899,24 +896,20 @@ class WaveformModel(SeisBenchModel, ABC):
         Annotates an obspy stream using the model based on the configuration of the WaveformModel superclass.
         For example, for a picking model, annotate will give a characteristic function/probability function for picks
         over time.
-        The annotate function contains multiple subfunction, which can be overwritten individually by inheriting
+        The annotate function contains multiple subfunctions, which can be overwritten individually by inheriting
         models to accommodate their requirements. These functions are:
 
         - :py:func:`annotate_stream_pre`
         - :py:func:`annotate_stream_validate`
-        - :py:func:`annotate_window_pre`
-        - :py:func:`annotate_window_post`
+        - :py:func:`annotate_batch_pre`
+        - :py:func:`annotate_batch_post`
 
         Please see the respective documentation for details on their functionality, inputs and outputs.
 
-        .. warning::
-            Internally, there are two implementations of the annotate function, one using `asyncio` and one using
-            `multiprocessing`. Depending on the hardware, the model, and the input data, one of the options might be
-            more suited. In general, the `asyncio` implementation is sequential, but has nearly no overhead. In contrast,
-            the `multiprocessing` implementation has considerable overhead for starting the jobs, but runs the
-            computations in a parallelised manner. As a rule of thumb, `asyncio` will be the better choice for small
-            inputs, while `multiprocessing` is the better option for large inputs. See the parameter `parallelism`
-            below for details how to choose the method.
+        .. hint::
+            If your machine is equipped with a GPU, this function will usually run faster when making use of the GPU.
+            Just call `model.cuda()`. In addition, you might want to increase the batch size by passing the `batch_size`
+            argument to the function. Possible values might be 2048 or 4096 (or larger if your GPU permits).
 
         .. warning::
             Even though the `asyncio` implementation itself is not parallel, this does not guarantee that only a single
@@ -929,70 +922,21 @@ class WaveformModel(SeisBenchModel, ABC):
             overheads, e.g.,
             `here <https://github.com/pytorch/pytorch/issues/3146>`_.
 
-        .. warning::
-            `multiprocessing` performance varies depending on the employed start method. For details, check the
-            documentation `here <https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods>`_.
-
 
         :param stream: Obspy stream to annotate
         :type stream: obspy.core.Stream
-        :param parallelism: If None, uses the `asyncio` implementation. Otherwise, defines the redundancy for each
-                            subjob, i.e., parallelism=2 would start each subjob twice. See the warning above for a
-                            discussion on parallelism for annotate.
-        :type parallelism: None, int
         :param copy: If true, copies the input stream. Otherwise, the input stream is modified in place.
         :type copy: bool
         :param kwargs:
         :return: Obspy stream of annotations
         """
-        # nest_asyncio.apply()
-        if parallelism == 0:
-            parallelism = None
-
-        self._check_parallelism_annotate(stream, parallelism)
-
-        if parallelism is None:
-            call = self.annotate_async(stream, copy=copy, **kwargs)
-            return asyncio.run(call)
-        else:
-            return self._annotate_processes(
-                stream,
-                parallelism=parallelism,
-                copy=copy,
-                **kwargs,
-            )
-
-    @staticmethod
-    def _check_parallelism_annotate(stream, parallelism, thresholds=(5e5, 5e7)):
-        """
-        Checks whether the chosen parallelism looks reasonable and prints a warning otherwise.
-
-        :param stream: Data stream
-        :type stream: obspy.Stream
-        :param parallelism: parallelism indicator
-        :type parallelism: None, int
-        :return: None
-        """
-        total_samples = 0
-        for trace in stream:
-            total_samples += len(trace.data)
-
-        detail_str = (
-            "For details, see "
-            "http://docs.seisbench.org/en/stable/pages/documentation/"
-            "models.html#seisbench.models.base.WaveformModel.annotate"
-        )
-
-        if total_samples > thresholds[1] and parallelism is None:
+        if "parallelism" in kwargs:
             seisbench.logger.warning(
-                "You are processing a large stream with the sequential asyncio implementation. "
-                "Consider activating parallelisation. " + detail_str
+                "The `parallelism` argument has been deprecated in favour of batch processing."
             )
-        if total_samples < thresholds[0] and parallelism is not None:
-            seisbench.logger.warning(
-                "You are processing a small stream with the parallel implementation. "
-                "Consider using the sequential asyncio implementation. " + detail_str
-            )
+
+        call = self.annotate_async(stream, copy=copy, **kwargs)
+        return asyncio.run(call)
 
     def _verify_argdict(self, argdict):
         for key in argdict.keys():
@@ -1009,7 +953,7 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         self._verify_argdict(kwargs)
 
-        cut_fragments, reassemble_blocks = self._get_annotate_functions()[0]
+        cut_fragments, reassemble_blocks = self._get_annotate_functions()
 
         # Kwargs overwrite default args
         argdict = self.default_args.copy()
@@ -1058,10 +1002,6 @@ class WaveformModel(SeisBenchModel, ABC):
         queue_raw_fragments = asyncio.Queue(
             4 * batch_size
         )  # Raw waveform fragments with the correct input size
-        queue_preprocessed_fragments = asyncio.Queue(
-            4 * batch_size
-        )  # Preprocessed input fragments
-        queue_raw_pred = asyncio.Queue()  # Queue for raw (but unbatched) predictions
         queue_postprocessed_pred = (
             asyncio.Queue()
         )  # Queue for raw (but unbatched) predictions
@@ -1078,18 +1018,8 @@ class WaveformModel(SeisBenchModel, ABC):
         process_cut_fragments = asyncio.create_task(
             cut_fragments(queue_raw_blocks, queue_raw_fragments, argdict)
         )
-        process_annotate_window_pre = asyncio.create_task(
-            self._async_annotate_window_pre(
-                queue_raw_fragments, queue_preprocessed_fragments, argdict
-            )
-        )
         process_predict = asyncio.create_task(
-            self._async_predict(queue_preprocessed_fragments, queue_raw_pred, argdict)
-        )
-        process_annotate_window_post = asyncio.create_task(
-            self._async_annotate_window_post(
-                queue_raw_pred, queue_postprocessed_pred, argdict
-            )
+            self._async_predict(queue_raw_fragments, queue_postprocessed_pred, argdict)
         )
         process_reassemble_blocks = asyncio.create_task(
             reassemble_blocks(queue_postprocessed_pred, queue_pred_blocks, argdict)
@@ -1106,11 +1036,7 @@ class WaveformModel(SeisBenchModel, ABC):
         await queue_raw_blocks.put(None)
         await process_cut_fragments
         await queue_raw_fragments.put(None)
-        await process_annotate_window_pre
-        await queue_preprocessed_fragments.put(None)
         await process_predict
-        await queue_raw_pred.put(None)
-        await process_annotate_window_post
         await queue_postprocessed_pred.put(None)
         await process_reassemble_blocks
         await queue_pred_blocks.put(None)
@@ -1131,226 +1057,6 @@ class WaveformModel(SeisBenchModel, ABC):
             )
         cut_fragments, reassemble_blocks = self._annotate_functions
         return cut_fragments, reassemble_blocks
-
-    def _annotate_processes(
-        self,
-        stream,
-        parallelism=1,
-        copy=True,
-        **kwargs,
-    ):
-        """
-        `annotate` implementation based on processes
-        Parameters as for :py:func:`annotate`.
-        """
-        self._verify_argdict(kwargs)
-
-        cut_fragments, reassemble_blocks = self._get_annotate_functions()[1]
-
-        # Kwargs overwrite default args
-        argdict = self.default_args.copy()
-        argdict.update(kwargs)
-
-        if copy:
-            stream = stream.copy()
-        stream.merge(-1)
-
-        output = obspy.Stream()
-        if len(stream) == 0:
-            return output
-
-        # Preprocess stream, e.g., filter/resample
-        self.annotate_stream_pre(stream, argdict)
-
-        # Validate stream
-        stream = self.annotate_stream_validate(stream, argdict)
-
-        if len(stream) == 0:
-            return output
-
-        # Sampling rate of the data. Equal to self.sampling_rate is this is not None
-        sampling_rate = stream[0].stats.sampling_rate
-        argdict["sampling_rate"] = sampling_rate
-
-        # Group stream
-        strict = self._argdict_get_with_default(argdict, "strict")
-        flexible_horizontal_components = self._argdict_get_with_default(
-            argdict, "flexible_horizontal_components"
-        )
-        comp_dict, _ = self._build_comp_dict(stream, flexible_horizontal_components)
-        groups = self._grouping.group_stream(
-            stream,
-            strict=strict,
-            min_length_s=(self.in_samples - 1) / sampling_rate,
-            comp_dict=comp_dict,
-        )
-
-        # Store state and move model to CPU - required to avoid cuda initialization in all threads
-        argdict["device"] = self.device
-        self.cpu()
-
-        # Queues for multiprocessing
-        batch_size = self._argdict_get_with_default(argdict, "batch_size")
-
-        queue_groups = torchmp.JoinableQueue()  # Waveform groups
-        queue_raw_blocks = (
-            torchmp.JoinableQueue()
-        )  # Waveforms as blocks of arrays and their metadata
-        queue_raw_fragments = torchmp.JoinableQueue(
-            4 * batch_size
-        )  # Raw waveform fragments with the correct input size
-        queue_preprocessed_fragments = torchmp.JoinableQueue(
-            4 * batch_size
-        )  # Preprocessed input fragments
-        queue_raw_pred = (
-            torchmp.JoinableQueue()
-        )  # Queue for raw (but unbatched) predictions
-        queues_postprocessed_pred = [
-            torchmp.JoinableQueue() for _ in range(parallelism)
-        ]  # Queue for raw (but unbatched) predictions
-        queue_pred_blocks = torchmp.JoinableQueue()  # Queue for blocks of predictions
-        queue_results = torchmp.JoinableQueue()  # Results streams
-
-        # Setup and start watchdog process
-        queue_watchdog = torchmp.Queue()
-        watchdog_tasks = [
-            ("main", queue_groups, 1, 1),  # terminates process_streams_to_arrays
-            (
-                "streams_to_arrays",
-                queue_raw_blocks,
-                1,
-                parallelism,
-            ),  # terminates cut_processes
-            (
-                "cut",
-                queue_raw_fragments,
-                parallelism,
-                parallelism,
-            ),  # terminates pre_processes
-            (
-                "annotate_window_pre",
-                queue_preprocessed_fragments,
-                parallelism,
-                1,
-            ),  # terminate process_predict
-            ("predict", queue_raw_pred, 1, parallelism),  # terminate post_processes
-            (
-                "annotate_window_post",
-                queues_postprocessed_pred,
-                parallelism,
-                1,
-            ),  # terminates reassemble
-            (
-                "reassemble",
-                queue_pred_blocks,
-                parallelism,
-                1,
-            ),  # terminates predictions_to_stream
-            ("predictions_to_stream", queue_results, 1, 1),  # Indicates job completion
-        ]
-        process_watchdog = torchmp.Process(
-            target=_watchdog, args=(queue_watchdog, watchdog_tasks)
-        )
-
-        process_streams_to_arrays = torchmp.Process(
-            target=self._process_streams_to_arrays,
-            args=(
-                queue_watchdog,
-                queue_groups,
-                queue_raw_blocks,
-                argdict,
-            ),
-        )
-        cut_processes = []
-        pre_processes = []
-        post_processes = []
-        reassemble_processes = []
-        for i in range(parallelism):
-            cut_processes += [
-                torchmp.Process(
-                    target=cut_fragments,
-                    args=(
-                        queue_watchdog,
-                        queue_raw_blocks,
-                        queue_raw_fragments,
-                        argdict,
-                    ),
-                )
-            ]
-            pre_processes += [
-                torchmp.Process(
-                    target=self._process_annotate_window_pre,
-                    args=(
-                        queue_watchdog,
-                        queue_raw_fragments,
-                        queue_preprocessed_fragments,
-                        argdict,
-                    ),
-                )
-            ]
-            post_processes += [
-                torchmp.Process(
-                    target=self._process_annotate_window_post,
-                    args=(
-                        queue_watchdog,
-                        queue_raw_pred,
-                        queues_postprocessed_pred,
-                        argdict,
-                    ),
-                )
-            ]
-            reassemble_processes += [
-                torchmp.Process(
-                    target=reassemble_blocks,
-                    args=(
-                        queue_watchdog,
-                        queues_postprocessed_pred[i],
-                        queue_pred_blocks,
-                        argdict,
-                    ),
-                )
-            ]
-        process_predictions_to_streams = torchmp.Process(
-            target=self._process_predictions_to_streams,
-            args=(queue_watchdog, queue_pred_blocks, queue_results),
-        )
-
-        process_streams_to_arrays.start()
-        for proc in (
-            cut_processes + pre_processes + post_processes + reassemble_processes
-        ):
-            proc.start()
-        process_predictions_to_streams.start()
-
-        for group in groups:
-            queue_groups.put(group)
-
-        process_watchdog.start()
-        queue_watchdog.put("main")
-
-        self._process_predict(
-            queue_watchdog, queue_preprocessed_fragments, queue_raw_pred, argdict
-        )
-
-        while True:
-            elem = queue_results.get()
-            queue_results.task_done()
-            if elem is None:
-                break
-
-            output += elem
-
-        process_streams_to_arrays.join()
-        for proc in (
-            cut_processes + pre_processes + post_processes + reassemble_processes
-        ):
-            proc.join()
-        process_predictions_to_streams.join()
-
-        queue_watchdog.put(None)
-        process_watchdog.join()
-
-        return output
 
     async def _async_streams_to_arrays(
         self,
@@ -1373,25 +1079,6 @@ class WaveformModel(SeisBenchModel, ABC):
             await queue_out.put((t0, block, stations))
             group = await queue_in.get()
 
-    async def _async_annotate_window_pre(self, queue_in, queue_out, argdict):
-        """
-        Wrapper with queue IO functionality around :py:func:`annotate_window_pre`
-        :param queue_in: Input queue
-        :param queue_out: Output queue
-        :param argdict: Dictionary of arguments
-        :return: None
-        """
-        elem = await queue_in.get()
-        while elem is not None:
-            window, metadata = elem
-            preprocessed = self.annotate_window_pre(window, argdict)
-            if isinstance(preprocessed, tuple):  # Contains piggyback information
-                assert len(preprocessed) == 2
-                await queue_out.put(preprocessed + (metadata,))
-            else:  # No piggyback information, add none as piggyback
-                await queue_out.put((preprocessed, None, metadata))
-            elem = await queue_in.get()
-
     async def _async_predict(self, queue_in, queue_out, argdict):
         """
         Prediction function, gathering predictions until a batch is full and handing them to :py:func:`_predict_buffer`.
@@ -1409,33 +1096,18 @@ class WaveformModel(SeisBenchModel, ABC):
                 buffer.append(elem)
 
             if len(buffer) == batch_size or (elem is None and len(buffer) > 0):
-                pred = self._predict_buffer([window for window, _, _ in buffer])
-                for pred_window, (_, piggyback, metadata) in zip(pred, buffer):
-                    await queue_out.put((pred_window, piggyback, metadata))
+                pred = await asyncio.to_thread(
+                    self._predict_buffer,
+                    [window for window, _ in buffer],
+                    argdict=argdict,
+                )
+                for pred_window, (_, metadata) in zip(pred, buffer):
+                    await queue_out.put((pred_window, metadata))
                 buffer = []
 
             if elem is None:
                 break
 
-            elem = await queue_in.get()
-
-    async def _async_annotate_window_post(self, queue_in, queue_out, argdict):
-        """
-        Wrapper with queue IO functionality around :py:func:`annotate_window_post`
-        :param queue_in: Input queue
-        :param queue_out: Output queue
-        :param argdict: Dictionary of arguments
-        :return: None
-        """
-        elem = await queue_in.get()
-        while elem is not None:
-            window, piggyback, metadata = elem
-            await queue_out.put(
-                (
-                    self.annotate_window_post(window, piggyback, argdict=argdict),
-                    metadata,
-                )
-            )
             elem = await queue_in.get()
 
     async def _async_predictions_to_streams(self, queue_in, queue_out):
@@ -1452,56 +1124,6 @@ class WaveformModel(SeisBenchModel, ABC):
                 self._predictions_to_stream(pred_rate, pred_time, preds, stations)
             )
             elem = await queue_in.get()
-
-    @log_lifecycle(logging.DEBUG)
-    def _process_streams_to_arrays(
-        self,
-        queue_watchdog,
-        queue_in,
-        queue_out,
-        argdict,
-    ):
-        """
-        Wrapper around :py:func:`stream_to_array`, adding the functionality to read from and write to queues.
-
-        :param queue_watchdog: Signal queue for watchdog
-        :param queue_in: Input queue
-        :param queue_out: Output queue
-        :return: None
-        """
-        while True:
-            group = queue_in.get()
-            queue_in.task_done()
-
-            if group is None:
-                break
-
-            t0, block, stations = self.stream_to_array(
-                group,
-                argdict,
-            )
-            queue_out.put((t0, block, stations))
-
-        queue_watchdog.put("streams_to_arrays")
-
-    @log_lifecycle(logging.DEBUG)
-    def _process_cut_fragments_point(
-        self, queue_watchdog, queue_in, queue_out, argdict
-    ):
-        """
-        Wrapper with queue IO functionality around :py:func:`_cut_fragments_point`
-        """
-        while True:
-            elem = queue_in.get()
-            queue_in.task_done()
-            if elem is None:
-                break
-
-            t0, block, stations = elem
-            for output_elem in self._cut_fragments_point(t0, block, stations, argdict):
-                queue_out.put(output_elem)
-
-        queue_watchdog.put("cut")
 
     async def _async_cut_fragments_point(self, queue_in, queue_out, argdict):
         """
@@ -1544,27 +1166,6 @@ class WaveformModel(SeisBenchModel, ABC):
             # s can be used to reassemble the block, len(starts) allows to identify if the block is complete yet
             metadata = (t0, s, len(starts), stations, bucket_id)
             yield window, metadata
-
-    @log_lifecycle(logging.DEBUG)
-    def _process_reassemble_blocks_point(
-        self, queue_watchdog, queue_in, queue_out, argdict
-    ):
-        """
-        Wrapper with queue IO functionality around :py:func:`_reassemble_blocks_point`
-        """
-        buffer = defaultdict(list)  # Buffers predictions until a block is complete
-
-        while True:
-            elem = queue_in.get()
-            queue_in.task_done()
-            if elem is None:
-                break
-
-            output = self._reassemble_blocks_point(elem, buffer, argdict)
-            if output is not None:
-                queue_out.put(output)
-
-        queue_watchdog.put("reassemble")
 
     async def _async_reassemble_blocks_point(self, queue_in, queue_out, argdict):
         """
@@ -1611,24 +1212,6 @@ class WaveformModel(SeisBenchModel, ABC):
 
         return output
 
-    @log_lifecycle(logging.DEBUG)
-    def _process_cut_fragments_array(
-        self, queue_watchdog, queue_in, queue_out, argdict
-    ):
-        """
-        Wrapper with queue IO functionality around :py:func:`_cut_fragments_array`
-        """
-        while True:
-            elem = queue_in.get()
-            queue_in.task_done()
-            if elem is None:
-                break
-
-            for output_elem in self._cut_fragments_array(elem, argdict):
-                queue_out.put(output_elem)
-
-        queue_watchdog.put("cut")
-
     async def _async_cut_fragments_array(self, queue_in, queue_out, argdict):
         """
         Wrapper with queue IO functionality around :py:func:`_cut_fragments_array`
@@ -1672,27 +1255,6 @@ class WaveformModel(SeisBenchModel, ABC):
             # s can be used to reassemble the block, len(starts) allows to identify if the block is complete yet
             metadata = (t0, s, len(starts), stations, bucket_id)
             yield window, metadata
-
-    @log_lifecycle(logging.DEBUG)
-    def _process_reassemble_blocks_array(
-        self, queue_watchdog, queue_in, queue_out, argdict
-    ):
-        """
-        Wrapper with queue IO functionality around :py:func:`_reassemble_blocks_array`
-        """
-        buffer = defaultdict(list)  # Buffers predictions until a block is complete
-
-        while True:
-            elem = queue_in.get()
-            queue_in.task_done()
-            if elem is None:
-                break
-
-            output_elem = self._reassemble_blocks_array(elem, buffer, argdict)
-            if output_elem is not None:
-                queue_out.put(output_elem)
-
-        queue_watchdog.put("reassemble")
 
     async def _async_reassemble_blocks_array(self, queue_in, queue_out, argdict):
         """
@@ -1790,93 +1352,35 @@ class WaveformModel(SeisBenchModel, ABC):
 
         return output
 
-    @log_lifecycle(logging.DEBUG)
-    def _process_annotate_window_pre(
-        self, queue_watchdog, queue_in, queue_out, argdict
-    ):
+    def _predict_buffer(self, buffer, argdict):
         """
-        Wrapper with queue IO functionality around :py:func:`annotate_window_pre`
-
-        :param queue_watchdog: Signal queue for watchdog
-        :param queue_in: Input queue
-        :param queue_out: Output queue
-        :param argdict: Dictionary of arguments
-        :return: None
-        """
-        while True:
-            elem = queue_in.get()
-            queue_in.task_done()
-            if elem is None:
-                break
-
-            window, metadata = elem
-            preprocessed = self.annotate_window_pre(window, argdict)
-            if isinstance(preprocessed, tuple):  # Contains piggyback information
-                assert len(preprocessed) == 2
-                queue_out.put(preprocessed + (metadata,))
-            else:  # No piggyback information, add none as piggyback
-                queue_out.put((preprocessed, None, metadata))
-
-        queue_watchdog.put("annotate_window_pre")
-
-    @log_lifecycle(logging.DEBUG)
-    def _process_predict(self, queue_watchdog, queue_in, queue_out, argdict):
-        """
-        Prediction function, gathering predictions until a batch is full and handing them to :py:func:`_predict_buffer`.
-
-        :param queue_watchdog: Signal queue for watchdog
-        :param queue_in: Input queue
-        :param queue_out: Output queue
-        :param argdict: Dictionary of arguments
-        :return: None
-        """
-        # Only move the model of the correct process to GPU to avoid CUDA initialization in all processes.
-        # This would cost both runtime and GPU memory.
-        device = argdict.get("device", self.device)
-        if device != self.device:
-            self.to(device)
-
-        buffer = []
-        batch_size = self._argdict_get_with_default(argdict, "batch_size")
-
-        while True:
-            elem = queue_in.get()
-            queue_in.task_done()
-            if elem is None:
-                break
-
-            buffer.append(elem)
-
-            if len(buffer) == batch_size:
-                pred = self._predict_buffer([window for window, _, _ in buffer])
-                for pred_window, (_, piggyback, metadata) in zip(pred, buffer):
-                    queue_out.put((pred_window, piggyback, metadata))
-                buffer = []
-
-        if len(buffer) > 0:
-            pred = self._predict_buffer([window for window, _, _ in buffer])
-            for pred_window, (_, piggyback, metadata) in zip(pred, buffer):
-                queue_out.put((pred_window, piggyback, metadata))
-            buffer = []
-
-        queue_watchdog.put("predict")
-
-    def _predict_buffer(self, buffer):
-        """
-        Batches model inputs, runs prediction, and unbatches output
+        Batches model inputs, runs preprocess, prediction and postprocess, and unbatches output
 
         :param buffer: List of inputs to the model
         :return: Unpacked predictions
         """
-        fragments = np.stack(buffer)
-        fragments = np.stack(fragments, axis=0)
+        if self.allow_padding:
+            fragments = seisbench.util.pad_packed_sequence(buffer)
+        else:
+            fragments = np.stack(buffer, axis=0)
         fragments = torch.tensor(fragments, device=self.device, dtype=torch.float32)
 
         train_mode = self.training
         try:
             self.eval()
             with torch.no_grad():
-                preds = self(fragments)
+                preprocessed = self.annotate_batch_pre(fragments, argdict=argdict)
+                if isinstance(preprocessed, tuple):  # Contains piggyback information
+                    assert len(preprocessed) == 2
+                    preprocessed, piggyback = preprocessed
+                else:
+                    piggyback = None
+
+                preds = self(preprocessed)
+
+                preds = self.annotate_batch_post(
+                    preds, piggyback=piggyback, argdict=argdict
+                )
         finally:
             if train_mode:
                 self.train()
@@ -1889,62 +1393,6 @@ class WaveformModel(SeisBenchModel, ABC):
         # Unbatch window predictions
         reshaped_preds = [pred for pred in self._recursive_slice_pred(preds)]
         return reshaped_preds
-
-    @log_lifecycle(logging.DEBUG)
-    def _process_annotate_window_post(
-        self, queue_watchdog, queue_in, queues_out, argdict
-    ):
-        """
-        Wrapper with queue IO functionality around :py:func:`annotate_window_post`
-
-        :param queue_watchdog: Signal queue for watchdog
-        :param queue_in: Input queue
-        :param queue_out: Output queue
-        :param argdict: Dictionary of arguments
-        :return: None
-        """
-        while True:
-            elem = queue_in.get()
-            queue_in.task_done()
-            if elem is None:
-                break
-
-            window, piggyback, metadata = elem
-
-            t0, s, len_starts, stations, bucket_id = metadata
-            idx = bucket_id % len(queues_out)
-
-            queues_out[idx].put(
-                (
-                    self.annotate_window_post(window, piggyback, argdict=argdict),
-                    metadata,
-                )
-            )
-
-        queue_watchdog.put("annotate_window_post")
-
-    @log_lifecycle(logging.DEBUG)
-    def _process_predictions_to_streams(self, queue_watchdog, queue_in, queue_out):
-        """
-        Wrapper with queue IO functionality around :py:func:`_predictions_to_stream`
-
-        :param queue_watchdog: Signal queue for watchdog
-        :param queue_in: Input queue
-        :param queue_out: Output queue
-        :return: None
-        """
-        while True:
-            elem = queue_in.get()
-            queue_in.task_done()
-            if elem is None:
-                break
-
-            (pred_rate, pred_time, preds), stations = elem
-            queue_out.put(
-                self._predictions_to_stream(pred_rate, pred_time, preds, stations)
-            )
-
-        queue_watchdog.put("predictions_to_stream")
 
     def _predictions_to_stream(self, pred_rate, pred_time, pred, stations):
         """
@@ -2078,8 +1526,43 @@ class WaveformModel(SeisBenchModel, ABC):
 
         return self.sanitize_mismatching_overlapping_records(stream)
 
+    def annotate_batch_pre(
+        self, batch: torch.Tensor, argdict: dict[str, Any]
+    ) -> torch.Tensor:
+        """
+        Runs preprocessing on batch level for the annotate function, e.g., normalization.
+        By default, returns the input batch unmodified.
+        Optionally, this can return a tuple of the preprocessed batch and piggyback information that is passed to
+        :py:func:`annotate_batch_post`.
+        This can for example be used to transfer normalization information.
+        Inheriting classes should overwrite this function if necessary.
+
+        :param batch: Input batch
+        :param argdict: Dictionary of arguments
+        :return: Preprocessed batch and optionally piggyback information that is passed to :py:func:`annotate_batch_post`
+        """
+        return batch
+
+    def annotate_batch_post(
+        self, batch: torch.Tensor, piggyback: Any, argdict: dict[str, Any]
+    ) -> torch.Tensor:
+        """
+        Runs postprocessing on the predictions of a window for the annotate function, e.g., reformatting them.
+        By default, returns the original prediction.
+        Inheriting classes should overwrite this function if necessary.
+
+        :param batch: Predictions for the batch. The data type depends on the model.
+        :param argdict: Dictionary of arguments
+        :param piggyback: Piggyback information, by default None.
+        :return: Postprocessed predictions
+        """
+        return batch
+
     def annotate_window_pre(self, window, argdict):
         """
+        Deprecated in favour of :py:func:`annotate_batch_pre`.
+        Only remains for documentation and compatibility checks.
+
         Runs preprocessing on window level for the annotate function, e.g., normalization.
         By default returns the input window.
         Can alternatively return a tuple of the input window and piggyback information that is returned at
@@ -2096,6 +1579,9 @@ class WaveformModel(SeisBenchModel, ABC):
 
     def annotate_window_post(self, pred, piggyback=None, argdict=None):
         """
+        Deprecated in favour of :py:func:`annotate_batch_post`.
+        Only remains for documentation and compatibility checks.
+
         Runs postprocessing on the predictions of a window for the annotate function, e.g., reformatting them.
         By default returns the original prediction.
         Inheriting classes should overwrite this function if necessary.

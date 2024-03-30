@@ -1,3 +1,5 @@
+from typing import Any
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -111,7 +113,7 @@ class CRED(WaveformModel):
             return x
 
     @staticmethod
-    def waveforms_to_spectrogram(wv):
+    def waveforms_to_spectrogram_numpy(wv: np.ndarray) -> np.ndarray:
         """
         Transforms waveforms into spectrogram using short term fourier transform
         :param wv: Waveforms with shape (channels, samples)
@@ -120,11 +122,43 @@ class CRED(WaveformModel):
         _, _, z = stft(wv, fs=100, nperseg=80)
         return np.transpose(np.abs(z), (0, 2, 1))
 
+    @staticmethod
+    def waveforms_to_spectrogram(batch: torch.Tensor) -> torch.Tensor:
+        """
+        Transforms waveforms into spectrogram using short term fourier transform
+        :param batch: Waveforms with shape (channels, samples)
+        :return: Spectrogram with shape (channels, times, frequencies)
+        """
+        # Reproduces result of numpy call stft(wv, fs=100, nperseg=80)
+        z = [
+            0.025
+            * torch.stft(
+                batch[:, i],
+                n_fft=80,
+                return_complex=True,
+                hop_length=40,
+                window=torch.hann_window(80),
+                pad_mode="constant",
+                normalized=False,
+            )
+            for i in range(batch.shape[1])
+        ]
+        z = torch.stack(z, dim=1)
+        return z.abs().transpose(2, 3)
+
+    def annotate_batch_pre(
+        self, batch: torch.Tensor, argdict: dict[str, Any]
+    ) -> torch.Tensor:
+        batch = batch - batch.mean(axis=-1, keepdims=True)
+        std = batch.std(axis=(-2, -1), keepdims=True)
+        batch = batch / (std + 1e-10)
+        return self.waveforms_to_spectrogram(batch)
+
     def annotate_window_pre(self, window, argdict):
         # Add a demean and an amplitude normalization step to the preprocessing
         window = window - np.mean(window, axis=-1, keepdims=True)
         window = window / (np.std(window) + 1e-10)
-        return self.waveforms_to_spectrogram(window)
+        return self.waveforms_to_spectrogram_numpy(window)
 
     def classify_aggregate(self, annotations, argdict) -> sbu.ClassifyOutput:
         """

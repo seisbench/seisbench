@@ -4,11 +4,15 @@ import pickle
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import obspy
 import pytest
 import requests
+import scipy.signal
+import torch
 from obspy.clients.fdsn.header import FDSNException
 
+import seisbench
 import seisbench.util
 from seisbench.util.trace_ops import (
     fdsn_get_bulk_safe,
@@ -237,3 +241,22 @@ def test_classify_output_pickle(tmp_path):
 
     assert reloaded.creator == output.creator
     assert reloaded.bla == output.bla
+
+
+def test_torch_detrend():
+    x = np.random.rand(5, 3, 1000)
+
+    y1 = seisbench.util.torch_detrend(torch.tensor(x)).numpy()
+    y2 = scipy.signal.detrend(x)
+
+    assert np.allclose(y1, y2)
+
+
+def test_pad_packed_sequence():
+    seq = [np.ones((5, 1)), np.ones((6, 3)), np.ones((1, 2)), np.ones((7, 2))]
+
+    packed = seisbench.util.pad_packed_sequence(seq)
+
+    assert packed.shape == (4, 7, 3)
+    assert np.sum(packed == 1) == sum(x.size for x in seq)
+    assert np.sum(packed == 0) == packed.size - sum(x.size for x in seq)
