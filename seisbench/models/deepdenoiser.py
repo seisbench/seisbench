@@ -89,7 +89,7 @@ class DeepDenoiser(WaveformModel):
                 n_fft=60,
                 return_complex=True,
                 win_length=30,
-                window=torch.hann_window(30),
+                window=torch.hann_window(30).to(batch.device),
                 pad_mode="constant",
                 normalized=False,
             )
@@ -136,8 +136,8 @@ class DeepDenoiser(WaveformModel):
             0, nt + shift - 1, shift, device=data.device
         )  # 201 => 0, 100, 200
 
-        std = torch.zeros([nbt, len(t)])
-        mean = torch.zeros([nbt, len(t)])
+        std = torch.zeros([nbt, len(t)], dtype=data.dtype, device=data.device)
+        mean = torch.zeros([nbt, len(t)], dtype=data.dtype, device=data.device)
         for i in range(std.shape[1]):
             std[:, i] = torch.std(
                 data_pad[:, :, i * shift : i * shift + window, :], axis=(1, 2, 3)
@@ -242,7 +242,7 @@ class DeepDenoiser(WaveformModel):
             signal,
             n_fft=60,
             win_length=30,
-            window=torch.hann_window(30),
+            window=torch.hann_window(30).to(batch.device),
             normalized=False,
         )
 
