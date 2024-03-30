@@ -88,3 +88,11 @@ PickBlue
     :members:
     :undoc-members:
     :show-inheritance:
+
+OBSTransformer
+-----------------------------------
+
+.. automodule:: seisbench.models.obstransformer
+    :members:
+    :undoc-members:
+    :show-inheritance:
