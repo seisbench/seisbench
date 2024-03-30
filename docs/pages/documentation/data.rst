@@ -77,13 +77,19 @@ NEIC datasets
     :undoc-members:
     :show-inheritance:
 
-OBS dataset
+OBS datasets
 -----------------------------------
 
 .. automodule:: seisbench.data.obs
     :members:
     :undoc-members:
     :show-inheritance:
+
+.. automodule:: seisbench.data.obst2024
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 
 PNW datasets
 -----------------------------------

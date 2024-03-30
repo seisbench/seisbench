@@ -214,9 +214,29 @@ settings.
 .. admonition:: Citation
 
     Bornstein, T., Lange, D., Münchmeyer, J., Woollam, J., Rietbrock, A., Barcheck, G., Grevemeyer, I., Tilmann, F. (2023).
-    PickBlue: Seismic phase picking for ocean bottom seismometers with deep learning. arxiv preprint.
+    PickBlue: Seismic phase picking for ocean bottom seismometers with deep learning. Earth and Space Science.
 
-    http://arxiv.org/abs/2304.06635
+    http://doi.org/10.1029/2023EA003332
+
+OBST2024
+--------
+
+.. figure::  ../_static/obst2024_mapplot_small.jpeg
+   :align:   center
+
+The OBST dataset (:py:class:`~seisbench.data.obst2024.OBST2024`) comprises ~60,000 seismic waveforms with ~71,000
+labeled phase arrivals from ocean-bottom seismometers (OBS). The data comprises 11 deployments across different tectonic
+settings. About half the waveforms are noise recordings.
+
+
+.. admonition:: Citation
+
+    Niksejel, A. and Zhang, M. (2024).
+    OBSTransformer: a deep-learning seismic phase picker for OBS data using automated labelling and transfer learning.
+    Geophysical Journal International.
+
+    https://doi.org/10.1093/gji/ggae049.
+
 
 PNW
 ----

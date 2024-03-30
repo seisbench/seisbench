@@ -83,31 +83,33 @@ for you to use. Again, as they inherit from the common SeisBench model interface
 PyTorch. Where possible, the original trained weights are imported and made available. These can be accessed via the ``from_pretrained``
 method. For a more in-depth explanation, see the :ref:`examples`.
 
-+-----------------------------------------------------------+---------------------------------------+
-| Integrated models                                         | Task                                  |
-+===========================================================+=======================================+
-| :py:class:`~seisbench.models.aepicker.BasicPhaseAE`       | Phase Picking                         |
-+-----------------------------------------------------------+---------------------------------------+
-| :py:class:`~seisbench.models.cred.CRED`                   | Earthquake Detection                  |
-+-----------------------------------------------------------+---------------------------------------+
-| :py:class:`~seisbench.models.dpp.DPP`                     | Phase Picking                         |
-+-----------------------------------------------------------+---------------------------------------+
-| :py:class:`~seisbench.models.depthphase.DepthPhaseNet`    | Depth estimation from depth phases    |
-+-----------------------------------------------------------+---------------------------------------+
-| :py:class:`~seisbench.models.depthphase.DepthPhaseTEAM`   | Depth estimation from depth phases    |
-+-----------------------------------------------------------+---------------------------------------+
-| :py:class:`~seisbench.models.deepdenoiser.DeepDenoiser`   | Denoising                             |
-+-----------------------------------------------------------+---------------------------------------+
-| :py:class:`~seisbench.models.eqtransformer.EQTransformer` | Earthquake Detection/Phase Picking    |
-+-----------------------------------------------------------+---------------------------------------+
-| :py:class:`~seisbench.models.gpd.GPD`                     | Phase Picking                         |
-+-----------------------------------------------------------+---------------------------------------+
-| :py:class:`~seisbench.models.phasenet.PhaseNet`           | Phase Picking                         |
-+-----------------------------------------------------------+---------------------------------------+
-| :py:class:`~seisbench.models.phasenet.PhaseNetLight`      | Phase Picking                         |
-+-----------------------------------------------------------+---------------------------------------+
-| :py:class:`~seisbench.models.pickblue.PickBlue`           | Earthquake Detection/Phase Picking    |
-+-----------------------------------------------------------+---------------------------------------+
++------------------------------------------------------------+---------------------------------------+
+| Integrated models                                          | Task                                  |
++============================================================+=======================================+
+| :py:class:`~seisbench.models.aepicker.BasicPhaseAE`        | Phase Picking                         |
++------------------------------------------------------------+---------------------------------------+
+| :py:class:`~seisbench.models.cred.CRED`                    | Earthquake Detection                  |
++------------------------------------------------------------+---------------------------------------+
+| :py:class:`~seisbench.models.dpp.DPP`                      | Phase Picking                         |
++------------------------------------------------------------+---------------------------------------+
+| :py:class:`~seisbench.models.depthphase.DepthPhaseNet`     | Depth estimation from depth phases    |
++------------------------------------------------------------+---------------------------------------+
+| :py:class:`~seisbench.models.depthphase.DepthPhaseTEAM`    | Depth estimation from depth phases    |
++------------------------------------------------------------+---------------------------------------+
+| :py:class:`~seisbench.models.deepdenoiser.DeepDenoiser`    | Denoising                             |
++------------------------------------------------------------+---------------------------------------+
+| :py:class:`~seisbench.models.eqtransformer.EQTransformer`  | Earthquake Detection/Phase Picking    |
++------------------------------------------------------------+---------------------------------------+
+| :py:class:`~seisbench.models.gpd.GPD`                      | Phase Picking                         |
++------------------------------------------------------------+---------------------------------------+
+| :py:class:`~seisbench.models.phasenet.PhaseNet`            | Phase Picking                         |
++------------------------------------------------------------+---------------------------------------+
+| :py:class:`~seisbench.models.phasenet.PhaseNetLight`       | Phase Picking                         |
++------------------------------------------------------------+---------------------------------------+
+| :py:class:`~seisbench.models.pickblue.PickBlue`            | Earthquake Detection/Phase Picking    |
++------------------------------------------------------------+---------------------------------------+
+| :py:class:`~seisbench.models.obstransformer.OBSTransformer`| Earthquake Detection/Phase Picking    |
++------------------------------------------------------------+---------------------------------------+
 
 Currently integrated models are capable of earthquake detection, phase picking, and waveform denoising.
 However, with SeisBench you can build ML models to perform general seismic tasks such as magnitude and
