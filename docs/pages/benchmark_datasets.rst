@@ -224,9 +224,10 @@ OBST2024
 .. figure::  ../_static/obst2024_mapplot_small.jpeg
    :align:   center
 
-The OBST dataset (:py:class:`~seisbench.data.obst2024.OBST2024`) comprises ~60,000 seismic waveforms with ~71,000
-labeled phase arrivals from ocean-bottom seismometers (OBS). The data comprises 11 deployments across different tectonic
-settings. About half the waveforms are noise recordings.
+The OBST dataset (:py:class:`~seisbench.data.obst2024.OBST2024`) comprises ~60,000 seismic waveforms
+from ocean-bottom seismometers (OBS). These split into ~35,000 earthquake waveforms and ~25,000 noise waveforms.
+For each earthquake waveforms, P and S arrival times have been annotated.
+The data comprises 11 deployments across different tectonic settings.
 
 
 .. admonition:: Citation
