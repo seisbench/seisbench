@@ -670,3 +670,72 @@ class GaussianNoise:
 
     def __str__(self):
         return f"GaussianNoise (Scale (mu={self.scale[0]}, sigma={self.scale[1]}))"
+
+
+class RotateHorizontalComponents:
+    """
+    Rotates horizontal components either by a given value alpha in rad or by an arbitrary angle between -pi and +pi.
+
+    :param alpha: Angle in rad for rotation of horizontal components.
+                  If alpha is None, everytime the method is called, a new angle is defined, otherwise the angle
+                  is constant.
+                  Default value is None, i.e. the angle changes with every call.
+    :type alpha: None, float, int
+    :param components: Defines which components are rotated.
+                       Default components are N and E.
+    :type components: str
+    :param key: The keys for reading from and writing to the state dict.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :type key: str, tuple[str, str]
+    """
+
+    def __init__(
+        self, key: str = "X", alpha: (None, float, int) = None, components: str = "NE"
+    ):
+        if isinstance(key, str):
+            self.key = (key, key)
+        else:
+            self.key = key
+
+        self.components = components
+        self.alpha = alpha
+
+        if len(self.components) != 2:
+            msg = f"Only two components can be rotated and not {len(self.components)}."
+            raise ValueError(msg)
+
+    def __call__(self, state_dict) -> np.array:
+        # TODO: add test
+        x, metadata = state_dict[self.key[0]]
+
+        # Create random angle alpha if alpha is not given in init
+        if self.alpha is None:
+            alpha = np.random.uniform(-np.pi, np.pi)
+        else:
+            alpha = self.alpha
+
+        trace_components = metadata.get("trace_component_order")
+        if not trace_components:
+            msg = "Keyword 'trace_component_order' is missing in metadata, therefore rotation is not possible."
+            raise ValueError(msg)
+
+        data_comp1 = x[trace_components.index(self.components[0]), :]
+        data_comp2 = x[trace_components.index(self.components[1]), :]
+
+        # Rotate by angle alpha
+        x[trace_components.index(self.components[0]), :] = data_comp1 * np.cos(
+            alpha
+        ) - data_comp2 * np.sin(alpha)
+        x[trace_components.index(self.components[1]), :] = data_comp1 * np.sin(
+            alpha
+        ) + data_comp2 * np.cos(alpha)
+
+        return x
+
+    def __str__(self):
+        if not self.alpha:
+            return f"Rotation of {self.components} components by arbitrary angle"
+        else:
+            return f"Rotation of {self.components} components by {np.round(self.alpha, 2)} rad"
