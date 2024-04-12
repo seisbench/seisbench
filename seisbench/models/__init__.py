@@ -6,6 +6,7 @@ from .depthphase import DepthFinder, DepthPhaseModel, DepthPhaseNet, DepthPhaseT
 from .dpp import DeepPhasePick, DPPDetector, DPPPicker
 from .eqtransformer import EQTransformer
 from .gpd import GPD
+from .lfe_detect import LFEDetect
 from .obstransformer import OBSTransformer
 from .phasenet import PhaseNet, PhaseNetLight, VariableLengthPhaseNet
 from .pickblue import PickBlue
