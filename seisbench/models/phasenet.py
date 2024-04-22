@@ -2,7 +2,6 @@ import json
 from typing import Any
 
 import numpy as np
-import scipy.signal
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -443,3 +442,187 @@ class PhaseNetLight(PhaseNet):
             return x
         else:
             return self.softmax(x)
+
+
+class VariableLengthPhaseNet(PhaseNet):
+    """
+    This version of PhaseNet has extended functionality:
+
+    - The number of input samples can be changed.
+      However, the number of layers in the model does not change, i.e., the receptive field stays unchanged.
+      In addition, models will usually not perform well if applied to a different input length than trained on.
+    - Output activation can be switched between softmax (all components sum to 1, i.e., no overlapping phases)
+      and sigmoid (each component is normed individually between 0 and 1).
+    - The axis for normalizing the waveforms before passing them to the model can be specified explicitly.
+
+    .. document_args:: seisbench.models VariableLengthPhaseNet
+    """
+
+    def __init__(
+        self,
+        in_samples=600,
+        in_channels=3,
+        classes=3,
+        phases="PSN",
+        sampling_rate=100,
+        norm="peak",
+        norm_axis=(-1,),
+        output_activation="softmax",
+        empty=False,
+        **kwargs,
+    ):
+        citation = (
+            "Zhu, W., & Beroza, G. C. (2019). "
+            "PhaseNet: a deep-neural-network-based seismic arrival-time picking method. "
+            "Geophysical Journal International, 216(1), 261-273. "
+            "https://doi.org/10.1093/gji/ggy423"
+        )
+
+        WaveformModel.__init__(
+            self,
+            citation=citation,
+            in_samples=in_samples,
+            output_type="array",
+            default_args={"overlap": in_samples // 2},
+            pred_sample=(0, in_samples),
+            labels=phases,
+            sampling_rate=sampling_rate,
+            **kwargs,
+        )
+
+        self.in_channels = in_channels
+        self.classes = classes
+        self.norm = norm
+        self.norm_axis = tuple(norm_axis)
+        self.depth = 5
+        self.kernel_size = 7
+        self.stride = 4
+        self.filters_root = 8
+        self.activation = torch.relu
+
+        if output_activation == "softmax":
+            self.output_activation = torch.nn.Softmax(dim=1)
+        elif output_activation == "sigmoid":
+            self.output_activation = torch.nn.Sigmoid()
+        else:
+            raise ValueError("Output activation needs to be softmax or sigmoid")
+
+        # PhaseNet extra arguments
+        self.norm_amp_per_comp = False
+        self.norm_detrend = False
+
+        if empty:
+            self.inc = None
+            self.in_bn = None
+            self.down_branch = None
+            self.up_branch = None
+            self.out = None
+        else:
+            self.inc = nn.Conv1d(
+                self.in_channels, self.filters_root, self.kernel_size, padding="same"
+            )
+            self.in_bn = nn.BatchNorm1d(8, eps=1e-3)
+
+            self.down_branch = nn.ModuleList()
+            self.up_branch = nn.ModuleList()
+
+            last_filters = self.filters_root
+            for i in range(self.depth):
+                filters = int(2**i * self.filters_root)
+                conv_same = nn.Conv1d(
+                    last_filters, filters, self.kernel_size, padding="same", bias=False
+                )
+                last_filters = filters
+                bn1 = nn.BatchNorm1d(filters, eps=1e-3)
+                if i == self.depth - 1:
+                    conv_down = None
+                    bn2 = None
+                else:
+                    padding = self.kernel_size // 2
+                    conv_down = nn.Conv1d(
+                        filters,
+                        filters,
+                        self.kernel_size,
+                        self.stride,
+                        padding=padding,
+                        bias=False,
+                    )
+                    bn2 = nn.BatchNorm1d(filters, eps=1e-3)
+
+                self.down_branch.append(nn.ModuleList([conv_same, bn1, conv_down, bn2]))
+
+            for i in range(self.depth - 1):
+                filters = int(2 ** (3 - i) * self.filters_root)
+                conv_up = nn.ConvTranspose1d(
+                    last_filters, filters, self.kernel_size, self.stride, bias=False
+                )
+                last_filters = filters
+                bn1 = nn.BatchNorm1d(filters, eps=1e-3)
+                conv_same = nn.Conv1d(
+                    2 * filters, filters, self.kernel_size, padding="same", bias=False
+                )
+                bn2 = nn.BatchNorm1d(filters, eps=1e-3)
+
+                self.up_branch.append(nn.ModuleList([conv_up, bn1, conv_same, bn2]))
+
+            self.out = nn.Conv1d(last_filters, self.classes, 1, padding="same")
+
+    def forward(self, x, logits=False):
+        x = self._forward_single(x)
+
+        if logits:
+            return x
+        else:
+            return self.output_activation(x)
+
+    def _forward_single(self, x):
+        x = self.activation(self.in_bn(self.inc(x)))
+
+        skips = []
+        for i, (conv_same, bn1, conv_down, bn2) in enumerate(self.down_branch):
+            x = self.activation(bn1(conv_same(x)))
+
+            if conv_down is not None:
+                skips.append(x)
+                x = self.activation(bn2(conv_down(x)))
+
+        for i, ((conv_up, bn1, conv_same, bn2), skip) in enumerate(
+            zip(self.up_branch, skips[::-1])
+        ):
+            x = self.activation(bn1(conv_up(x)))
+            x = self._merge_skip(skip, x)
+            x = self.activation(bn2(conv_same(x)))
+
+        return self.out(x)
+
+    def annotate_batch_pre(
+        self, batch: torch.Tensor, argdict: dict[str, Any]
+    ) -> torch.Tensor:
+        batch = batch - batch.mean(axis=-1, keepdims=True)
+        if self.norm_detrend:
+            batch = sbu.torch_detrend(batch)
+
+        if self.norm == "std":
+            std = batch.std(axis=self.norm_axis, keepdims=True)
+            batch = batch / (std + 1e-10)
+        elif self.norm == "peak":
+            peak = batch.abs().amax(axis=self.norm_axis, keepdims=True)
+            batch = batch / (peak + 1e-10)
+
+        return batch
+
+    def get_model_args(self):
+        model_args = super().get_model_args()
+
+        model_args["in_samples"] = self.in_samples
+        model_args["in_channels"] = self.in_channels
+        model_args["classes"] = self.classes
+        model_args["phases"] = self.labels
+        model_args["sampling_rate"] = self.sampling_rate
+        model_args["norm"] = self.norm
+        model_args["norm_axis"] = self.norm_axis
+        model_args[
+            "output_activation"
+        ] = self.output_activation.__class__.__name__.lower()
+
+        return model_args

@@ -69,6 +69,14 @@ LenDB dataset
     :undoc-members:
     :show-inheritance:
 
+LFE stack datasets
+-----------------------------------
+
+.. automodule:: seisbench.data.lfe_stacks
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 NEIC datasets
 -----------------------------------
 

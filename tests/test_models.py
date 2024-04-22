@@ -1004,6 +1004,29 @@ def test_annotate_phasenet():
     assert output.creator == model.name
 
 
+@pytest.mark.parametrize("output_activation", ["sigmoid", "softmax"])
+@pytest.mark.parametrize("norm", ["std", "peak"])
+@pytest.mark.parametrize("in_samples", [1337, 3001, 6000])
+def test_annotate_variablelengthphasenet(in_samples, norm, output_activation):
+    # Tests that the annotate/classify functions run without crashes and annotate produces an output
+    model = seisbench.models.VariableLengthPhaseNet(
+        sampling_rate=400,
+        in_samples=in_samples,
+        norm=norm,
+        output_activation=output_activation,
+    )  # Higher sampling rate ensures trace is long enough
+    stream = obspy.read()
+
+    annotations = model.annotate(stream)
+    assert len(annotations) > 0
+    output = model.classify(
+        stream
+    )  # Ensures classify succeeds even though labels are unknown
+    assert isinstance(output, sbu.ClassifyOutput)
+    assert isinstance(output.picks, sbu.PickList)
+    assert output.creator == model.name
+
+
 def test_annotate_basicphaseae():
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.BasicPhaseAE(
