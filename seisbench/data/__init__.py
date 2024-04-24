@@ -13,6 +13,11 @@ from .instance import InstanceCounts, InstanceCountsCombined, InstanceGM, Instan
 from .iquique import Iquique
 from .isc_ehb import ISC_EHB_DepthPhases
 from .lendb import LenDB
+from .lfe_stacks import (
+    LFEStacksCascadiaBostock2015,
+    LFEStacksMexicoFrank2014,
+    LFEStacksSanAndreasShelly2017,
+)
 from .neic import MLAAPDE, NEIC
 from .obs import OBS
 from .obst2024 import OBST2024

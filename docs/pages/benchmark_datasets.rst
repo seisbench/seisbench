@@ -131,7 +131,10 @@ Additional picks have been annotated on the traces, if they were contained in th
 
 .. admonition:: Citation
 
-    tbd
+    Münchmeyer, J., Saul, J., Tilmann, F. (2023).
+    Learning the Deep and the Shallow: Deep‐Learning‐Based Depth Phase Picking and Earthquake Depth Estimation.
+    Seismological Research Letters.
+    https://doi.org/10.1785/0220230187
 
 LENDB
 -----
@@ -154,8 +157,29 @@ below.
     Magrini, Fabrizio, Jozinović, Dario, Cammarano, Fabio, Michelini, Alberto, & Boschi, Lapo. (2020). LEN-DB - Local
     earthquakes detection: a benchmark dataset of 3-component seismograms built on a global scale.
 
-    *  Data set: http://doi.org/10.5281/zenodo.3648232"
+    *  Data set: http://doi.org/10.5281/zenodo.3648232
     *  Paper: https://doi.org/10.1016/j.aiig.2020.04.001
+
+
+LFE stack datasets
+------------------
+
+.. figure::  ../_static/lfe_stacks_mapplot.png
+   :align:   center
+
+SeisBench contains three datasets with stacked waveforms of low-frequency earthquakes datasets:
+
+- Cascadia (Canada/USA), 1817 stacks, :py:class:`~seisbench.data.lfe_stacks.LFEStacksCascadiaBostock2015`
+- Guerrero (Mexico), 11200 stacks, :py:class:`~seisbench.data.lfe_stacks.LFEStacksMexicoFrank2014`
+- San Andreas fault (USA), 2306 stacks, :py:class:`~seisbench.data.lfe_stacks.LFEStacksSanAndreasShelly2017`
+
+Note that in addition to the regular pick columns, the datasets contain predicted arrival times
+in the `trace_*_predicted_arrival_sample` column.
+
+.. admonition:: Citation
+
+    Münchmeyer, J., Giffard-Roisin, S., Malfante, M., Frank, W., Poli, P., Marsan, D., Socquet A. (2024).
+    Deep learning detects uncataloged low-frequency earthquakes across regions. Seismica.
 
 
 MLAAPDE
