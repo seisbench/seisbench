@@ -3,6 +3,8 @@ import copy
 import numpy as np
 import scipy.signal
 
+import seisbench.data.base
+
 
 class Normalize:
     """
@@ -739,3 +741,79 @@ class RotateHorizontalComponents:
             return f"Rotation of {self.components} components by arbitrary angle"
         else:
             return f"Rotation of {self.components} components by {np.round(self.alpha, 2)} rad"
+
+
+class RealNoise:
+    """
+    Adds recorded noise or noise that is included in the training data set to the data.
+    Noise in metadata is categorised under the keyword trace_category = noise.
+    TODO: noise and earthquake classes can be found with a mapping dictionary as done for P and S.
+
+    Wenn RMS als scaling_type, dann kann scale hoch sein (0, 15), wenn max, dann eher (0, 1)
+
+    # TODO: SNR threshold nur moeglich, wenn SNR in metadata angegeben ist
+    # TODO: Add test
+    """
+
+    def __init__(
+        self,
+        noise_dataset: seisbench.data.base.WaveformDataset,
+        scale: tuple = (0, 1),
+        key: str = "X",
+        probability: float = 0.5,
+        scaling_type: str = "max",
+    ):
+        if isinstance(key, str):
+            self.key = (key, key)
+        else:
+            self.key = key
+
+        if scaling_type.lower() not in ["rms", "max"]:
+            msg = "Argument scaling_type must be either 'rms' or 'max'."
+            raise ValueError(msg)
+
+        self.noise_dataset = noise_dataset
+        self.scale = scale
+        self.probability = probability
+        self.scaling_type = scaling_type.lower()
+        self.noise_generator = seisbench.generate.GenericGenerator(noise_dataset)
+        self.noise_samples = len(noise_dataset)
+
+    def __call__(self, state_dict):
+        x, metadata = state_dict[self.key[0]]
+        # Random draw of 0 and 1 with a probability of p
+        draw = np.random.binomial(n=1, p=self.probability)
+        if draw == 0:
+            return x
+        else:
+            # Defining scale for noise amplitude
+            scale = np.random.uniform(*self.scale)
+
+            if self.scaling_type == "max":
+                scale = scale * np.max(x)
+            elif self.scaling_type == "rms":
+                scale = scale * np.sqrt(np.sum(x**2) / x.size)
+
+            # Draw random noise sample from the dataset and cut to same length as x
+            n = self.noise_generator[np.random.randint(low=0, high=self.noise_samples)][
+                self.key[0]
+            ]
+
+            # Min-max normalize noise sample and apply scale
+            n = n / np.max(np.abs(n))
+            n = n * scale
+
+            # Cutting noise to same length as x
+            spoint = np.random.randint(low=0, high=n.shape[1] - x.shape[1] - 1)
+            n = n[:, spoint : spoint + x.shape[1]]
+
+            # Add noise and signal to create noisy signal
+            x = x + n
+
+            return x
+
+    def __str__(self):
+        return (
+            f"RealNoise (dataset={self.noise_dataset}, probability={self.probability}, scale={self.scale}, "
+            f"scaling_type={self.scaling_type})"
+        )
