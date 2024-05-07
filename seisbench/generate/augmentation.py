@@ -751,7 +751,6 @@ class RealNoise:
 
     Wenn RMS als scaling_type, dann kann scale hoch sein (0, 15), wenn max, dann eher (0, 1)
 
-    # TODO: SNR threshold nur moeglich, wenn SNR in metadata angegeben ist
     # TODO: Add test
     """
 
@@ -762,6 +761,7 @@ class RealNoise:
         key: str = "X",
         probability: float = 0.5,
         scaling_type: str = "max",
+        metadata_thresholds: (dict, None) = None,
     ):
         if isinstance(key, str):
             self.key = (key, key)
@@ -777,12 +777,22 @@ class RealNoise:
         self.probability = probability
         self.scaling_type = scaling_type.lower()
         self.noise_generator = seisbench.generate.GenericGenerator(noise_dataset)
+        self.metadata_thresholds = metadata_thresholds
         self.noise_samples = len(noise_dataset)
 
     def __call__(self, state_dict):
         x, metadata = state_dict[self.key[0]]
+
+        # Check all requirements from metadata thresholds
+        # If value from metadata is below given threshold value, then x is returned without added noise
+        if self.metadata_thresholds:
+            for threshold_key, item in self.metadata_thresholds.items():
+                if metadata[threshold_key] < item:
+                    return x
+
         # Random draw of 0 and 1 with a probability of p
         draw = np.random.binomial(n=1, p=self.probability)
+
         if draw == 0:
             return x
         else:
