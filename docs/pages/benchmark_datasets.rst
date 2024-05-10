@@ -37,7 +37,7 @@ Depending on user needs and case study, the dataset can be accessed using the fo
 .. warning::
 
     Dataset size: waveforms.hdf5 **~123Gb**, metadata.csv **~1.7Gb**. The
-    size refers to both counts and ground motion dataset individually.
+    size refers to both counts and ground motion datasets individually.
 
     Each individual network has its own DOI. From publicly available data:
 

@@ -49,14 +49,3 @@ class AQ2009GM(BenchmarkDataset):
 
     def _download_dataset(self, writer, **kwargs):
         pass
-
-
-class AQ2009(BenchmarkDataset):
-    """
-    Convenience class to jointly load :py:class:`AQ2009Counts` and :py:class:`AQ2009GM`.
-
-    :param kwargs: Passed to the constructors of both :py:class:`AQ2009Counts` and :py:class:`AQ2009GM`
-    """
-
-    def __init__(self, **kwargs):
-        super().__init__([AQ2009Counts(**kwargs), AQ2009GM(**kwargs)])
