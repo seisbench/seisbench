@@ -8,6 +8,54 @@ SeisBench facilitates the downloading of a suite of publicly available seismic w
 for training of machine learning algorithms. An overview of the contents of each dataset is below,
 along with the corresponding citation.
 
+AQ2009
+-----
+
+.. figure::  ../_static/aq2009_combined.png
+   :align:   center
+
+The :py:class:`~seisbench.data.aq2009.AQ2009` dataset contains
+the aftershock sequence of the 2009 L'Aquila earthquake (6.1 Mw),
+a seismic event of significant impact and damage in the South-Central Apennines
+region. This dataset serves as a valuable resource for aftershock characterization
+using Machine Learning (ML) approaches. For more information see Valoroso et al. (2013): https://doi.org/10.1002/jgrb.50130
+
+The dataset contains:
+ * 254 days of aftershocks (2009-04-06 up to 2009-12-20).
+ * 63,704 earthquakes.
+ * 1,258,006 3-component traces cut of 70 seconds.
+ * Absolute (HypoEllipse) and relative (HypoDD) locations.
+ * 3 seismic networks (MN, IV, XJ) for a total of 67 stations.
+ * Multiple P and S pick arrivals (up to 8 per cut) that allow improvements in current Machine Learning algorithms development and analysis.
+ * 201 metadata fields providing information on the station, trace, source, path, and data quality.
+ * Waveforms and metadata information on both digital units and ground motion.
+
+Depending on user needs and case study, the dataset can be accessed using the following classes:
+:py:class:`~seisbench.data.aq2009.AQ2009Counts` to upload waveforms in digital units.
+:py:class:`~seisbench.data.aq2009.AQ2009GM` to upload waveforms in ground motion (with instrument response removed)
+
+.. warning::
+
+    Dataset size: waveforms.hdf5 **~123Gb**, metadata.csv **~1.7Gb**. The
+    size refers to both counts and ground motion dataset individually.
+
+    Each individual network has its own DOI. From publicly available data:
+
+    * IV: https://doi.org/10.13127/SD/X0FXnH7QfY
+    * MN: https://doi.org/10.13127/SD/fBBBtDtd6q
+    * XJ: https://doi.org/10.15778/RESIF.XJ2009
+
+.. admonition:: Citation
+
+    Bagagli, M., Valoroso, L., Michelini, A., Cianetti, S.,
+    Gaviano, S., Giunchi, C., Jozinović, D., & Lauciani, V. (2023).
+    AQ2009 – The 2009 Aquila Mw 6.1 earthquake aftershocks seismic
+    dataset for machine learning application.
+    Istituto Nazionale di Geofisica e Vulcanologia (INGV).
+
+    https://doi.org/10.13127/AI/AQUILA2009
+
+
 ETHZ
 -----
 

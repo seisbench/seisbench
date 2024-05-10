@@ -19,6 +19,14 @@ They are very small datasets that can be used, for example, to demonstrate certa
     :undoc-members:
     :show-inheritance:
 
+AQ2009 dataset
+-----------------------------------
+
+.. automodule:: seisbench.data.aq2009
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 ETHZ dataset
 -----------------------------------
 .. automodule:: seisbench.data.ethz
