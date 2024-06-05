@@ -1,3 +1,4 @@
+from .aq2009 import AQ2009GM, AQ2009Counts
 from .base import (
     BenchmarkDataset,
     Bucketer,
