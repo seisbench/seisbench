@@ -396,3 +396,58 @@ In total there are ~500,000 time series encompassing 20,000 earthquakes (~300,00
     Seismological Research Letters, vol. 1, no. 1, p. doi: 10.1785/0220230327, 2024.
 
     https://doi.org/10.1785/0220230327
+
+VCSEIS
+------
+
+.. figure::  ../_static/vcseis_except_japan.png
+   :align:   center
+   
+The :py:class:`~seisbench.data.vcseis.VCSEIS` benchmark dataset contains local earthquakes from volcanic regions cataloged by Alaska Volcano Observatory, Hawaiian volcano observatory, Northern California Earthquake Data Center, Pacific Northwest Seismic Network, and compiled into SeisBench format by Zhong and Tan (2024). This dataset is a subset of the dataset in Zhong and Tan (2024), with the data from Japan excluded.
+
+The dataset contains 147,863 earthquake signals and 12,415 noise traces:
+ * 51,942 long-period earthquake traces, 50,899 regular earthquake traces and 7,217 noise traces from Alaska.
+ * 16,906 long-period earthquake traces, 16,814 regular earthquake traces and 5,198 noise traces from Hawaii.
+ * 4,841 long-period earthquake traces, 4,841 regular earthquake traces from Northern California.
+ * 810 long-period earthquake traces, 810 regular earthquake traces from Cascade Volcanoes.
+
+The data set can be loaded as ``dataset = sbd.VCSEIS()``. Data from different regions can be selected using the  the ``get_[region]_subset()`` function. 
+
+.. code-block:: python
+
+    import seisbench.data as sbd
+
+    dataset = sbd.VCSEIS()
+
+    alaska = dataset.get_alaska_subset()  # select the data from Alaska
+
+    hawaii = dataset.get_hawaii_subset()  # select the data from Hawaii
+
+    nca = dataset.get_northern_california_subset() # select the data from Northern California
+
+    cascade = dataset.get_cascade_subset()  # select the data from Cascade
+
+    lp_eq = dataset.get_long_period_earthquakes() # select long-period earthquakes
+
+    regular_eq = dataset.get_regular_earthquakes() # select regular/vt earthquakes
+
+    noise = dataset.get_noise_traces() # select noise traces
+
+
+.. warning::
+
+    Dataset size: waveforms.hdf5 **~47GB**, metadata.csv **~71MB**.
+
+.. admonition:: Citation
+
+    Zhong, Y., & Tan, Y. J. (2024). Deep-learning-based phase picking for volcano-tectonic and long-period earthquakes. Geophysical Research Letters, 51, e2024GL108438. https://doi.org/10.1029/2024GL108438
+
+    Power, J. A., Friberg, P. A., Haney, M. M., Parker, T., Stihler, S. D., & Dixon, J. P. (2019). A unified catalog of earthquake hypocenters and magnitudes at volcanoes in Alaska—1989 to 2018 (Tech. Rep.). US Geological Survey. https://doi.org/10.3133/sir20195037
+
+    Hawaiian Volcano Observatory/USGS. (1956). Hawaiian volcano observatory network [Dataset]. https://doi.org/10.7914/SN/HV
+
+    NCEDC. (2014). Northern California Earthquake Data Center [Dataset]. https://doi.org/10.7932/NCEDC
+
+    University of Washington. (1963). Pacific Northwest Seismic Network—University of Washington [Dataset]. https://doi.org/10.7914/SN/UW
+
+
