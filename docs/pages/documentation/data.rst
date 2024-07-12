@@ -138,3 +138,11 @@ TXED dataset
     :members:
     :undoc-members:
     :show-inheritance:
+
+VCSEIS dataset
+-----------------------------------
+
+.. automodule:: seisbench.data.vcseis
+    :members:
+    :undoc-members:
+    :show-inheritance:
