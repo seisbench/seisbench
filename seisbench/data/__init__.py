@@ -7,6 +7,7 @@ from .base import (
     WaveformDataset,
     WaveformDataWriter,
 )
+from .crew import CREW
 from .dummy import ChunkedDummyDataset, DummyDataset
 from .ethz import ETHZ
 from .geofon import GEOFON

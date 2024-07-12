@@ -9,7 +9,7 @@ for training of machine learning algorithms. An overview of the contents of each
 along with the corresponding citation.
 
 AQ2009
------
+------
 
 .. figure::  ../_static/aq2009_combined.png
    :align:   center
@@ -54,6 +54,31 @@ Depending on user needs and case study, the dataset can be accessed using the fo
     Istituto Nazionale di Geofisica e Vulcanologia (INGV).
 
     https://doi.org/10.13127/AI/AQUILA2009
+
+CREW
+-----
+
+.. figure::  ../_static/crew_mapplot.png
+   :align:   center
+
+The :py:class:`~seisbench.data.crew.CREW` dataset, the Curated Regional Earthquake Waveforms Dataset,
+which is a dataset of earthquake arrivals recorded at local and regional distances.
+CREW was assembled from millions of waveforms with quality control through semi-supervised learning.
+CREW includes 1.6 million waveforms that have global coverage.
+Each waveform consists of a 5 minute three component seismogram with labels for both a P and S arrival.
+CREW provides a high quality labeled waveform data set that can be used to develop and test machine learning
+models for the analysis of earthquakes recorded at regional distances.
+
+.. warning::
+
+    Dataset size: waveforms.hdf5 **~1.1Tb**, metadata.csv **~354Mb**.
+
+.. admonition:: Citation
+
+    Aguilar Suarez, A. L., & Beroza, G. (2024).
+    Curated Regional Earthquake Waveforms (CREW) Dataset.
+    Seismica, 3(1).
+    https://doi.org/10.26443/seismica.v3i1.1049
 
 
 ETHZ

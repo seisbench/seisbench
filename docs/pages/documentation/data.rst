@@ -27,6 +27,14 @@ AQ2009 dataset
     :undoc-members:
     :show-inheritance:
 
+CREW dataset
+-----------------------------------
+
+.. automodule:: seisbench.data.crew
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 ETHZ dataset
 -----------------------------------
 .. automodule:: seisbench.data.ethz
