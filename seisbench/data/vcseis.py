@@ -7,7 +7,7 @@ class VCSEIS(BenchmarkDataset):
 
     """
 
-    def __init__(self, component_order="ZNE", dimension_order="NCW", **kwargs):
+    def __init__(self, **kwargs):
         citation = (
             "Zhong, Y., & Tan, Y. J. (2024). Deep-learning-based phase "
             "picking for volcano-tectonic and long-period earthquakes. "
@@ -20,8 +20,6 @@ class VCSEIS(BenchmarkDataset):
             citation=citation,
             license=license,
             repository_lookup=True,
-            component_order=component_order,
-            dimension_order=dimension_order,
             **kwargs,
         )
 

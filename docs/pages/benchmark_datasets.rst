@@ -402,7 +402,7 @@ VCSEIS
 
 .. figure::  ../_static/vcseis_except_japan.png
    :align:   center
-   
+
 The :py:class:`~seisbench.data.vcseis.VCSEIS` benchmark dataset contains local earthquakes from volcanic regions cataloged by Alaska Volcano Observatory, Hawaiian volcano observatory, Northern California Earthquake Data Center, Pacific Northwest Seismic Network, and compiled into SeisBench format by Zhong and Tan (2024). This dataset is a subset of the dataset in Zhong and Tan (2024), with the data from Japan excluded.
 
 The dataset contains 147,863 earthquake signals and 12,415 noise traces:
@@ -411,7 +411,7 @@ The dataset contains 147,863 earthquake signals and 12,415 noise traces:
  * 4,841 long-period earthquake traces, 4,841 regular earthquake traces from Northern California.
  * 810 long-period earthquake traces, 810 regular earthquake traces from Cascade Volcanoes.
 
-The data set can be loaded as ``dataset = sbd.VCSEIS()``. Data from different regions can be selected using the  the ``get_[region]_subset()`` function. 
+The data set can be loaded using ``sbd.VCSEIS()``. Afterwards, data from different regions can be selected using the ``get_[region]_subset()`` functions.
 
 .. code-block:: python
 
@@ -449,5 +449,3 @@ The data set can be loaded as ``dataset = sbd.VCSEIS()``. Data from different re
     NCEDC. (2014). Northern California Earthquake Data Center [Dataset]. https://doi.org/10.7932/NCEDC
 
     University of Washington. (1963). Pacific Northwest Seismic Network—University of Washington [Dataset]. https://doi.org/10.7914/SN/UW
-
-
