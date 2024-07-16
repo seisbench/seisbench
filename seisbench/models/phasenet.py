@@ -33,6 +33,13 @@ class PhaseNet(WaveformModel):
             "Run from_pretrained with update=True once to solve this issue. "
             "For details, see https://github.com/seisbench/seisbench/pull/188 .",
         ),
+        (
+            "diting",
+            "1",
+            "This version of the Diting picker uses an incorrect sampling rate (100 Hz instead of 50 Hz). "
+            "Run from_pretrained with update=True once to solve this issue. "
+            "For details, see https://github.com/JUNZHU-SEIS/USTC-Pickers/issues/1 .",
+        ),
     ]
 
     def __init__(
