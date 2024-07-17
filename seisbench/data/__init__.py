@@ -1,3 +1,4 @@
+from .aq2009 import AQ2009GM, AQ2009Counts
 from .base import (
     BenchmarkDataset,
     Bucketer,
@@ -6,6 +7,7 @@ from .base import (
     WaveformDataset,
     WaveformDataWriter,
 )
+from .crew import CREW
 from .dummy import ChunkedDummyDataset, DummyDataset
 from .ethz import ETHZ
 from .geofon import GEOFON
@@ -25,3 +27,4 @@ from .pnw import PNW, PNWAccelerometers, PNWExotic, PNWNoise
 from .scedc import SCEDC, Meier2019JGR, Ross2018GPD, Ross2018JGRFM, Ross2018JGRPick
 from .stead import STEAD
 from .txed import TXED
+from .vcseis import VCSEIS

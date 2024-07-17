@@ -8,6 +8,79 @@ SeisBench facilitates the downloading of a suite of publicly available seismic w
 for training of machine learning algorithms. An overview of the contents of each dataset is below,
 along with the corresponding citation.
 
+AQ2009
+------
+
+.. figure::  ../_static/aq2009_combined.png
+   :align:   center
+
+The :py:class:`~seisbench.data.aq2009.AQ2009` dataset contains
+the aftershock sequence of the 2009 L'Aquila earthquake (6.1 Mw),
+a seismic event of significant impact and damage in the South-Central Apennines
+region. This dataset serves as a valuable resource for aftershock characterization
+using Machine Learning (ML) approaches. For more information see Valoroso et al. (2013): https://doi.org/10.1002/jgrb.50130
+
+The dataset contains:
+ * 254 days of aftershocks (2009-04-06 up to 2009-12-20).
+ * 63,704 earthquakes.
+ * 1,258,006 3-component traces cut of 70 seconds.
+ * Absolute (HypoEllipse) and relative (HypoDD) locations.
+ * 3 seismic networks (MN, IV, XJ) for a total of 67 stations.
+ * Multiple P and S pick arrivals (up to 8 per cut) that allow improvements in current Machine Learning algorithms development and analysis.
+ * 201 metadata fields providing information on the station, trace, source, path, and data quality.
+ * Waveforms and metadata information on both digital units and ground motion.
+
+Depending on user needs and case study, the dataset can be accessed using the following classes:
+:py:class:`~seisbench.data.aq2009.AQ2009Counts` to upload waveforms in digital units.
+:py:class:`~seisbench.data.aq2009.AQ2009GM` to upload waveforms in ground motion (with instrument response removed)
+
+.. warning::
+
+    Dataset size: waveforms.hdf5 **~123Gb**, metadata.csv **~1.7Gb**. The
+    size refers to both counts and ground motion datasets individually.
+
+    Each individual network has its own DOI. From publicly available data:
+
+    * IV: https://doi.org/10.13127/SD/X0FXnH7QfY
+    * MN: https://doi.org/10.13127/SD/fBBBtDtd6q
+    * XJ: https://doi.org/10.15778/RESIF.XJ2009
+
+.. admonition:: Citation
+
+    Bagagli, M., Valoroso, L., Michelini, A., Cianetti, S.,
+    Gaviano, S., Giunchi, C., Jozinović, D., & Lauciani, V. (2023).
+    AQ2009 – The 2009 Aquila Mw 6.1 earthquake aftershocks seismic
+    dataset for machine learning application.
+    Istituto Nazionale di Geofisica e Vulcanologia (INGV).
+
+    https://doi.org/10.13127/AI/AQUILA2009
+
+CREW
+-----
+
+.. figure::  ../_static/crew_mapplot.png
+   :align:   center
+
+The :py:class:`~seisbench.data.crew.CREW` dataset, the Curated Regional Earthquake Waveforms Dataset,
+which is a dataset of earthquake arrivals recorded at local and regional distances.
+CREW was assembled from millions of waveforms with quality control through semi-supervised learning.
+CREW includes 1.6 million waveforms that have global coverage.
+Each waveform consists of a 5 minute three component seismogram with labels for both a P and S arrival.
+CREW provides a high quality labeled waveform data set that can be used to develop and test machine learning
+models for the analysis of earthquakes recorded at regional distances.
+
+.. warning::
+
+    Dataset size: waveforms.hdf5 **~1.1Tb**, metadata.csv **~354Mb**.
+
+.. admonition:: Citation
+
+    Aguilar Suarez, A. L., & Beroza, G. (2024).
+    Curated Regional Earthquake Waveforms (CREW) Dataset.
+    Seismica, 3(1).
+    https://doi.org/10.26443/seismica.v3i1.1049
+
+
 ETHZ
 -----
 
@@ -348,3 +421,56 @@ In total there are ~500,000 time series encompassing 20,000 earthquakes (~300,00
     Seismological Research Letters, vol. 1, no. 1, p. doi: 10.1785/0220230327, 2024.
 
     https://doi.org/10.1785/0220230327
+
+VCSEIS
+------
+
+.. figure::  ../_static/vcseis_except_japan.png
+   :align:   center
+
+The :py:class:`~seisbench.data.vcseis.VCSEIS` benchmark dataset contains local earthquakes from volcanic regions cataloged by Alaska Volcano Observatory, Hawaiian volcano observatory, Northern California Earthquake Data Center, Pacific Northwest Seismic Network, and compiled into SeisBench format by Zhong and Tan (2024). This dataset is a subset of the dataset in Zhong and Tan (2024), with the data from Japan excluded.
+
+The dataset contains 147,863 earthquake signals and 12,415 noise traces:
+ * 51,942 long-period earthquake traces, 50,899 regular earthquake traces and 7,217 noise traces from Alaska.
+ * 16,906 long-period earthquake traces, 16,814 regular earthquake traces and 5,198 noise traces from Hawaii.
+ * 4,841 long-period earthquake traces, 4,841 regular earthquake traces from Northern California.
+ * 810 long-period earthquake traces, 810 regular earthquake traces from Cascade Volcanoes.
+
+The data set can be loaded using ``sbd.VCSEIS()``. Afterwards, data from different regions can be selected using the ``get_[region]_subset()`` functions.
+
+.. code-block:: python
+
+    import seisbench.data as sbd
+
+    dataset = sbd.VCSEIS()
+
+    alaska = dataset.get_alaska_subset()  # select the data from Alaska
+
+    hawaii = dataset.get_hawaii_subset()  # select the data from Hawaii
+
+    nca = dataset.get_northern_california_subset() # select the data from Northern California
+
+    cascade = dataset.get_cascade_subset()  # select the data from Cascade
+
+    lp_eq = dataset.get_long_period_earthquakes() # select long-period earthquakes
+
+    regular_eq = dataset.get_regular_earthquakes() # select regular/vt earthquakes
+
+    noise = dataset.get_noise_traces() # select noise traces
+
+
+.. warning::
+
+    Dataset size: waveforms.hdf5 **~47GB**, metadata.csv **~71MB**.
+
+.. admonition:: Citation
+
+    Zhong, Y., & Tan, Y. J. (2024). Deep-learning-based phase picking for volcano-tectonic and long-period earthquakes. Geophysical Research Letters, 51, e2024GL108438. https://doi.org/10.1029/2024GL108438
+
+    Power, J. A., Friberg, P. A., Haney, M. M., Parker, T., Stihler, S. D., & Dixon, J. P. (2019). A unified catalog of earthquake hypocenters and magnitudes at volcanoes in Alaska—1989 to 2018 (Tech. Rep.). US Geological Survey. https://doi.org/10.3133/sir20195037
+
+    Hawaiian Volcano Observatory/USGS. (1956). Hawaiian volcano observatory network [Dataset]. https://doi.org/10.7914/SN/HV
+
+    NCEDC. (2014). Northern California Earthquake Data Center [Dataset]. https://doi.org/10.7932/NCEDC
+
+    University of Washington. (1963). Pacific Northwest Seismic Network—University of Washington [Dataset]. https://doi.org/10.7914/SN/UW
