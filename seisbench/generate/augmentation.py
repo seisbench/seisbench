@@ -679,8 +679,8 @@ class RotateHorizontalComponents:
     Rotates horizontal components either by a given value alpha in rad or by an arbitrary angle between -pi and +pi.
 
     :param alpha: Angle in rad for rotation of horizontal components.
-                  If alpha is None, everytime the method is called, a new angle is defined, otherwise the angle
-                  is constant.
+                  If alpha is zero, a new angle is defined each time the method is called, otherwise the angle is
+                  constant.
                   Default value is None, i.e. the angle changes with every call.
     :type alpha: None, float, int
     :param components: Defines which components are rotated.
@@ -709,7 +709,6 @@ class RotateHorizontalComponents:
             raise ValueError(msg)
 
     def __call__(self, state_dict) -> np.array:
-        # TODO: add test
         x, metadata = state_dict[self.key[0]]
 
         # Create random angle alpha if alpha is not given in init
@@ -723,8 +722,8 @@ class RotateHorizontalComponents:
             msg = "Keyword 'trace_component_order' is missing in metadata, therefore rotation is not possible."
             raise ValueError(msg)
 
-        data_comp1 = x[trace_components.index(self.components[0]), :]
-        data_comp2 = x[trace_components.index(self.components[1]), :]
+        data_comp1 = copy.copy(x[trace_components.index(self.components[0]), :])
+        data_comp2 = copy.copy(x[trace_components.index(self.components[1]), :])
 
         # Rotate by angle alpha
         x[trace_components.index(self.components[0]), :] = data_comp1 * np.cos(
