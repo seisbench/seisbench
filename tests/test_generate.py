@@ -23,6 +23,7 @@ from seisbench.generate import (
     ProbabilisticLabeller,
     ProbabilisticPointLabeller,
     RandomWindow,
+    RotateHorizontalComponents,
     SlidingWindow,
     StandardLabeller,
     SteeredWindow,
@@ -1863,6 +1864,26 @@ def test_gaussian_noise():
     assert (
         0.14 < np.std(y - x) < 0.16
     )  # Bounds are rather liberal to ensure a stable test
+
+
+def test_rotate_horizontal_components():
+    np.random.seed(42)
+
+    data = np.random.rand(3, 1000)
+    state_dict = {"X": (copy.copy(data), {"trace_component_order": "ZNE"})}
+    rotation_180 = RotateHorizontalComponents(alpha=np.pi)
+    x_180 = rotation_180(state_dict=state_dict)
+
+    rotation_90 = RotateHorizontalComponents(alpha=np.pi / 2)
+    x_90 = rotation_90(state_dict=state_dict)
+
+    assert x_180[0, :].all() == data[0, :].all()
+    assert x_180[1, :].all() == (-1 * data[1, :]).all()
+    assert x_180[2, :].all() == (-1 * data[2, :]).all()
+
+    assert x_90[0, :].all() == data[0, :].all()
+    assert x_90[1, :].all() == (-1 * data[2, :]).all()
+    assert x_90[2, :].all() == data[1, :].all()
 
 
 def test_probabilistic_point_labeller():
