@@ -711,6 +711,10 @@ class RotateHorizontalComponents:
     def __call__(self, state_dict) -> np.array:
         x, metadata = state_dict[self.key[0]]
 
+        if self.key[0] != self.key[1]:
+            # Ensure metadata is not modified inplace unless input and output key are anyhow identical
+            metadata = copy.deepcopy(metadata)
+
         # Create random angle alpha if alpha is not given in init
         if self.alpha is None:
             alpha = np.random.uniform(-np.pi, np.pi)
@@ -733,7 +737,7 @@ class RotateHorizontalComponents:
             alpha
         ) + data_comp2 * np.cos(alpha)
 
-        return x
+        state_dict[self.key[1]] = (x, metadata)
 
     def __str__(self):
         if not self.alpha:
@@ -765,7 +769,13 @@ class RealNoise:
                          (max) or from the root-mean-square (rms). Default is max.
     :type scaling_type: str
     :param metadata_thresholds: Dictionary containing keys from metadata and threshold values as items to avoid
-                                adding noise samples, if e.g. the signal-to-noise ratio is below a certain threshold.
+                                adding noise samples, if e.g. the signal-to-noise ratio is below a certain threshold:
+                                RealNoise(noise_dataset=noise_dataset,
+                                          metadata_thresholds=dict(
+                                               trace_Z_snr_db=10
+                                          ))
+                                In the example above, noise is only added when SNR of signal of the Z-component is equal
+                                or greater than 10.
                                 Default is None
     :type metadata_thresholds: dict, None
     """
@@ -798,6 +808,10 @@ class RealNoise:
 
     def __call__(self, state_dict):
         x, metadata = state_dict[self.key[0]]
+
+        if self.key[0] != self.key[1]:
+            # Ensure metadata is not modified inplace unless input and output key are anyhow identical
+            metadata = copy.deepcopy(metadata)
 
         # Check all requirements from metadata thresholds
         # If value from metadata is below given threshold value, then x is returned without added noise
@@ -836,7 +850,7 @@ class RealNoise:
             # Add noise and signal to create noisy signal
             x = x + n
 
-            return x
+            state_dict[self.key[1]] = (x, metadata)
 
     def __str__(self):
         return (

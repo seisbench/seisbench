@@ -23,6 +23,7 @@ from seisbench.generate import (
     ProbabilisticLabeller,
     ProbabilisticPointLabeller,
     RandomWindow,
+    RealNoise,
     RotateHorizontalComponents,
     SlidingWindow,
     StandardLabeller,
@@ -1871,19 +1872,37 @@ def test_rotate_horizontal_components():
 
     data = np.random.rand(3, 1000)
     state_dict = {"X": (copy.copy(data), {"trace_component_order": "ZNE"})}
+
+    # Rotation by 180 degree
     rotation_180 = RotateHorizontalComponents(alpha=np.pi)
-    x_180 = rotation_180(state_dict=state_dict)
+    rotation_180(state_dict=state_dict)
+    assert state_dict["X"][0][0, :].all() == data[0, :].all()
+    assert state_dict["X"][0][1, :].all() == (-1 * data[1, :]).all()
+    assert state_dict["X"][0][2, :].all() == (-1 * data[2, :]).all()
 
+    # Rotation by 90 degree
+    state_dict = {"X": (copy.copy(data), {"trace_component_order": "ZNE"})}
     rotation_90 = RotateHorizontalComponents(alpha=np.pi / 2)
-    x_90 = rotation_90(state_dict=state_dict)
+    rotation_90(state_dict=state_dict)
+    assert state_dict["X"][0][0, :].all() == data[0, :].all()
+    assert state_dict["X"][0][1, :].all() == (-1 * data[2, :]).all()
+    assert state_dict["X"][0][2, :].all() == data[1, :].all()
 
-    assert x_180[0, :].all() == data[0, :].all()
-    assert x_180[1, :].all() == (-1 * data[1, :]).all()
-    assert x_180[2, :].all() == (-1 * data[2, :]).all()
 
-    assert x_90[0, :].all() == data[0, :].all()
-    assert x_90[1, :].all() == (-1 * data[2, :]).all()
-    assert x_90[2, :].all() == data[1, :].all()
+def test_real_noise():
+    np.random.seed(42)
+
+    # For the test, it is assumed that the data are the noise samples and noise_dataset represents the signal
+    data = np.random.rand(3, 1000)
+    state_dict = {"X": (copy.copy(data), {})}
+    noise = RealNoise(
+        noise_dataset=seisbench.data.DummyDataset(), probability=1.0, scale=(5, 10)
+    )
+    noise(state_dict=state_dict)
+
+    # Testing new standard deviation of noisy data
+    for idx in range(3):
+        assert 0.82 <= np.std(state_dict["X"][0][idx, :]) <= 0.93
 
 
 def test_probabilistic_point_labeller():
