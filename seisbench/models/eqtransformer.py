@@ -363,12 +363,10 @@ class EQTransformer(WaveformModel):
         model_args = super().get_model_args()
         for key in [
             "citation",
-            "in_samples",
             "output_type",
             "default_args",
             "pred_sample",
             "labels",
-            "sampling_rate",
         ]:
             del model_args[key]
 
@@ -380,6 +378,9 @@ class EQTransformer(WaveformModel):
         model_args["drop_rate"] = self.drop_rate
         model_args["original_compatible"] = self.original_compatible
         model_args["sampling_rate"] = self.sampling_rate
+        model_args["norm"] = self.norm
+        model_args["norm_amp_per_comp"] = self.norm_amp_per_comp
+        model_args["norm_detrend"] = self.norm_detrend
 
         return model_args
 
