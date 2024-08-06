@@ -248,7 +248,6 @@ class PhaseNet(WaveformModel):
             "default_args",
             "pred_sample",
             "labels",
-            "sampling_rate",
         ]:
             del model_args[key]
 
@@ -256,6 +255,9 @@ class PhaseNet(WaveformModel):
         model_args["classes"] = self.classes
         model_args["phases"] = self.labels
         model_args["sampling_rate"] = self.sampling_rate
+        model_args["norm"] = self.norm
+        model_args["norm_amp_per_comp"] = self.norm_amp_per_comp
+        model_args["norm_detrend"] = self.norm_detrend
 
         return model_args
 

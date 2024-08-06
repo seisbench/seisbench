@@ -1207,7 +1207,7 @@ def test_save_load_basicphaseae(tmp_path, caplog):
 
 
 def test_save_load_phasenet(tmp_path):
-    model_orig = seisbench.models.PhaseNet()
+    model_orig = seisbench.models.PhaseNet(norm="peak", sampling_rate=400)
     model_orig_args = get_input_args(model_orig.__class__)
 
     # Test model saving
@@ -1222,8 +1222,8 @@ def test_save_load_phasenet(tmp_path):
     model_load_args = get_input_args(model_orig.__class__)
 
     # Test no changes to weights
-    pred_orig = model_orig.annotate(stream, sampling_rate=400)
-    pred_load = model_load.annotate(stream, sampling_rate=400)
+    pred_orig = model_orig.annotate(stream)
+    pred_load = model_load.annotate(stream)
 
     for i in range(len(pred_orig)):
         assert np.allclose(pred_orig[i].data, pred_load[i].data)
@@ -1231,7 +1231,7 @@ def test_save_load_phasenet(tmp_path):
 
 
 def test_save_load_phasenetlight(tmp_path):
-    model_orig = seisbench.models.PhaseNetLight()
+    model_orig = seisbench.models.PhaseNetLight(norm="peak", sampling_rate=400)
     model_orig_args = get_input_args(model_orig.__class__)
 
     # Test model saving
@@ -1246,8 +1246,8 @@ def test_save_load_phasenetlight(tmp_path):
     model_load_args = get_input_args(model_orig.__class__)
 
     # Test no changes to weights
-    pred_orig = model_orig.annotate(stream, sampling_rate=400)
-    pred_load = model_load.annotate(stream, sampling_rate=400)
+    pred_orig = model_orig.annotate(stream)
+    pred_load = model_load.annotate(stream)
 
     for i in range(len(pred_orig)):
         assert np.allclose(pred_orig[i].data, pred_load[i].data)
@@ -1255,7 +1255,7 @@ def test_save_load_phasenetlight(tmp_path):
 
 
 def test_save_load_eqtransformer(tmp_path):
-    model_orig = seisbench.models.EQTransformer()
+    model_orig = seisbench.models.EQTransformer(norm="peak", sampling_rate=400)
     model_orig_args = get_input_args(model_orig.__class__)
 
     # Test model saving
@@ -1270,8 +1270,8 @@ def test_save_load_eqtransformer(tmp_path):
     model_load_args = get_input_args(model_orig.__class__)
 
     # Test no changes to weights
-    pred_orig = model_orig.annotate(stream, sampling_rate=400)
-    pred_load = model_load.annotate(stream, sampling_rate=400)
+    pred_orig = model_orig.annotate(stream)
+    pred_load = model_load.annotate(stream)
 
     for i in range(len(pred_orig)):
         assert np.allclose(pred_orig[i].data, pred_load[i].data)
