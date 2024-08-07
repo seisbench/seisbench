@@ -772,13 +772,10 @@ class RealNoise:
                         from the dataset are deteriorated by noise. If set to 1, then each sample from the data set is
                         deteriorated by noise. Default is 0.5
     :param scaling_type: Method how to find the relative amplitude of the input array. Either from the absolute maximum
-                         (max) or from the root-mean-square (rms). Default is max.
+                         (peak) or from the standard deviation (std). Default is peak.
     :param metadata_thresholds: Dictionary containing keys from metadata and threshold values as items to avoid
                                 adding noise samples, if e.g. the signal-to-noise ratio is below a certain threshold:
-                                RealNoise(noise_dataset=noise_dataset,
-                                          metadata_thresholds=dict(
-                                               trace_Z_snr_db=10
-                                          ))
+                                metadata_thresholds={"trace_Z_snr_db": 10}
                                 In the example above, noise is only added when SNR of signal of the Z-component is equal
                                 or greater than 10.
                                 Default is None
@@ -789,7 +786,7 @@ class RealNoise:
         noise_dataset: seisbench.data.base.WaveformDataset,
         scale: tuple = (0, 1),
         probability: float = 0.5,
-        scaling_type: str = "max",
+        scaling_type: str = "peak",
         metadata_thresholds: (dict, None) = None,
         key: str = "X",
     ):
@@ -798,8 +795,8 @@ class RealNoise:
         else:
             self.key = key
 
-        if scaling_type.lower() not in ["rms", "max"]:
-            msg = "Argument scaling_type must be either 'rms' or 'max'."
+        if scaling_type.lower() not in ["std", "peak"]:
+            msg = "Argument scaling_type must be either 'std' or 'peak'."
             raise ValueError(msg)
 
         self.noise_dataset = noise_dataset
@@ -822,26 +819,34 @@ class RealNoise:
         if self.metadata_thresholds:
             for threshold_key, item in self.metadata_thresholds.items():
                 if metadata[threshold_key] < item:
-                    return x
+                    state_dict[self.key[1]] = (x, metadata)
+                    return
 
         # Random draw of 0 and 1 with a probability of p
         draw = np.random.binomial(n=1, p=self.probability)
 
         if draw == 0:
-            return x
+            # Return values without added noise samples
+            state_dict[self.key[1]] = (x, metadata)
         else:
             # Defining scale for noise amplitude
             scale = np.random.uniform(*self.scale)
 
-            if self.scaling_type == "max":
-                scale = scale * np.max(x)
-            elif self.scaling_type == "rms":
-                scale = scale * np.sqrt(np.sum(x**2) / x.size)
+            # Removing mean from data x
+            x -= np.mean(x, axis=1, keepdims=True)
+
+            if self.scaling_type == "peak":
+                scale = scale * np.max(np.abs(x))
+            elif self.scaling_type == "std":
+                scale = scale * np.std(x)
 
             # Draw random noise sample from the dataset and cut to same length as x
             n = self.noise_generator[np.random.randint(low=0, high=self.noise_samples)][
                 self.key[0]
             ]
+
+            # Removing mean from noise samples
+            n -= np.mean(n, axis=1, keepdims=True)
 
             # Min-max normalize noise sample and apply scale
             n = n / np.max(np.abs(n))
