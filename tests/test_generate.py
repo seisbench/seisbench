@@ -1899,7 +1899,11 @@ def test_rotate_horizontal_components():
     assert data_first_rot[1, 0] != data_second_rot[1, 0]
 
 
-def test_real_noise():
+@pytest.mark.parametrize(
+    "scaling_type",
+    ["peak", "std"],
+)
+def test_real_noise(scaling_type):
     np.random.seed(42)
     # TODO: Test scaling types peak and std
 
@@ -1907,13 +1911,19 @@ def test_real_noise():
     data = np.random.rand(3, 1000)
     state_dict = {"X": (copy.copy(data), {})}
     noise = RealNoise(
-        noise_dataset=seisbench.data.DummyDataset(), probability=1.0, scale=(5, 10)
+        noise_dataset=seisbench.data.DummyDataset(),
+        probability=1.0,
+        scale=(5, 10),
+        scaling_type=scaling_type,
     )
     noise(state_dict=state_dict)
 
     # Testing new standard deviation of noisy data
     for idx in range(3):
-        assert 0.53 <= np.std(state_dict["X"][0][idx, :]) <= 0.6
+        if scaling_type == "peak":
+            assert 0.53 <= np.std(state_dict["X"][0][idx, :]) <= 0.6
+        elif scaling_type == "std":
+            assert 2.67 <= np.std(state_dict["X"][0][idx, :]) <= 3.02
 
     # Test when noise samples are shorter than data
     with pytest.raises(ValueError):
