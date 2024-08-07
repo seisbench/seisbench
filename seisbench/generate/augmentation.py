@@ -691,7 +691,7 @@ class RotateHorizontalComponents:
     """
 
     def __init__(
-        self, key: str = "X", alpha: (None, float, int) = None, components: str = "NE"
+        self, alpha: (None, float, int) = None, components: str = "NE", key: str = "X"
     ):
         if isinstance(key, str):
             self.key = (key, key)
@@ -781,10 +781,10 @@ class RealNoise:
         self,
         noise_dataset: seisbench.data.base.WaveformDataset,
         scale: tuple = (0, 1),
-        key: str = "X",
         probability: float = 0.5,
         scaling_type: str = "max",
         metadata_thresholds: (dict, None) = None,
+        key: str = "X",
     ):
         if isinstance(key, str):
             self.key = (key, key)
