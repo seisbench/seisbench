@@ -682,15 +682,12 @@ class RotateHorizontalComponents:
                   If alpha is zero, a new angle is defined each time the method is called, otherwise the angle is
                   constant.
                   Default value is None, i.e. the angle changes with every call.
-    :type alpha: None, float, int
     :param components: Defines which components are rotated.
                        Default components are N and E.
-    :type components: str
     :param key: The keys for reading from and writing to the state dict.
                 If key is a single string, the corresponding entry in state dict is modified.
                 Otherwise, a 2-tuple is expected, with the first string indicating the key to
                 read from and the second one the key to write to.
-    :type key: str, tuple[str, str]
     """
 
     def __init__(
@@ -757,23 +754,18 @@ class RealNoise:
     https://doi.org/10.1093/gji/ggad463
 
     :param noise_dataset: WaveformDataset that only contains noise traces
-    :type noise_dataset: seisbench.data.base.WaveformDataset
     :param scale: Tuple of minimum and maximum relative amplitude of the noise.
                   Relative amplitude is defined either by the absolute maximum or the root-mean-square of input array
                   (see scaling_type). Default value is 0.5
-    :type scale: tuple(float, float)
     :param key: The keys for reading from and writing to the state dict.
                 If key is a single string, the corresponding entry in state dict is modified.
                 Otherwise, a 2-tuple is expected, with the first string indicating the key to
                 read from and the second one the key to write to.
-    :type key: str, tuple[str, str]
     :param probability: Probability of adding noise samples to data set, e.g. if probability=0.5, 50% of all samples
                         from the dataset are deteriorated by noise. If set to 1, then each sample from the data set is
                         deteriorated by noise. Default is 0.5
-    :type probability: float
     :param scaling_type: Method how to find the relative amplitude of the input array. Either from the absolute maximum
                          (max) or from the root-mean-square (rms). Default is max.
-    :type scaling_type: str
     :param metadata_thresholds: Dictionary containing keys from metadata and threshold values as items to avoid
                                 adding noise samples, if e.g. the signal-to-noise ratio is below a certain threshold:
                                 RealNoise(noise_dataset=noise_dataset,
@@ -783,7 +775,6 @@ class RealNoise:
                                 In the example above, noise is only added when SNR of signal of the Z-component is equal
                                 or greater than 10.
                                 Default is None
-    :type metadata_thresholds: dict, None
     """
 
     def __init__(
