@@ -741,7 +741,7 @@ class RotateHorizontalComponents:
         if not self.alpha:
             return f"Rotation of {self.components} components by arbitrary angle"
         else:
-            return f"Rotation of {self.components} components by {np.round(self.alpha, 2)} rad"
+            return f"Rotation of {self.components} components by {self.alpha:.2f} rad"
 
 
 class RealNoise:
