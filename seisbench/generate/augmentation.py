@@ -679,7 +679,7 @@ class RotateHorizontalComponents:
     Rotates horizontal components either by a given value alpha in rad or by an arbitrary angle between -pi and +pi.
 
     :param alpha: Angle in rad for rotation of horizontal components.
-                  If alpha is zero, a new angle is defined each time the method is called, otherwise the angle is
+                  If alpha is None, a random angle is selected each time the method is called, otherwise the angle is
                   constant.
                   Default value is None, i.e. the angle changes with every call.
     :param components: Defines which components are rotated.
