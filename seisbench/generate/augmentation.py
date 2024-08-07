@@ -748,10 +748,16 @@ class RealNoise:
     """
     Adds recorded noise from an extra noise data set to the data.
     This method was inspired by the following publication:
-    Jun Zhu, Lihua Fang, Fajun Miao, Liping Fan, Ji Zhang, Zefeng Li
-    Deep learning and transfer learning of earthquake and quarry-blast discrimination: applications to southern
+
+    .. admonition:: Citation
+
+    Jun Zhu, Lihua Fang, Fajun Miao, Liping Fan, Ji Zhang,
+    Zefeng Li (2024).
+    Deep learning and transfer learning of earthquake and
+    quarry-blast discrimination: applications to southern
     California and eastern Kentucky
-    Geophysical Journal International, Volume 236, Issue 2, February 2024, Pages 979–993,
+    Geophysical Journal International (236)
+
     https://doi.org/10.1093/gji/ggad463
 
     :param noise_dataset: WaveformDataset that only contains noise traces
