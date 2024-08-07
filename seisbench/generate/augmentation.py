@@ -856,6 +856,13 @@ class RealNoise:
             n = n * scale
 
             # Cutting noise to same length as x
+            if n.shape[1] - x.shape[1] - 1 < 0:
+                msg = (
+                    f"The shape of the data ({x.shape}) and the noise ({n.shape}) must either be the same or the "
+                    f"shape of the noise must be larger than the shape of the data."
+                )
+                raise ValueError(msg)
+
             spoint = np.random.randint(low=0, high=n.shape[1] - x.shape[1] - 1)
             n = n[:, spoint : spoint + x.shape[1]]
 

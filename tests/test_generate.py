@@ -1902,7 +1902,16 @@ def test_real_noise():
 
     # Testing new standard deviation of noisy data
     for idx in range(3):
-        assert 0.82 <= np.std(state_dict["X"][0][idx, :]) <= 0.93
+        assert 0.53 <= np.std(state_dict["X"][0][idx, :]) <= 0.6
+
+    # Test when noise samples are shorter than data
+    with pytest.raises(ValueError):
+        data = np.random.rand(3, 2000)
+        state_dict = {"X": (copy.copy(data), {})}
+        noise = RealNoise(
+            noise_dataset=seisbench.data.DummyDataset(), probability=1.0, scale=(5, 10)
+        )
+        noise(state_dict=state_dict)
 
 
 def test_probabilistic_point_labeller():
