@@ -1888,9 +1888,20 @@ def test_rotate_horizontal_components():
     assert state_dict["X"][0][1, :].all() == (-1 * data[2, :]).all()
     assert state_dict["X"][0][2, :].all() == data[1, :].all()
 
+    # Test for random rotation (Note that only one value is checked for inequality, as a random rotation can result in
+    # values that are too equal (depending on the rotation and values))
+    random_rotation = RotateHorizontalComponents()
+
+    random_rotation(state_dict=state_dict)
+    data_first_rot = copy.copy(state_dict["X"][0])
+    random_rotation(state_dict=state_dict)
+    data_second_rot = copy.copy(state_dict["X"][0])
+    assert data_first_rot[1, 0] != data_second_rot[1, 0]
+
 
 def test_real_noise():
     np.random.seed(42)
+    # TODO: Test scaling types peak and std
 
     # For the test, it is assumed that the data are the noise samples and noise_dataset represents the signal
     data = np.random.rand(3, 1000)
