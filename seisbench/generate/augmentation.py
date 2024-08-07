@@ -747,6 +747,10 @@ class RotateHorizontalComponents:
 class RealNoise:
     """
     Adds recorded noise from an extra noise data set to the data.
+    If noise should only be added to e.g. 50% of the samples, call this augmentation method together with OneOf:
+    sbg.OneOf(augmentations=[sbg.RealNoise(...)],
+              probabilities=[0.5])
+
     This method was inspired by the following publication:
 
     .. admonition:: Citation
@@ -768,9 +772,6 @@ class RealNoise:
                 If key is a single string, the corresponding entry in state dict is modified.
                 Otherwise, a 2-tuple is expected, with the first string indicating the key to
                 read from and the second one the key to write to.
-    :param probability: Probability of adding noise samples to data set, e.g. if probability=0.5, 50% of all samples
-                        from the dataset are deteriorated by noise. If set to 1, then each sample from the data set is
-                        deteriorated by noise. Default is 0.5
     :param scaling_type: Method how to find the relative amplitude of the input array. Either from the absolute maximum
                          (peak) or from the standard deviation (std). Default is peak.
     :param metadata_thresholds: Dictionary containing keys from metadata and threshold values as items to avoid
@@ -785,7 +786,6 @@ class RealNoise:
         self,
         noise_dataset: seisbench.data.base.WaveformDataset,
         scale: tuple = (0, 1),
-        probability: float = 0.5,
         scaling_type: str = "peak",
         metadata_thresholds: (dict, None) = None,
         key: str = "X",
@@ -801,7 +801,6 @@ class RealNoise:
 
         self.noise_dataset = noise_dataset
         self.scale = scale
-        self.probability = probability
         self.scaling_type = scaling_type.lower()
         self.noise_generator = seisbench.generate.GenericGenerator(noise_dataset)
         self.metadata_thresholds = metadata_thresholds
@@ -822,54 +821,51 @@ class RealNoise:
                     state_dict[self.key[1]] = (x, metadata)
                     return
 
-        # Random draw of 0 and 1 with a probability of p
-        draw = np.random.binomial(n=1, p=self.probability)
+        # Defining scale for noise amplitude
+        scale = np.random.uniform(*self.scale)
 
-        if draw == 0:
-            # Return values without added noise samples
-            state_dict[self.key[1]] = (x, metadata)
-        else:
-            # Defining scale for noise amplitude
-            scale = np.random.uniform(*self.scale)
+        # Removing mean from data x
+        x -= np.mean(x, axis=1, keepdims=True)
 
-            # Removing mean from data x
-            x -= np.mean(x, axis=1, keepdims=True)
+        if self.scaling_type == "peak":
+            scale = scale * np.max(np.abs(x))
+        elif self.scaling_type == "std":
+            scale = scale * np.std(x)
 
-            if self.scaling_type == "peak":
-                scale = scale * np.max(np.abs(x))
-            elif self.scaling_type == "std":
-                scale = scale * np.std(x)
+        # Draw random noise sample from the dataset and cut to same length as x
+        n = self.noise_generator[np.random.randint(low=0, high=self.noise_samples)]["X"]
 
-            # Draw random noise sample from the dataset and cut to same length as x
-            n = self.noise_generator[np.random.randint(low=0, high=self.noise_samples)][
-                "X"
-            ]
+        # Removing mean from noise samples
+        n -= np.mean(n, axis=1, keepdims=True)
 
-            # Removing mean from noise samples
-            n -= np.mean(n, axis=1, keepdims=True)
+        # Normalize noise samples
+        if self.scaling_type == "peak":
+            n = n / np.max(np.abs(n))
+        elif self.scaling_type == "std":
+            n = n / np.std(n)
+        n = n * scale
 
-            # Normalize noise samples
-            if self.scaling_type == "peak":
-                n = n / np.max(np.abs(n))
-            elif self.scaling_type == "std":
-                n = n / np.std(n)
-            n = n * scale
+        # Cutting noise to same length as x
+        if n.shape[1] - x.shape[1] - 1 < 0:
+            msg = (
+                f"The shape of the data ({x.shape}) and the noise ({n.shape}) must either be the same or the "
+                f"shape of the noise must be larger than the shape of the data."
+            )
+            raise ValueError(msg)
 
-            # Cutting noise to same length as x
-            if n.shape[1] - x.shape[1] - 1 < 0:
-                msg = (
-                    f"The shape of the data ({x.shape}) and the noise ({n.shape}) must either be the same or the "
-                    f"shape of the noise must be larger than the shape of the data."
-                )
-                raise ValueError(msg)
+        spoint = np.random.randint(low=0, high=n.shape[1] - x.shape[1] - 1)
+        n = n[:, spoint : spoint + x.shape[1]]
 
-            spoint = np.random.randint(low=0, high=n.shape[1] - x.shape[1] - 1)
-            n = n[:, spoint : spoint + x.shape[1]]
+        # Add noise and signal to create noisy signal
+        x = x + n
 
-            # Add noise and signal to create noisy signal
-            x = x + n
+        # Normalize noisy data
+        if self.scaling_type == "peak":
+            x = x / np.max(np.abs(x))
+        elif self.scaling_type == "std":
+            x = x / np.std(x)
 
-            state_dict[self.key[1]] = (x, metadata)
+        state_dict[self.key[1]] = (x, metadata)
 
     def __str__(self):
         return (
