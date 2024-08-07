@@ -724,6 +724,12 @@ class RotateHorizontalComponents:
             msg = "Keyword 'trace_component_order' is missing in metadata, therefore rotation is not possible."
             raise ValueError(msg)
 
+        # Check whether required trace components are in metadata trace components
+        for component in self.components:
+            if component not in trace_components:
+                msg = f"Component {component} is not in given trace components ({trace_components})."
+                raise ValueError(msg)
+
         data_comp1 = copy.copy(x[trace_components.index(self.components[0]), :])
         data_comp2 = copy.copy(x[trace_components.index(self.components[1]), :])
 
