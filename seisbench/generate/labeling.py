@@ -177,7 +177,9 @@ class PickLabeller(SupervisedLabeller, ABC):
     ):
         """
         Generate label columns dict and list of labels from label_columns list or dict.
-        Always appends a noise column at the end.
+        Always appends a noise column at the end by searching for 'n' or 'N' in model_labels.
+        The indices of the labels are set automatically by the order of the given model_labels, e.g. 'PSN' results in
+        label_ids {'Noise': 2, 'P': 0, 'S': 1}.
 
         :param label_columns: List of label columns or dict[label_columns -> labels]
         :param noise_column: If False, disables normalization of phases and noise label, default is True
