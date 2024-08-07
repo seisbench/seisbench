@@ -711,6 +711,7 @@ class RotateHorizontalComponents:
         if self.key[0] != self.key[1]:
             # Ensure metadata is not modified inplace unless input and output key are anyhow identical
             metadata = copy.deepcopy(metadata)
+            x = copy.deepcopy(x)
 
         # Create random angle alpha if alpha is not given in init
         if self.alpha is None:
