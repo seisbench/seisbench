@@ -842,14 +842,17 @@ class RealNoise:
 
             # Draw random noise sample from the dataset and cut to same length as x
             n = self.noise_generator[np.random.randint(low=0, high=self.noise_samples)][
-                self.key[0]
+                "X"
             ]
 
             # Removing mean from noise samples
             n -= np.mean(n, axis=1, keepdims=True)
 
-            # Min-max normalize noise sample and apply scale
-            n = n / np.max(np.abs(n))
+            # Normalize noise samples
+            if self.scaling_type == "peak":
+                n = n / np.max(np.abs(n))
+            elif self.scaling_type == "std":
+                n = n / np.std(n)
             n = n * scale
 
             # Cutting noise to same length as x
