@@ -711,7 +711,7 @@ class RotateHorizontalComponents:
         if self.key[0] != self.key[1]:
             # Ensure metadata is not modified inplace unless input and output key are anyhow identical
             metadata = copy.deepcopy(metadata)
-            x = copy.deepcopy(x)
+            x = x.copy()
 
         # Create random angle alpha if alpha is not given in init
         if self.alpha is None:
@@ -753,22 +753,22 @@ class RotateHorizontalComponents:
 class RealNoise:
     """
     Adds recorded noise from an extra noise data set to the data.
-    If noise should only be added to e.g. 50% of the samples, call this augmentation method together with OneOf:
-    sbg.OneOf(augmentations=[sbg.RealNoise(...)],
-              probabilities=[0.5])
+    If noise should only be added to e.g. 50% of the samples, you can wrap this augmentation using :py:class:`OneOf`
+    like this:
+    ``sbg.OneOf(augmentations=[sbg.RealNoise(...), sbg.NullAugmentation()], probabilities=[0.5, 0.5])``
 
     This method was inspired by the following publication:
 
     .. admonition:: Citation
 
-    Jun Zhu, Lihua Fang, Fajun Miao, Liping Fan, Ji Zhang,
-    Zefeng Li (2024).
-    Deep learning and transfer learning of earthquake and
-    quarry-blast discrimination: applications to southern
-    California and eastern Kentucky
-    Geophysical Journal International (236)
+        Jun Zhu, Lihua Fang, Fajun Miao, Liping Fan, Ji Zhang,
+        Zefeng Li (2024).
+        Deep learning and transfer learning of earthquake and
+        quarry-blast discrimination: applications to southern
+        California and eastern Kentucky
+        Geophysical Journal International (236)
 
-    https://doi.org/10.1093/gji/ggad463
+        https://doi.org/10.1093/gji/ggad463
 
     :param noise_dataset: WaveformDataset that only contains noise traces
     :param scale: Tuple of minimum and maximum relative amplitude of the noise.
@@ -782,7 +782,7 @@ class RealNoise:
                          (peak) or from the standard deviation (std). Default is peak.
     :param metadata_thresholds: Dictionary containing keys from metadata and threshold values as items to avoid
                                 adding noise samples, if e.g. the signal-to-noise ratio is below a certain threshold:
-                                metadata_thresholds={"trace_Z_snr_db": 10}
+                                ``metadata_thresholds={"trace_Z_snr_db": 10}``
                                 In the example above, noise is only added when SNR of signal of the Z-component is equal
                                 or greater than 10.
                                 Default is None
@@ -816,8 +816,9 @@ class RealNoise:
         x, metadata = state_dict[self.key[0]]
 
         if self.key[0] != self.key[1]:
-            # Ensure metadata is not modified inplace unless input and output key are anyhow identical
+            # Ensure data and metadata is not modified inplace unless input and output key are anyhow identical
             metadata = copy.deepcopy(metadata)
+            x = x.copy()
 
         # Check all requirements from metadata thresholds
         # If value from metadata is below given threshold value, then x is returned without added noise
@@ -831,7 +832,7 @@ class RealNoise:
         scale = np.random.uniform(*self.scale)
 
         # Removing mean from data x
-        x -= np.mean(x, axis=1, keepdims=True)
+        x -= np.mean(x, axis=-1, keepdims=True)
 
         if self.scaling_type == "peak":
             scale = scale * np.max(np.abs(x))
@@ -842,7 +843,7 @@ class RealNoise:
         n = self.noise_generator[np.random.randint(low=0, high=self.noise_samples)]["X"]
 
         # Removing mean from noise samples
-        n -= np.mean(n, axis=1, keepdims=True)
+        n -= np.mean(n, axis=-1, keepdims=True)
 
         # Normalize noise samples
         if self.scaling_type == "peak":

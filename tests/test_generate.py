@@ -1896,7 +1896,7 @@ def test_rotate_horizontal_components():
     data_first_rot = copy.copy(state_dict["X"][0])
     random_rotation(state_dict=state_dict)
     data_second_rot = copy.copy(state_dict["X"][0])
-    assert data_first_rot[1, 0] != data_second_rot[1, 0]
+    assert not np.allclose(data_first_rot, data_second_rot)
 
     # Test if an error is raised, if trace components are not correct
     with pytest.raises(ValueError):
