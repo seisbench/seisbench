@@ -853,24 +853,21 @@ class RealNoise:
         n = n * scale
 
         # Cutting noise to same length as x
-        if n.shape[1] - x.shape[1] - 1 < 0:
+        if n.shape[1] - x.shape[1] < 0:
             msg = (
                 f"The shape of the data ({x.shape}) and the noise ({n.shape}) must either be the same or the "
                 f"shape of the noise must be larger than the shape of the data."
             )
             raise ValueError(msg)
 
-        spoint = np.random.randint(low=0, high=n.shape[1] - x.shape[1] - 1)
+        if n.shape[1] - x.shape[1] > 0:
+            spoint = np.random.randint(low=0, high=n.shape[1] - x.shape[1] - 1)
+        else:
+            spoint = 0
         n = n[:, spoint : spoint + x.shape[1]]
 
         # Add noise and signal to create noisy signal
         x = x + n
-
-        # Normalize noisy data
-        if self.scaling_type == "peak":
-            x = x / np.max(np.abs(x))
-        elif self.scaling_type == "std":
-            x = x / np.std(x)
 
         state_dict[self.key[1]] = (x, metadata)
 

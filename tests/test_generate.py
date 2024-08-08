@@ -1888,8 +1888,7 @@ def test_rotate_horizontal_components():
     assert state_dict["X"][0][1, :].all() == (-1 * data[2, :]).all()
     assert state_dict["X"][0][2, :].all() == data[1, :].all()
 
-    # Test for random rotation (Note that only one value is checked for inequality, as a random rotation can result in
-    # values that are too equal (depending on the rotation and values))
+    # Test for random rotation
     random_rotation = RotateHorizontalComponents()
 
     random_rotation(state_dict=state_dict)
@@ -1925,9 +1924,16 @@ def test_real_noise(scaling_type):
     # Testing new standard deviation of noisy data
     for idx in range(3):
         if scaling_type == "peak":
-            assert 0.15 <= np.std(state_dict["X"][0][idx, :]) <= 0.23
+            assert 0.7 <= np.std(state_dict["X"][0][idx, :]) <= 1.03
         elif scaling_type == "std":
-            assert 0.82 <= np.std(state_dict["X"][0][idx, :]) <= 1.26
+            assert 2.04 <= np.std(state_dict["X"][0][idx, :]) <= 3.11
+
+    # Test when noise and data samples have the same length
+    data = np.random.rand(3, 1200)
+    state_dict = {"X": (copy.copy(data), {})}
+    noise = RealNoise(noise_dataset=seisbench.data.DummyDataset(), scale=(5, 10))
+    noise(state_dict=state_dict)
+    assert 0.44 <= np.std(state_dict["X"][0][idx, :]) <= 0.62
 
     # Test when noise samples are shorter than data
     with pytest.raises(ValueError):
