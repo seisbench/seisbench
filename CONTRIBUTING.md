@@ -90,7 +90,9 @@ The submodule `seisbench.models` contains everything connected to models.
 This includes the base classes and the different models.
 The submodule `seisbench.generate` contains everything for creating training pipelines.
 This includes the generators as well as a collection of augmentations.
-The three submodules may **not** import each other.
+The three submodules have a clear import structure among each other to avoid circular dependencies.
+Only `seisbench.generate` may import `seisbench.data`, while no other imports between the modules
+are used.
 
 The submodule `seisbench.util` is a loose collection of auxiliary functions, e.g., for file access.
 This module can be imported from any other module.
