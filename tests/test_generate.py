@@ -1926,10 +1926,17 @@ def test_real_noise(scaling_type):
         if scaling_type == "peak":
             assert 0.7 <= np.std(state_dict["X"][0][idx, :]) <= 1.03
         elif scaling_type == "std":
-            assert 2.04 <= np.std(state_dict["X"][0][idx, :]) <= 3.11
+            assert 2.04 <= np.std(state_dict["X"][0][idx, :]) <= 3.12
 
     # Test when noise and data samples have the same length
     data = np.random.rand(3, 1200)
+    state_dict = {"X": (copy.copy(data), {})}
+    noise = RealNoise(noise_dataset=seisbench.data.DummyDataset(), scale=(5, 10))
+    noise(state_dict=state_dict)
+    assert 0.44 <= np.std(state_dict["X"][0][idx, :]) <= 0.62
+
+    # Test when data is one sample shorter than noise
+    data = np.random.rand(3, 1199)
     state_dict = {"X": (copy.copy(data), {})}
     noise = RealNoise(noise_dataset=seisbench.data.DummyDataset(), scale=(5, 10))
     noise(state_dict=state_dict)

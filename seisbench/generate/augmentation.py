@@ -831,11 +831,8 @@ class RealNoise:
         # Defining scale for noise amplitude
         scale = np.random.uniform(*self.scale)
 
-        # Removing mean from data x
-        x -= np.mean(x, axis=-1, keepdims=True)
-
         if self.scaling_type == "peak":
-            scale = scale * np.max(np.abs(x))
+            scale = scale * np.max(np.abs(x - np.mean(x, axis=-1, keepdims=True)))
         elif self.scaling_type == "std":
             scale = scale * np.std(x)
 
@@ -861,7 +858,7 @@ class RealNoise:
             raise ValueError(msg)
 
         if n.shape[1] - x.shape[1] > 0:
-            spoint = np.random.randint(low=0, high=n.shape[1] - x.shape[1] - 1)
+            spoint = np.random.randint(low=0, high=n.shape[1] - x.shape[1])
         else:
             spoint = 0
         n = n[:, spoint : spoint + x.shape[1]]
