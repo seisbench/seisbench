@@ -10,6 +10,8 @@ from .augmentation import (
     NullAugmentation,
     OneOf,
     RandomArrayRotation,
+    RealNoise,
+    RotateHorizontalComponents,
 )
 from .generator import GenericGenerator, GroupGenerator, SteeredGenerator
 from .labeling import (

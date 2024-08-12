@@ -23,6 +23,8 @@ from seisbench.generate import (
     ProbabilisticLabeller,
     ProbabilisticPointLabeller,
     RandomWindow,
+    RealNoise,
+    RotateHorizontalComponents,
     SlidingWindow,
     StandardLabeller,
     SteeredWindow,
@@ -1053,7 +1055,7 @@ def test_standard_pick_labeller_pickgroups():
 
 @pytest.mark.parametrize(
     "model_labels",
-    ["psn", "nps", None],
+    ["psn", "nps", "Nps", None],
 )
 def test_colums_to_dict_and_labels(model_labels):
     label_columns = ["trace_p_arrival_sample", "trace_s_arrival_sample"]
@@ -1072,7 +1074,7 @@ def test_colums_to_dict_and_labels(model_labels):
     assert labels == ["p", "s", "Noise"]
     if model_labels == "psn":
         assert label_ids == {"p": 0, "s": 1, "Noise": 2}
-    elif model_labels == "nps":
+    elif model_labels == "nps" or model_labels == "Nps":
         assert label_ids == {"Noise": 0, "p": 1, "s": 2}
     else:
         assert label_ids == {"p": 0, "s": 1, "Noise": 2}
@@ -1863,6 +1865,89 @@ def test_gaussian_noise():
     assert (
         0.14 < np.std(y - x) < 0.16
     )  # Bounds are rather liberal to ensure a stable test
+
+
+def test_rotate_horizontal_components():
+    np.random.seed(42)
+
+    data = np.random.rand(3, 1000)
+    state_dict = {"X": (copy.copy(data), {"trace_component_order": "ZNE"})}
+
+    # Rotation by 180 degree
+    rotation_180 = RotateHorizontalComponents(alpha=np.pi)
+    rotation_180(state_dict=state_dict)
+    assert state_dict["X"][0][0, :].all() == data[0, :].all()
+    assert state_dict["X"][0][1, :].all() == (-1 * data[1, :]).all()
+    assert state_dict["X"][0][2, :].all() == (-1 * data[2, :]).all()
+
+    # Rotation by 90 degree
+    state_dict = {"X": (copy.copy(data), {"trace_component_order": "ZNE"})}
+    rotation_90 = RotateHorizontalComponents(alpha=np.pi / 2)
+    rotation_90(state_dict=state_dict)
+    assert state_dict["X"][0][0, :].all() == data[0, :].all()
+    assert state_dict["X"][0][1, :].all() == (-1 * data[2, :]).all()
+    assert state_dict["X"][0][2, :].all() == data[1, :].all()
+
+    # Test for random rotation
+    random_rotation = RotateHorizontalComponents()
+
+    random_rotation(state_dict=state_dict)
+    data_first_rot = copy.copy(state_dict["X"][0])
+    random_rotation(state_dict=state_dict)
+    data_second_rot = copy.copy(state_dict["X"][0])
+    assert not np.allclose(data_first_rot, data_second_rot)
+
+    # Test if an error is raised, if trace components are not correct
+    with pytest.raises(ValueError):
+        state_dict = {"X": (copy.copy(data), {"trace_component_order": "UVW"})}
+        rotation = RotateHorizontalComponents(components="NE")
+        rotation(state_dict=state_dict)
+
+
+@pytest.mark.parametrize(
+    "scaling_type",
+    ["peak", "std"],
+)
+def test_real_noise(scaling_type):
+    np.random.seed(42)
+
+    # For the test, it is assumed that the data are the noise samples and noise_dataset represents the signal
+    data = np.random.rand(3, 1000)
+    state_dict = {"X": (copy.copy(data), {})}
+    noise = RealNoise(
+        noise_dataset=seisbench.data.DummyDataset(),
+        scale=(5, 10),
+        scaling_type=scaling_type,
+    )
+    noise(state_dict=state_dict)
+
+    # Testing new standard deviation of noisy data
+    for idx in range(3):
+        if scaling_type == "peak":
+            assert 0.7 <= np.std(state_dict["X"][0][idx, :]) <= 1.03
+        elif scaling_type == "std":
+            assert 2.04 <= np.std(state_dict["X"][0][idx, :]) <= 3.12
+
+    # Test when noise and data samples have the same length
+    data = np.random.rand(3, 1200)
+    state_dict = {"X": (copy.copy(data), {})}
+    noise = RealNoise(noise_dataset=seisbench.data.DummyDataset(), scale=(5, 10))
+    noise(state_dict=state_dict)
+    assert 0.44 <= np.std(state_dict["X"][0][idx, :]) <= 0.62
+
+    # Test when data is one sample shorter than noise
+    data = np.random.rand(3, 1199)
+    state_dict = {"X": (copy.copy(data), {})}
+    noise = RealNoise(noise_dataset=seisbench.data.DummyDataset(), scale=(5, 10))
+    noise(state_dict=state_dict)
+    assert 0.44 <= np.std(state_dict["X"][0][idx, :]) <= 0.62
+
+    # Test when noise samples are shorter than data
+    with pytest.raises(ValueError):
+        data = np.random.rand(3, 2000)
+        state_dict = {"X": (copy.copy(data), {})}
+        noise = RealNoise(noise_dataset=seisbench.data.DummyDataset(), scale=(5, 10))
+        noise(state_dict=state_dict)
 
 
 def test_probabilistic_point_labeller():

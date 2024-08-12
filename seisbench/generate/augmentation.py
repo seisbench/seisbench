@@ -3,6 +3,8 @@ import copy
 import numpy as np
 import scipy.signal
 
+import seisbench.data.base
+
 
 class Normalize:
     """
@@ -670,3 +672,204 @@ class GaussianNoise:
 
     def __str__(self):
         return f"GaussianNoise (Scale (mu={self.scale[0]}, sigma={self.scale[1]}))"
+
+
+class RotateHorizontalComponents:
+    """
+    Rotates horizontal components either by a given value alpha in rad or by an arbitrary angle between -pi and +pi.
+
+    :param alpha: Angle in rad for rotation of horizontal components.
+                  If alpha is None, a random angle is selected each time the method is called, otherwise the angle is
+                  constant.
+                  Default value is None, i.e. the angle changes with every call.
+    :param components: Defines which components are rotated.
+                       Default components are N and E.
+    :param key: The keys for reading from and writing to the state dict.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    """
+
+    def __init__(
+        self, alpha: (None, float, int) = None, components: str = "NE", key: str = "X"
+    ):
+        if isinstance(key, str):
+            self.key = (key, key)
+        else:
+            self.key = key
+
+        self.components = components
+        self.alpha = alpha
+
+        if len(self.components) != 2:
+            msg = f"Only two components can be rotated and not {len(self.components)}."
+            raise ValueError(msg)
+
+    def __call__(self, state_dict) -> np.array:
+        x, metadata = state_dict[self.key[0]]
+
+        if self.key[0] != self.key[1]:
+            # Ensure metadata is not modified inplace unless input and output key are anyhow identical
+            metadata = copy.deepcopy(metadata)
+            x = x.copy()
+
+        # Create random angle alpha if alpha is not given in init
+        if self.alpha is None:
+            alpha = np.random.uniform(-np.pi, np.pi)
+        else:
+            alpha = self.alpha
+
+        trace_components = metadata.get("trace_component_order")
+        if not trace_components:
+            msg = "Keyword 'trace_component_order' is missing in metadata, therefore rotation is not possible."
+            raise ValueError(msg)
+
+        # Check whether required trace components are in metadata trace components
+        for component in self.components:
+            if component not in trace_components:
+                msg = f"Component {component} is not in given trace components ({trace_components})."
+                raise ValueError(msg)
+
+        data_comp1 = copy.copy(x[trace_components.index(self.components[0]), :])
+        data_comp2 = copy.copy(x[trace_components.index(self.components[1]), :])
+
+        # Rotate by angle alpha
+        x[trace_components.index(self.components[0]), :] = data_comp1 * np.cos(
+            alpha
+        ) - data_comp2 * np.sin(alpha)
+        x[trace_components.index(self.components[1]), :] = data_comp1 * np.sin(
+            alpha
+        ) + data_comp2 * np.cos(alpha)
+
+        state_dict[self.key[1]] = (x, metadata)
+
+    def __str__(self):
+        if not self.alpha:
+            return f"Rotation of {self.components} components by arbitrary angle"
+        else:
+            return f"Rotation of {self.components} components by {self.alpha:.2f} rad"
+
+
+class RealNoise:
+    """
+    Adds recorded noise from an extra noise data set to the data.
+    If noise should only be added to e.g. 50% of the samples, you can wrap this augmentation using :py:class:`OneOf`
+    like this:
+    ``sbg.OneOf(augmentations=[sbg.RealNoise(...), sbg.NullAugmentation()], probabilities=[0.5, 0.5])``
+
+    This method was inspired by the following publication:
+
+    .. admonition:: Citation
+
+        Jun Zhu, Lihua Fang, Fajun Miao, Liping Fan, Ji Zhang,
+        Zefeng Li (2024).
+        Deep learning and transfer learning of earthquake and
+        quarry-blast discrimination: applications to southern
+        California and eastern Kentucky
+        Geophysical Journal International (236)
+
+        https://doi.org/10.1093/gji/ggad463
+
+    :param noise_dataset: WaveformDataset that only contains noise traces
+    :param scale: Tuple of minimum and maximum relative amplitude of the noise.
+                  Relative amplitude is defined either by the absolute maximum or the root-mean-square of input array
+                  (see scaling_type). Default value is 0.5
+    :param key: The keys for reading from and writing to the state dict.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+    :param scaling_type: Method how to find the relative amplitude of the input array. Either from the absolute maximum
+                         (peak) or from the standard deviation (std). Default is peak.
+    :param metadata_thresholds: Dictionary containing keys from metadata and threshold values as items to avoid
+                                adding noise samples, if e.g. the signal-to-noise ratio is below a certain threshold:
+                                ``metadata_thresholds={"trace_Z_snr_db": 10}``
+                                In the example above, noise is only added when SNR of signal of the Z-component is equal
+                                or greater than 10.
+                                Default is None
+    """
+
+    def __init__(
+        self,
+        noise_dataset: seisbench.data.base.WaveformDataset,
+        scale: tuple = (0, 1),
+        scaling_type: str = "peak",
+        metadata_thresholds: (dict, None) = None,
+        key: str = "X",
+    ):
+        if isinstance(key, str):
+            self.key = (key, key)
+        else:
+            self.key = key
+
+        if scaling_type.lower() not in ["std", "peak"]:
+            msg = "Argument scaling_type must be either 'std' or 'peak'."
+            raise ValueError(msg)
+
+        self.noise_dataset = noise_dataset
+        self.scale = scale
+        self.scaling_type = scaling_type.lower()
+        self.noise_generator = seisbench.generate.GenericGenerator(noise_dataset)
+        self.metadata_thresholds = metadata_thresholds
+        self.noise_samples = len(noise_dataset)
+
+    def __call__(self, state_dict):
+        x, metadata = state_dict[self.key[0]]
+
+        if self.key[0] != self.key[1]:
+            # Ensure data and metadata is not modified inplace unless input and output key are anyhow identical
+            metadata = copy.deepcopy(metadata)
+            x = x.copy()
+
+        # Check all requirements from metadata thresholds
+        # If value from metadata is below given threshold value, then x is returned without added noise
+        if self.metadata_thresholds:
+            for threshold_key, item in self.metadata_thresholds.items():
+                if metadata[threshold_key] < item:
+                    state_dict[self.key[1]] = (x, metadata)
+                    return
+
+        # Defining scale for noise amplitude
+        scale = np.random.uniform(*self.scale)
+
+        if self.scaling_type == "peak":
+            scale = scale * np.max(np.abs(x - np.mean(x, axis=-1, keepdims=True)))
+        elif self.scaling_type == "std":
+            scale = scale * np.std(x)
+
+        # Draw random noise sample from the dataset and cut to same length as x
+        n = self.noise_generator[np.random.randint(low=0, high=self.noise_samples)]["X"]
+
+        # Removing mean from noise samples
+        n -= np.mean(n, axis=-1, keepdims=True)
+
+        # Normalize noise samples
+        if self.scaling_type == "peak":
+            n = n / np.max(np.abs(n))
+        elif self.scaling_type == "std":
+            n = n / np.std(n)
+        n = n * scale
+
+        # Cutting noise to same length as x
+        if n.shape[1] - x.shape[1] < 0:
+            msg = (
+                f"The shape of the data ({x.shape}) and the noise ({n.shape}) must either be the same or the "
+                f"shape of the noise must be larger than the shape of the data."
+            )
+            raise ValueError(msg)
+
+        if n.shape[1] - x.shape[1] > 0:
+            spoint = np.random.randint(low=0, high=n.shape[1] - x.shape[1])
+        else:
+            spoint = 0
+        n = n[:, spoint : spoint + x.shape[1]]
+
+        # Add noise and signal to create noisy signal
+        x = x + n
+
+        state_dict[self.key[1]] = (x, metadata)
+
+    def __str__(self):
+        return (
+            f"RealNoise (dataset={self.noise_dataset}, probability={self.probability}, scale={self.scale}, "
+            f"scaling_type={self.scaling_type})"
+        )
