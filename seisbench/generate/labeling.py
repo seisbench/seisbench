@@ -198,10 +198,13 @@ class PickLabeller(SupervisedLabeller, ABC):
                 label: [*model_labels].index(label) for label in labels
             }  # label ids for P and S
             if noise_column:
-                if "n" in [*model_labels.lower()]:
-                    label_ids["Noise"] = [*model_labels.lower()].index("n")
+                if "n" in (label.lower() for label in model_labels):
+                    label_ids["Noise"] = [
+                        label.lower() for label in model_labels
+                    ].index("n")
                 else:
-                    label_ids["Noise"] = max(*label_ids.values()) + 1
+                    # The -1 is required if label_ids contains 0 or 1 values
+                    label_ids["Noise"] = max(*label_ids.values(), -1) + 1
                 labels.append("Noise")
         else:
             if noise_column:

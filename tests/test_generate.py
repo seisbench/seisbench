@@ -2376,3 +2376,17 @@ def test_select_or_pad_along_axis():
     x2, metadata2 = state_dict["X2"]
     assert x2.shape == (2, 5, 1000)
     assert np.allclose(x2[:, :3], x)
+
+
+def test_probabilistic_labeller_labels():
+    # Test that the probabilistic labeller works with both string and list inputs
+    seisbench.generate.ProbabilisticLabeller(
+        label_columns=["trace_P_arrival_sample"], model_labels="NPS"
+    )
+    seisbench.generate.ProbabilisticLabeller(
+        label_columns=["trace_P_arrival_sample"], model_labels=["N", "P", "S"]
+    )
+    seisbench.generate.ProbabilisticLabeller(
+        label_columns=["trace_P_arrival_sample"],
+        model_labels=["NA", "P", "pS", "PKIKP"],
+    )
