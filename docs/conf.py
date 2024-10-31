@@ -75,3 +75,7 @@ html_theme_options = {
     "logo_only": True,
     "display_version": False,
 }
+
+if os.getenv("READTHEDOCS"):
+    extensions.append("sphinxcontrib.googleanalytics")
+    googleanalytics_id = "G-LGH5V4LJBY"
