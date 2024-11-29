@@ -11,7 +11,7 @@ These files need to reside in the same folder and need to be named *metadata.csv
 
 SeisBench implements a standard reader and a standard writer for this data format.
 The standard reader is the class :py:class:`~seisbench.data.base.WaveformDataset`.
-The standard writer is the class :py:class:`~seisbench.data.base.WaveformDataWriter`
+The standard writer is the class :py:class:`~seisbench.data.base.WaveformDataWriter`.
 Please consult their documentations for details on reading and writing the format.
 Derived from the :py:class:`~seisbench.data.base.WaveformDataset`,
 SeisBench offers a range of :doc:`benchmark datasets<benchmark_datasets>` in SeisBench format.

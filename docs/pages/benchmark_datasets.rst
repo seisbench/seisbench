@@ -143,7 +143,7 @@ INSTANCE
    :align:   center
 
 
-The INSTANCE benchmark dataset is a dataset of signals comiled by the Istituto Nazionale di Geofisica e Vulcanologia
+The INSTANCE benchmark dataset is a dataset of signals compiled by the Istituto Nazionale di Geofisica e Vulcanologia
 (INGV). Containing ~1.2 million 3C waveform traces, which record ~50,000 earthquakes and include ~130,000 noise traces.
 Magnitude scale of events ranges from 0 - 6.5.
 The dataset is split for ease of use into Noise examples :py:class:`~seisbench.data.instance.InstanceNoise`,
