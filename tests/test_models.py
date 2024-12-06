@@ -987,10 +987,12 @@ def test_annotate_phasenetlight():
     assert output.creator == model.name
 
 
-def test_annotate_phasenet():
+@pytest.mark.parametrize("filter_factor", [1, 2])
+def test_annotate_phasenet(filter_factor):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.PhaseNet(
-        sampling_rate=400
+        sampling_rate=400,
+        filter_factor=filter_factor,
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
