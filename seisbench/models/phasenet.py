@@ -323,6 +323,7 @@ class PhaseNet(WaveformModel):
             weights_metadata = {}
         model_args = weights_metadata.get("model_args", {})
         model_args["in_channels"] = 4
+        cls._check_version_requirement(weights_metadata)
         model = cls(**model_args)
 
         model._weights_metadata = weights_metadata
