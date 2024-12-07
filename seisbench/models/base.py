@@ -489,6 +489,7 @@ class SeisBenchModel(nn.Module):
         model_weights = torch.load(f"{path_pt}")
 
         model_args = weights_metadata.get("model_args", {})
+        cls._check_version_requirement(weights_metadata)
         model = cls(**model_args)
         model._weights_metadata = weights_metadata
         model._parse_metadata()
@@ -618,17 +619,13 @@ class SeisBenchModel(nn.Module):
         self._weights_docstring = self._weights_metadata.get("docstring", "")
         self._weights_version = self._weights_metadata.get("version", "1")
 
-        # Check version requirement
-        self._check_version_requirement()
-
         # Parse default args - Config default_args supersede constructor args
         default_args = self._weights_metadata.get("default_args", {})
         self.default_args.update(default_args)
 
-    def _check_version_requirement(self):
-        seisbench_requirement = self._weights_metadata.get(
-            "seisbench_requirement", None
-        )
+    @staticmethod
+    def _check_version_requirement(weights_metadata):
+        seisbench_requirement = weights_metadata.get("seisbench_requirement", None)
         if seisbench_requirement is not None:
             if version.parse(seisbench_requirement) > version.parse(
                 seisbench.__version__
