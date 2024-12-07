@@ -28,3 +28,5 @@ from .scedc import SCEDC, Meier2019JGR, Ross2018GPD, Ross2018JGRFM, Ross2018JGRP
 from .stead import STEAD
 from .txed import TXED
 from .vcseis import VCSEIS
+
+from .cwa import CWA
