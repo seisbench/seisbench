@@ -100,7 +100,7 @@ For more information see: https://scweb.cwa.gov.tw/en-US
 
     Dataset size: ~836GB (~176GB of noise samples)
 
-    The tutorial on loading dataset properly is in the dataset card:
+    The tutorial on loading dataset properly is in the dataset cards:
 
     * Merged-CWA: https://huggingface.co/datasets/NLPLabNTUST/Merged-CWA
     * NoMerged-CWA: https://huggingface.co/datasets/NLPLabNTUST/NoMerged-CWA
