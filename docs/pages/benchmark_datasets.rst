@@ -91,6 +91,7 @@ CWA
 
 The :py:class:`~seisbench.data.cwa.CWA` dataset includes a larger number of seismic events, especially high-magnitude. 
 A comprehensive set of events collected by the Central Weather Bureau in Taiwan. 
+There are two seismographic network: CWASN and TSMIP in the dataset, therefore, two versions can be loaded: Merged and NoMerged.
 The CWA benchmark features over 40 attributes and ∼500,000 seismograms, 
 providing valuable data labels for various seismology-related tasks. 
 In the future, we will keep updating the dataset to ensure its relevance and utility.
