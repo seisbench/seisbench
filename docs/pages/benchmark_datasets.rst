@@ -82,6 +82,13 @@ models for the analysis of earthquakes recorded at regional distances.
 
 CWA
 -----
+
+.. figure::  ../_static/cwa_stations.png
+   :align:   center
+
+.. figure::  ../_static/cwa_events.png
+   :align:   center
+
 The :py:class:`~seisbench.data.cwa.CWA` dataset includes a larger number of seismic events, especially high-magnitude. 
 A comprehensive set of events collected by the Central Weather Bureau in Taiwan. 
 The CWA benchmark features over 40 attributes and ∼500,000 seismograms, 
