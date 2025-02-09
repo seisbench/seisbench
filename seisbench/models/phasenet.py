@@ -15,6 +15,9 @@ from .base import Conv1dSame, WaveformModel, _cache_migration_v0_v3
 class PhaseNet(WaveformModel):
     """
     .. document_args:: seisbench.models PhaseNet
+
+    :param filter_factor: Increase the number of filters used in each layer by this factor compared to the original
+                          PhaseNet. Based on PhaseNetWC proposed by Naoi et al. (2024)
     """
 
     _annotate_args = WaveformModel._annotate_args.copy()
@@ -49,6 +52,7 @@ class PhaseNet(WaveformModel):
         phases="NPS",
         sampling_rate=100,
         norm="std",
+        filter_factor: int = 1,
         **kwargs,
     ):
         citation = (
@@ -79,6 +83,7 @@ class PhaseNet(WaveformModel):
         self.in_channels = in_channels
         self.classes = classes
         self.norm = norm
+        self.filter_factor = filter_factor
         self.depth = 5
         self.kernel_size = 7
         self.stride = 4
@@ -86,16 +91,19 @@ class PhaseNet(WaveformModel):
         self.activation = torch.relu
 
         self.inc = nn.Conv1d(
-            self.in_channels, self.filters_root, self.kernel_size, padding="same"
+            self.in_channels,
+            self.filters_root * filter_factor,
+            self.kernel_size,
+            padding="same",
         )
-        self.in_bn = nn.BatchNorm1d(8, eps=1e-3)
+        self.in_bn = nn.BatchNorm1d(self.filters_root * filter_factor, eps=1e-3)
 
         self.down_branch = nn.ModuleList()
         self.up_branch = nn.ModuleList()
 
-        last_filters = self.filters_root
+        last_filters = self.filters_root * filter_factor
         for i in range(self.depth):
-            filters = int(2**i * self.filters_root)
+            filters = int(2**i * self.filters_root) * filter_factor
             conv_same = nn.Conv1d(
                 last_filters, filters, self.kernel_size, padding="same", bias=False
             )
@@ -122,7 +130,7 @@ class PhaseNet(WaveformModel):
             self.down_branch.append(nn.ModuleList([conv_same, bn1, conv_down, bn2]))
 
         for i in range(self.depth - 1):
-            filters = int(2 ** (3 - i) * self.filters_root)
+            filters = int(2 ** (3 - i) * self.filters_root) * filter_factor
             conv_up = nn.ConvTranspose1d(
                 last_filters, filters, self.kernel_size, self.stride, bias=False
             )
@@ -315,6 +323,7 @@ class PhaseNet(WaveformModel):
             weights_metadata = {}
         model_args = weights_metadata.get("model_args", {})
         model_args["in_channels"] = 4
+        cls._check_version_requirement(weights_metadata)
         model = cls(**model_args)
 
         model._weights_metadata = weights_metadata

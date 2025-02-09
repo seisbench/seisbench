@@ -853,19 +853,19 @@ def test_parse_seisbench_requirements():
 
     with patch("seisbench.__version__", "1.2.3"):
         # Minimum version
-        model._weights_metadata = {"seisbench_requirement": seisbench.__version__}
-        model._parse_metadata()
+        weights_metadata = {"seisbench_requirement": seisbench.__version__}
+        model._check_version_requirement(weights_metadata)
 
         # Newer version
-        model._weights_metadata = {"seisbench_requirement": seisbench.__version__ + "1"}
+        weights_metadata = {"seisbench_requirement": seisbench.__version__ + "1"}
         with pytest.raises(ValueError):
-            model._parse_metadata()
+            model._check_version_requirement(weights_metadata)
 
         # Older version
         version = seisbench.__version__
         version = version[:-1] + chr(ord(version[-1]) - 1)
-        model._weights_metadata = {"seisbench_requirement": version}
-        model._parse_metadata()
+        weights_metadata = {"seisbench_requirement": version}
+        model._check_version_requirement(weights_metadata)
 
 
 def test_parse_default_args():
@@ -987,10 +987,12 @@ def test_annotate_phasenetlight():
     assert output.creator == model.name
 
 
-def test_annotate_phasenet():
+@pytest.mark.parametrize("filter_factor", [1, 2])
+def test_annotate_phasenet(filter_factor):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     model = seisbench.models.PhaseNet(
-        sampling_rate=400
+        sampling_rate=400,
+        filter_factor=filter_factor,
     )  # Higher sampling rate ensures trace is long enough
     stream = obspy.read()
 
