@@ -104,6 +104,7 @@ For more information see: https://scweb.cwa.gov.tw/en-US
     The tutorial on loading dataset properly is in the dataset cards:
 
     * Merged-CWA: https://huggingface.co/datasets/NLPLabNTUST/Merged-CWA
+    * Merged-CWA-Noise: https://huggingface.co/datasets/NLPLabNTUST/Merged-CWA-Noise
 
 .. admonition:: Citation
 
