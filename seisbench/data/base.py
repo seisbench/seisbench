@@ -2157,6 +2157,7 @@ class BenchmarkDataset(WaveformDataset, ABC):
                 self.path / f"metadata{chunk}.csv",
                 self.path / f"waveforms{chunk}.hdf5",
             ]
+
             seisbench.util.callback_if_uncached(
                 files, download_callback, force=force, wait_for_file=wait_for_file
             )

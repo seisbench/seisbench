@@ -8,6 +8,7 @@ from .base import (
     WaveformDataWriter,
 )
 from .crew import CREW
+from .cwa import CWA, CWANoise
 from .dummy import ChunkedDummyDataset, DummyDataset
 from .ethz import ETHZ
 from .geofon import GEOFON
@@ -28,5 +29,3 @@ from .scedc import SCEDC, Meier2019JGR, Ross2018GPD, Ross2018JGRFM, Ross2018JGRP
 from .stead import STEAD
 from .txed import TXED
 from .vcseis import VCSEIS
-
-from .cwa import CWA
