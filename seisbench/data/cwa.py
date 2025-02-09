@@ -100,6 +100,7 @@ class CWA(CWABase):
     def __init__(self, **kwargs):
 
         chunks = self.get_chunks("chunks")
+        self.src_repoName = "NLPLabNTUST/Merged-CWA"
 
         super().__init__(citation=self.citation, chunks=chunks, **kwargs)
 
@@ -149,6 +150,7 @@ class CWA(CWABase):
 class CWANoise(CWABase):
     def __init__(self, **kwargs):
         chunks = self.get_chunks("chunks")
+        self.src_repoName = "NLPLabNTUST/Merged-CWA-Noise"
 
         super().__init__(citation=self.citation, chunks=chunks, **kwargs)
 
