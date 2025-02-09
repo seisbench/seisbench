@@ -17,7 +17,6 @@ class CWABase(BenchmarkDataset, ABC):
         "doi: https://doi.org/10.1785/0220230393"
     )
 
-    src_repoName = "NLPLabNTUST/Merged-CWA"
     chunk2file = {
         "_2011": "merge2011_2014.tar.gz",
         "_2012": "merge2011_2014.tar.gz",
