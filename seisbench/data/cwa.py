@@ -49,7 +49,6 @@ class CWABase(BenchmarkDataset, ABC):
 
     def _download_dataset(self, writer, chunk, **kwargs):
         self._download_pipeline(writer, chunk)
-        self._add_split(writer.metadata_path)
 
     @staticmethod
     def _ensure_hf_hub_download_available():
@@ -105,6 +104,10 @@ class CWABase(BenchmarkDataset, ABC):
         seisbench.logger.warning("Unarchiving. This might take a few minutes.")
         self.tar_file(path / to_download, path)
 
+        for file in path.iterdir():
+            if file.name.startswith("metadata") and file.name.endswith(".csv"):
+                self._add_split(file)
+
         seisbench.logger.warning("Remove the source file.")
         os.remove(path / to_download)
 
@@ -120,6 +123,9 @@ class CWABase(BenchmarkDataset, ABC):
                 return "test"
 
         metadata = pd.read_csv(metadata_path)
+        if "split" in metadata.columns:
+            return  # No action required
+
         metadata["split"] = metadata["trace_name"].apply(split_by_year)
         metadata.to_csv(metadata_path, index=False)
 
