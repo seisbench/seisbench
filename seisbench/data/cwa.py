@@ -22,7 +22,7 @@ class CWABase(BenchmarkDataset, ABC):
     The dataset spans from 2011 to 2021 and primarily includes P and S wave arrivals.
     Additionally, a subset of noise data is provided.
     """
-    
+
     citation = (
         "Kuan-Wei Tang, Kuan-Yu Chen, Da-Yi Chen, Tai-Lin Chin, and Ting-Yu Hsu. (2024)"
         "The CWA Benchmark: A Seismic Dataset from Taiwan for Seismic Research."
@@ -141,7 +141,7 @@ class CWA(CWABase):
     """
     CWA dataset - Events and traces.
     """
-    
+
     src_repo_name = "NLPLabNTUST/Merged-CWA"
 
 
@@ -149,5 +149,5 @@ class CWANoise(CWABase):
     """
     CWA dataset - Noise samples.
     """
-    
+
     src_repo_name = "NLPLabNTUST/Merged-CWA-Noise"

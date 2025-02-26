@@ -100,7 +100,7 @@ For more information see: https://scweb.cwa.gov.tw/en-US
 
 .. warning::
 
-    Dataset size: ~836GB (~176GB of noise samples)
+    Dataset size: ~494GB (~177GB of noise samples)
 
     The tutorial on loading dataset properly is in the dataset cards:
 
