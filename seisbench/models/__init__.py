@@ -11,3 +11,4 @@ from .obstransformer import OBSTransformer
 from .phasenet import PhaseNet, PhaseNetLight, VariableLengthPhaseNet
 from .pickblue import PickBlue
 from .team import PhaseTEAM
+from .dkpn import DKPN
