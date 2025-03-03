@@ -1,11 +1,9 @@
 from typing import Any
 
 import numpy as np
-import scipy.signal
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from scipy.interpolate import interp1d
 from scipy.signal import istft, stft
 
 from .base import WaveformModel
@@ -287,40 +285,6 @@ class UpConvBlock(nn.Module):
         return x
 
 
-def padding_transpose_conv2d_layers(
-    input_shape: tuple[int, int],
-    output_shape: tuple[int, int],
-    kernel_size: tuple[int, int],
-    stride: tuple[int, int],
-):
-    padding = [0] * len(input_shape)
-    for idx in range(len(input_shape)):
-        pad = (
-            (input_shape[idx] - 1) * stride[idx] - output_shape[idx] + kernel_size[idx]
-        ) / 2
-        padding[idx] = int(pad)
-
-    return tuple(padding)
-
-
-def output_shape_conv2d_layers(input_shape, padding, kernel_size, stride):
-    output_shape = [0] * len(input_shape)
-    for idx in range(len(input_shape)):
-        out = (input_shape[idx] + 2 * padding[idx] - kernel_size[idx]) / stride[idx] + 1
-        output_shape[idx] = int(out)
-
-    return tuple(output_shape)
-
-
-def output_shape_transpose_conv2_layers(input_shape, padding, kernel_size, stride):
-    output_shape = [0] * len(input_shape)
-    for idx in range(len(input_shape)):
-        out = (input_shape[idx] - 1) * stride[idx] - 2 * padding[idx] + kernel_size[idx]
-        output_shape[idx] = int(out)
-
-    return tuple(output_shape)
-
-
 class SeisDAE(DeepDenoiser):
     """ """
 
@@ -346,7 +310,17 @@ class SeisDAE(DeepDenoiser):
         **kwargs,
     ):
 
-        citation = "Blub"
+        citation = (
+            "Zhu, W., Mousavi, S. M., & Beroza, G. C. (2019). "
+            "Seismic signal denoising and decomposition using deep neural networks. "
+            "IEEE Transactions on Geoscience and Remote Sensing, 57.11(2019), 9476 - 9488. "
+            "https://doi.org/10.1109/TGRS.2019.2926772"
+            "Heuel, J., & Friederich, W. (2022). "
+            "Suppression of wind turbine noise from seismological data using nonlinear thresholding "
+            "and denoising autoencoder. "
+            "Journal of Seismology, 26(5), 913-934. "
+            "https://doi.org/10.1007/s10950-022-10097-6"
+        )
 
         WaveformModel.__init__(
             self,
@@ -603,7 +577,6 @@ class SeisDAE(DeepDenoiser):
         )  # Convert denoised to original amplitude
 
     def get_model_args(self):
-        # TODO: Stimmt nicht mit model args aus super class
         model_args = super().get_model_args()
         model_args["sampling_rate"] = self.sampling_rate
         model_args["norm"] = self.norm
@@ -612,3 +585,37 @@ class SeisDAE(DeepDenoiser):
         model_args["nperseg"] = self.nperseg
 
         return model_args
+
+
+def padding_transpose_conv2d_layers(
+    input_shape: tuple[int, int],
+    output_shape: tuple[int, int],
+    kernel_size: tuple[int, int],
+    stride: tuple[int, int],
+):
+    padding = [0] * len(input_shape)
+    for idx in range(len(input_shape)):
+        pad = (
+            (input_shape[idx] - 1) * stride[idx] - output_shape[idx] + kernel_size[idx]
+        ) / 2
+        padding[idx] = int(pad)
+
+    return tuple(padding)
+
+
+def output_shape_conv2d_layers(input_shape, padding, kernel_size, stride):
+    output_shape = [0] * len(input_shape)
+    for idx in range(len(input_shape)):
+        out = (input_shape[idx] + 2 * padding[idx] - kernel_size[idx]) / stride[idx] + 1
+        output_shape[idx] = int(out)
+
+    return tuple(output_shape)
+
+
+def output_shape_transpose_conv2_layers(input_shape, padding, kernel_size, stride):
+    output_shape = [0] * len(input_shape)
+    for idx in range(len(input_shape)):
+        out = (input_shape[idx] - 1) * stride[idx] - 2 * padding[idx] + kernel_size[idx]
+        output_shape[idx] = int(out)
+
+    return tuple(output_shape)
