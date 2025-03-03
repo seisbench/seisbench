@@ -336,7 +336,6 @@ class SeisDAE(DeepDenoiser):
         depth: int = 6,
         kernel_size: tuple[int, int] = (3, 3),
         strides: tuple[int, int] = (2, 2),
-        drop_rate: float = 0.1,
         skip_connections: bool = True,
         activation=torch.relu,
         output_activation=torch.nn.Softmax(dim=1),
@@ -369,7 +368,6 @@ class SeisDAE(DeepDenoiser):
         self.depth = depth
         self.kernel_size = kernel_size
         self.stride = strides
-        self.drop_rate = drop_rate
         self.skip_connections = skip_connections
         self.activation = activation
         self.output_activation = output_activation
