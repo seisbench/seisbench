@@ -80,6 +80,39 @@ models for the analysis of earthquakes recorded at regional distances.
     Seismica, 3(1).
     https://doi.org/10.26443/seismica.v3i1.1049
 
+CWA
+-----
+
+.. figure::  ../_static/cwa_stations.png
+   :align:   center
+
+.. figure::  ../_static/cwa_events.png
+   :align:   center
+
+The :py:class:`~seisbench.data.cwa.CWA` dataset includes a large number of seismic events, especially high-magnitude.
+It is a comprehensive set of events collected by the Central Weather Bureau in Taiwan.
+There are two seismographic network: CWASN and TSMIP in the dataset.
+The dataset version in SeisBench combines both seismic networks.
+The CWA benchmark features over 40 attributes and ∼500,000 seismograms,
+providing valuable data labels for various seismology-related tasks.
+In the future, updated versions of this dataset are planned to ensure its relevance and utility.
+For more information see: https://scweb.cwa.gov.tw/en-US
+
+.. warning::
+
+    Dataset size: ~494GB (~177GB of noise samples)
+
+    The tutorial on loading dataset properly is in the dataset cards:
+
+    * Merged-CWA: https://huggingface.co/datasets/NLPLabNTUST/Merged-CWA
+    * Merged-CWA-Noise: https://huggingface.co/datasets/NLPLabNTUST/Merged-CWA-Noise
+
+.. admonition:: Citation
+
+    Kuan‐Wei Tang, Kuan‐Yu Chen, Da‐Yi Chen, Tai‐Lin Chin, Ting‐Yu Hsu.
+    The CWA Benchmark: A Seismic Dataset from Taiwan for Seismic Research.
+    Seismological Research Letters 2024.
+    doi: https://doi.org/10.1785/0220230393
 
 ETHZ
 -----

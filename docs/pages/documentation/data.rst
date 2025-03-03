@@ -35,6 +35,14 @@ CREW dataset
     :undoc-members:
     :show-inheritance:
 
+CWA dataset
+-----------------------------------
+
+.. automodule:: seisbench.data.cwa
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 ETHZ dataset
 -----------------------------------
 .. automodule:: seisbench.data.ethz
