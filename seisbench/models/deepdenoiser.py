@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from scipy.interpolate import interp1d
+from scipy.signal import istft, stft
 
 from .base import WaveformModel
 
@@ -284,3 +285,332 @@ class UpConvBlock(nn.Module):
         x = torch.relu(self.bn2(self.conv2(x)))
 
         return x
+
+
+def padding_transpose_conv2d_layers(
+    input_shape: tuple[int, int],
+    output_shape: tuple[int, int],
+    kernel_size: tuple[int, int],
+    stride: tuple[int, int],
+):
+    padding = [0] * len(input_shape)
+    for idx in range(len(input_shape)):
+        pad = (
+            (input_shape[idx] - 1) * stride[idx] - output_shape[idx] + kernel_size[idx]
+        ) / 2
+        padding[idx] = int(pad)
+
+    return tuple(padding)
+
+
+def output_shape_conv2d_layers(input_shape, padding, kernel_size, stride):
+    output_shape = [0] * len(input_shape)
+    for idx in range(len(input_shape)):
+        out = (input_shape[idx] + 2 * padding[idx] - kernel_size[idx]) / stride[idx] + 1
+        output_shape[idx] = int(out)
+
+    return tuple(output_shape)
+
+
+def output_shape_transpose_conv2_layers(input_shape, padding, kernel_size, stride):
+    output_shape = [0] * len(input_shape)
+    for idx in range(len(input_shape)):
+        out = (input_shape[idx] - 1) * stride[idx] - 2 * padding[idx] + kernel_size[idx]
+        output_shape[idx] = int(out)
+
+    return tuple(output_shape)
+
+
+class SeisDAE(DeepDenoiser):
+    """ """
+
+    _annotate_args = WaveformModel._annotate_args.copy()
+    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 1500)
+
+    def __init__(
+        self,
+        in_samples: int = 3001,
+        in_channels: int = 2,
+        sampling_rate: float = 100,
+        filters_root: int = 8,
+        depth: int = 6,
+        kernel_size: tuple[int, int] = (3, 3),
+        strides: tuple[int, int] = (2, 2),
+        drop_rate: float = 0.1,
+        skip_connections: bool = True,
+        activation=torch.relu,
+        output_activation=torch.nn.Softmax(dim=1),
+        norm: str = "peak",
+        scale: tuple[float, float] = (0, 1),
+        nfft: int = 198,
+        nperseg: int = 99,
+        **kwargs,
+    ):
+
+        citation = "Blub"
+
+        WaveformModel.__init__(
+            self,
+            citation=citation,
+            in_samples=in_samples,
+            output_type="array",
+            default_args={"overlap": in_samples // 2},
+            labels=self.generate_label,
+            pred_sample=(0, in_samples),
+            sampling_rate=sampling_rate,
+            grouping="channel",
+            **kwargs,
+        )
+
+        self.in_samples = in_samples  # XXX not necessary
+        self.sampling_rate = sampling_rate  # XXX not necessary
+        self.in_channels = in_channels
+        self.filters_root = filters_root
+        self.depth = depth
+        self.kernel_size = kernel_size
+        self.stride = strides
+        self.drop_rate = drop_rate
+        self.skip_connections = skip_connections
+        self.activation = activation
+        self.output_activation = output_activation
+        self.norm = norm
+        self.scale = scale
+        self.norm_factors = None
+
+        # Determine input shape from STFT and check if STFT and ISTFT work
+        self.nfft = nfft
+        self.nperseg = nperseg
+        _, _, dummystft = stft(
+            x=np.random.rand(self.in_samples),
+            fs=self.sampling_rate,
+            nfft=self.nfft,
+            nperseg=self.nperseg,
+        )
+        t, dummy_x = istft(
+            Zxx=dummystft, fs=self.sampling_rate, nfft=self.nfft, nperseg=self.nperseg
+        )
+        if len(dummy_x) != self.in_samples:
+            msg = (
+                f"If data with length {self.in_samples} are transformed with STFT and back transformed with "
+                f"ISTFT, the output lenght of ISTFT ({len(dummy_x)}) does not match. Choose different values"
+                f"for nfft={self.nfft} and noverlap={self.nperseg}."
+            )
+            raise ValueError(msg)
+        self.input_shape = dummystft.shape
+
+        # Write STFT values to default args dictionary
+        self.default_args["nfft"] = self.nfft
+        self.default_args["npserg"] = self.nperseg
+
+        # Initial layer
+        self.inc = nn.Conv2d(
+            in_channels=self.in_channels,
+            out_channels=self.filters_root,
+            kernel_size=self.kernel_size,
+            padding="same",
+        )
+        self.in_bn = nn.BatchNorm2d(num_features=self.filters_root, eps=1e-3)
+
+        self.down_branch = nn.ModuleList()
+        self.up_branch = nn.ModuleList()
+
+        # Down branch (Contracting path / Encoder)
+        last_filters = self.filters_root
+        down_shapes = {-1: self.input_shape}
+        for i in range(self.depth):
+            filters = int(2**i * self.filters_root)
+            conv_same = nn.Conv2d(
+                in_channels=last_filters,
+                out_channels=filters,
+                kernel_size=self.kernel_size,
+                padding="same",
+                bias=False,
+            )
+            last_filters = filters
+            bn1 = nn.BatchNorm2d(num_features=filters, eps=1e-3)
+
+            if i == self.depth - 1:
+                conv_down = None
+                bn2 = None
+            else:
+                down_shapes.update(
+                    {
+                        i: output_shape_conv2d_layers(
+                            input_shape=down_shapes[i - 1],
+                            padding=(1, 1),
+                            kernel_size=self.kernel_size,
+                            stride=self.stride,
+                        )
+                    }
+                )
+                conv_down = nn.Conv2d(
+                    in_channels=filters,
+                    out_channels=filters,
+                    kernel_size=self.kernel_size,
+                    stride=self.stride,
+                    padding=(1, 1),
+                    bias=False,
+                )
+                bn2 = nn.BatchNorm2d(filters, eps=1e-3)
+
+            self.down_branch.append(nn.ModuleList([conv_same, bn1, conv_down, bn2]))
+
+        # Up branch (Expansive path / Decoder)
+        for i in range(self.depth - 2, -1, -1):
+            filters = int(2**i * self.filters_root)
+
+            padding = padding_transpose_conv2d_layers(
+                input_shape=down_shapes[i],
+                output_shape=down_shapes[i - 1],
+                kernel_size=self.kernel_size,
+                stride=self.stride,
+            )
+
+            conv_up = nn.ConvTranspose2d(
+                in_channels=last_filters,
+                out_channels=filters,
+                kernel_size=self.kernel_size,
+                stride=self.stride,
+                padding=padding,
+                bias=False,
+            )
+            last_filters = filters
+            bn1 = nn.BatchNorm2d(filters, eps=1e-3)
+
+            if self.skip_connections:
+                in_channels_conv_same = int(2 ** (i + 1) * self.filters_root)
+            else:
+                in_channels_conv_same = filters
+
+            conv_same = nn.Conv2d(
+                in_channels=in_channels_conv_same,
+                out_channels=filters,
+                kernel_size=self.kernel_size,
+                padding="same",
+                bias=False,
+            )
+            bn2 = nn.BatchNorm2d(filters, eps=1e-3)
+
+            self.up_branch.append(nn.ModuleList([conv_up, bn1, conv_same, bn2]))
+
+        # Final layer
+        self.out = nn.Conv2d(
+            in_channels=last_filters,
+            out_channels=self.in_channels,
+            kernel_size=(1, 1),
+            padding="same",
+        )
+
+    def forward(self, x):
+        x = self.activation(self.in_bn(self.inc(x)))
+
+        skip_connections = []
+        for i, (conv_same, bn1, conv_down, bn2) in enumerate(self.down_branch):
+            x = self.activation(bn1(conv_same(x)))
+            if conv_down is not None:
+                skip_connections.append(x)
+                x = self.activation(bn2(conv_down(x)))
+
+        for i, ((conv_up, bn1, conv_same, bn2), skip) in enumerate(
+            zip(self.up_branch, skip_connections[::-1])
+        ):
+            x = self.activation(bn1(conv_up(x)))
+
+            # Crop x to correct size as given from down branch
+            x = self.crop(x, skip)
+
+            # Add skip connections
+            if self.skip_connections:
+                x = torch.cat([skip, x], dim=1)  # Skip connections (concatenation)
+
+            x = self.activation(bn2(conv_same(x)))
+
+        # Apply out activation function
+        if self.output_activation:
+            x = self.output_activation(self.out(x))
+        else:
+            x = self.out(x)
+
+        return x
+
+    @staticmethod
+    def crop(tensor, target_tensor):
+        """Crop the tensor to match the target tensor size."""
+        _, _, h, w = target_tensor.size()
+        return tensor[:, :, :h, :w]
+
+    def annotate_batch_pre(
+        self, batch: torch.Tensor, argdict: dict[str, Any]
+    ) -> torch.Tensor:
+        """
+        Does preprocessing for prediction
+        """
+        # STFT of each batch and component
+        self.norm_factors = np.empty(shape=batch.shape[0])
+        _, _, noisy_stft = stft(
+            x=self._normalize_trace(batch=batch),
+            fs=self.sampling_rate,
+            nfft=self.nfft,
+            nperseg=self.nperseg,
+        )
+
+        # Normalize STFT
+        noisy_stft_real = noisy_stft.real / np.max(np.abs(noisy_stft.real))
+        noisy_stft_imag = noisy_stft.imag / np.max(np.abs(noisy_stft.imag))
+
+        noisy_input = torch.stack(
+            tensors=[torch.Tensor(noisy_stft_real), torch.Tensor(noisy_stft_imag)],
+            dim=1,
+        )
+
+        # Replace nans and infs
+        noisy_input[torch.isnan(noisy_input)] = 0
+        noisy_input[torch.isinf(noisy_input)] = 0
+
+        return noisy_input, noisy_stft
+
+    def _normalize_trace(self, batch: torch.Tensor):
+        for trace_id in range(batch.shape[0]):
+            batch[trace_id, :] -= torch.mean(input=batch[trace_id, :])  # Demean trace
+            if self.norm == "peak":
+                norm = torch.max(torch.abs(batch[trace_id, :]))
+            elif self.norm == "std":
+                norm = torch.std(batch[trace_id, :])
+            batch[trace_id, :] /= norm
+
+            # Save normalization factors for conservation of amplitude
+            self.norm_factors[trace_id] = norm
+
+        return batch
+
+    def annotate_batch_post(
+        self, batch: torch.Tensor, piggyback: Any, argdict: dict[str, Any]
+    ) -> torch.Tensor:
+        """
+
+        :param batch:
+        :param piggyback:
+        :param argdict:
+        :return:
+        """
+        # Multiply piggyback (noisy signal) with batch (predicted mask)
+        signal_stft = piggyback * batch.numpy()[:, 0, :]
+
+        _, denoised_signal = istft(
+            Zxx=signal_stft, fs=self.sampling_rate, nfft=self.nfft, nperseg=self.nperseg
+        )
+
+        return (
+            denoised_signal * self.norm_factors[:, None]
+        )  # Convert denoised to original amplitude
+
+    def get_model_args(self):
+        # TODO: Stimmt nicht mit model args aus super class
+        model_args = super().get_model_args()
+        model_args["sampling_rate"] = self.sampling_rate
+        model_args["norm"] = self.norm
+        model_args["in_samples"] = self.in_samples
+        model_args["nfft"] = self.nfft
+        model_args["nperseg"] = self.nperseg
+
+        return model_args
