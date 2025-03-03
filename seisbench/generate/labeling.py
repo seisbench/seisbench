@@ -770,7 +770,7 @@ class StandardLabeller(PickLabeller):
         return f"StandardLabeller (label_type={self.label_type}, dim={self.dim})"
 
 
-class DenoiserLabeller:
+class DenoiserLabeller(SupervisedLabeller):
     def __init__(
         self,
         noise_dataset: seisbench.data.base.WaveformDataset,
@@ -784,6 +784,8 @@ class DenoiserLabeller:
         **kwargs,
     ):
         # TODO: noise should be optional for data sets with noise and signal in one data set
+
+        super().__init__(label_type="binary", dim=2)
 
         self.noise_dataset = noise_dataset
         self.scale = scale
@@ -914,12 +916,21 @@ class DenoiserLabeller:
         y = np.nan_to_num(y)
 
         # Update state_dicts for input and target
-        # state_dict[self.key[1]] = (x, metadata)
         state_dict[self.key[0]] = (X, metadata)
         state_dict[self.key[1]] = (y, metadata)
 
+    def label(self, X, metadata):
+        """
+        Label method is passed since __call__ creates input and correct masking functions.
+        Both, input and output are transformed into time-frequency domain.
+        """
+        pass
+
     def __str__(self):
-        return "STFT for Denoising labeller"
+        return (
+            f"Labeller for STFT and masking functions for Denoiser "
+            f"(nfft={self.nfft}, nperseg={self.nperseg})"
+        )
 
 
 def gaussian_pick(onset, length, sigma):
