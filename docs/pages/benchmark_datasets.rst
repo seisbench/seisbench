@@ -55,6 +55,19 @@ Depending on user needs and case study, the dataset can be accessed using the fo
 
     https://doi.org/10.13127/AI/AQUILA2009
 
+CEED
+-----
+
+The :py:class:`~seisbench.data.ceed.CEED` dataset, the California Earthquake Event Dataset,
+compiles records from the Northern (NCEDC) and Southern (SCEDC) California Earthquake Data Centers.
+
+.. admonition:: Citation
+
+    Zhu, W., Wang, H., Rong, B., Yu, E., Zuzlewski, S., Tepp, G., ... & Allen, R. M. (2025).
+    California Earthquake Dataset for Machine Learning and Cloud Computing.
+    arXiv preprint arXiv:2502.11500.
+    https://arxiv.org/abs/2502.11500
+
 CREW
 -----
 
