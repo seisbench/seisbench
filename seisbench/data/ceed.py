@@ -18,10 +18,10 @@ except ModuleNotFoundError:
 # TODO: Check repository_lookup with Weiqiang and enable if possible
 # TODO: Ask Weiqiang for overview figure (Figure 1 from paper?)
 # TODO: Correct the size of data and metadata in the warning in the documentation
-# TODO: Extend description in documentation
+# TODO: Fill in blanks in the dataset description
 class CEED(BenchmarkDataset):
     """
-    The CEED dataset for California
+    The CEED dataset for California from Zhu et al. (2025)
     """
 
     def __init__(self, **kwargs):

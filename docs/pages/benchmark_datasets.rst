@@ -60,6 +60,17 @@ CEED
 
 The :py:class:`~seisbench.data.ceed.CEED` dataset, the California Earthquake Event Dataset,
 compiles records from the Northern (NCEDC) and Southern (SCEDC) California Earthquake Data Centers.
+The dataset compiles records of ??? events for a total of ??? traces. It covers the years from 1987 to 2023.
+Each traces contains manually labels P and S arrivals.
+In addition, the dataset features rich metadata. Several metadata columns have the suffix ``_list``.
+These contain a variable amount of data points and are used, for example, to describe additional phase arrivals in
+traces. As of now, there is no direct way of using this information in SeisBench, but the information is contained
+in the metadata. Further details on how to use the dataset, also without SeisBench, are available on the HuggingFace
+site: https://huggingface.co/datasets/AI4EPS/CEED.
+
+.. warning::
+
+    Dataset size: waveforms.hdf5 **~??? Gb**, metadata.csv **~??? Gb**.
 
 .. admonition:: Citation
 
