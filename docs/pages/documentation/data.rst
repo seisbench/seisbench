@@ -27,6 +27,14 @@ AQ2009 dataset
     :undoc-members:
     :show-inheritance:
 
+CEED dataset
+-----------------------------------
+
+.. automodule:: seisbench.data.ceed
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 CREW dataset
 -----------------------------------
 

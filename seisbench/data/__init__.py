@@ -7,6 +7,7 @@ from .base import (
     WaveformDataset,
     WaveformDataWriter,
 )
+from .ceed import CEED
 from .crew import CREW
 from .cwa import CWA, CWANoise
 from .dummy import ChunkedDummyDataset, DummyDataset
