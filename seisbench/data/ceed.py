@@ -15,10 +15,6 @@ except ModuleNotFoundError:
     hf_hub_download = None
 
 
-# TODO: Check repository_lookup with Weiqiang and enable if possible
-# TODO: Ask Weiqiang for overview figure (Figure 1 from paper?)
-# TODO: Correct the size of data and metadata in the warning in the documentation
-# TODO: Fill in blanks in the dataset description
 class CEED(BenchmarkDataset):
     """
     The CEED dataset for California from Zhu et al. (2025)
@@ -30,7 +26,7 @@ class CEED(BenchmarkDataset):
             "... & Allen, R. M. (2025). California Earthquake Dataset for "
             "Machine Learning and Cloud Computing. arXiv preprint arXiv:2502.11500."
         )
-        super().__init__(citation=citation, repository_lookup=False, **kwargs)
+        super().__init__(citation=citation, repository_lookup=True, **kwargs)
 
     @classmethod
     def available_chunks(cls, force=False, wait_for_file=False):
