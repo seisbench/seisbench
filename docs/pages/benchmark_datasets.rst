@@ -55,6 +55,34 @@ Depending on user needs and case study, the dataset can be accessed using the fo
 
     https://doi.org/10.13127/AI/AQUILA2009
 
+CEED
+-----
+
+.. figure::  ../_static/ceed_overview.png
+   :align:   center
+
+The California Earthquake Event Dataset (:py:class:`~seisbench.data.ceed.CEED`),
+compiles records from the Northern (NCEDC) and Southern (SCEDC) California Earthquake Data Centers.
+The dataset contains waveforms from ~650,000 events for a total of 4.1 million traces.
+It covers the years from 1987 to 2023. Each traces contains manually labels P and S arrivals.
+In addition, the dataset features rich metadata. Several metadata columns have the suffix ``_list``.
+These contain a variable amount of data points and are used, for example, to describe additional phase arrivals in
+traces. The dataset comes with a chronological train/dev/test split.
+As of now, there is no direct way of using this information in SeisBench, but the information is contained
+in the metadata. Further details on how to use the dataset, also without SeisBench, are available on the HuggingFace
+site: https://huggingface.co/datasets/AI4EPS/CEED.
+
+.. warning::
+
+    Dataset size: waveforms.hdf5 **~575 Gb**, metadata.csv **~2.1 Gb**.
+
+.. admonition:: Citation
+
+    Zhu, W., Wang, H., Rong, B., Yu, E., Zuzlewski, S., Tepp, G., ... & Allen, R. M. (2025).
+    California Earthquake Dataset for Machine Learning and Cloud Computing.
+    arXiv preprint arXiv:2502.11500.
+    https://arxiv.org/abs/2502.11500
+
 CREW
 -----
 
