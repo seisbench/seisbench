@@ -166,4 +166,7 @@ class CEED(BenchmarkDataset):
         metadata.drop(columns=drops, inplace=True)
         metadata.rename(columns=renames, inplace=True)
 
+        # The component order in the data is always ENZ
+        metadata["trace_component_order"] = "ENZ"
+
         return metadata
