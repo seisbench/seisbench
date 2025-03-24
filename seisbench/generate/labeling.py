@@ -771,16 +771,43 @@ class StandardLabeller(PickLabeller):
 
 
 class DenoiserLabeller(SupervisedLabeller):
+    """
+    Create supervised labels for DeepDenoiser and SeisDAE with short-time Fourier transform (STFT).
+    Noise samples from noise_dataset are randomly selected and earthquakes waveforms are deteriorated
+    by adding randomly scaled earthquake and noise waveforms.
+
+    :param noise_dataset: Seisbench WaveformDataset that only contains noise waveforms for training.
+    :param scale: Tuple of minimum and maximum relative amplitude of the noise.
+                  Relative amplitude is defined either by the absolute maximum or the root-mean-square of input array
+                  (see scaling_type). Default value is (0, 1).
+    :param scaling_type: Method how to find the relative amplitude of the input array. Either from the absolute maximum
+                         (peak) or from the standard deviation (std). Default is peak.
+    :param component: Component to take into account for training. Default are three components, ZNE.
+                      If DeepDenoiser/SeisDAE is only trained with a single component, use e.g., component="Z".
+                      Otherwise, DeepDenoiser/SeisDAE is trained with all components, however, noise samples are only
+                      added on same component of earthquake waveforms, i.e., on Z-component are only added noise
+                      waveforms of Z-component and so on.
+    :param key: The keys for reading from and writing to the state dict.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+                Default key is ("X", "y").
+    :param nfft: Length of the FFT used, if a zero padded FFT is desired for scipy STFT.
+                 If None, the FFT length is nperseg.
+    :param nperseg: Length of each segment for scipy STFT. Default is 60
+    :param eps: Avoiding division by zero, default is 1e-12.
+    """
+
     def __init__(
         self,
         noise_dataset: seisbench.data.base.WaveformDataset,
         scale: tuple[float, float] = (0, 1),
         scaling_type: str = "peak",
         component: str = "ZNE",
-        key: tuple[str, str] = ("X", "y"),
         nfft: int = 60,
         nperseg: int = 30,
         eps: float = 1e-12,
+        key: tuple[str, str] = ("X", "y"),
         **kwargs,
     ):
         # TODO: noise should be optional for data sets with noise and signal in one data set
@@ -804,7 +831,6 @@ class DenoiserLabeller(SupervisedLabeller):
             raise ValueError(msg)
 
     def __call__(self, state_dict):
-        """ """
         x, metadata = state_dict[self.key[0]]
 
         if self.key[0] != self.key[1]:

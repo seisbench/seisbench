@@ -18,3 +18,25 @@ def worker_seeding(wid):
     """
     uint64_seed = torch.initial_seed()
     np.random.seed([uint64_seed >> 32, uint64_seed & 0xFFFF_FFFF])
+
+
+def output_shape_conv2d_layers(
+    input_shape: tuple[int, int],
+    padding: tuple[int, int],
+    kernel_size: tuple[int, int],
+    stride: tuple[int, int],
+):
+    """
+    Determining correct output shape for Conv2D layers in PyTorch.
+
+    :param input_shape: input shape of Conv2D layer
+    :param padding: padding of Conv2D layer
+    :param kernel_size: kernel size of Conv2D layer
+    :param stride: stride of Conv2D layer
+    """
+    output_shape = [0] * len(input_shape)
+    for idx in range(len(input_shape)):
+        out = (input_shape[idx] + 2 * padding[idx] - kernel_size[idx]) / stride[idx] + 1
+        output_shape[idx] = int(out)
+
+    return tuple(output_shape)

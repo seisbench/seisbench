@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from scipy.signal import istft, stft
 
+from ..util.torch_helpers import output_shape_conv2d_layers
 from .base import WaveformModel
 
 
@@ -293,7 +294,7 @@ class SeisDAE(DeepDenoiser):
 
     def __init__(
         self,
-        in_samples: int = 3001,
+        in_samples: int = 3000,
         in_channels: int = 2,
         sampling_rate: float = 100,
         filters_root: int = 8,
@@ -305,8 +306,8 @@ class SeisDAE(DeepDenoiser):
         output_activation=torch.nn.Softmax(dim=1),
         norm: str = "peak",
         scale: tuple[float, float] = (0, 1),
-        nfft: int = 198,
-        nperseg: int = 99,
+        nfft: int = 60,
+        nperseg: int = 30,
         **kwargs,
     ):
 
@@ -352,20 +353,26 @@ class SeisDAE(DeepDenoiser):
         # Determine input shape from STFT and check if STFT and ISTFT work
         self.nfft = nfft
         self.nperseg = nperseg
+        # Performing STFT
         _, _, dummystft = stft(
             x=np.random.rand(self.in_samples),
             fs=self.sampling_rate,
             nfft=self.nfft,
             nperseg=self.nperseg,
         )
+        # Performing ISTFT
         t, dummy_x = istft(
-            Zxx=dummystft, fs=self.sampling_rate, nfft=self.nfft, nperseg=self.nperseg
+            Zxx=dummystft,
+            fs=self.sampling_rate,
+            nfft=self.nfft,
+            nperseg=self.nperseg,
         )
+
         if len(dummy_x) != self.in_samples:
             msg = (
                 f"If data with length {self.in_samples} are transformed with STFT and back transformed with "
-                f"ISTFT, the output lenght of ISTFT ({len(dummy_x)}) does not match. Choose different values"
-                f"for nfft={self.nfft} and noverlap={self.nperseg}."
+                f"ISTFT, the output lenght of ISTFT ({len(dummy_x)}) does not match. Choose different values "
+                f"for nfft={self.nfft} and nperseg={self.nperseg}."
             )
             raise ValueError(msg)
         self.input_shape = dummystft.shape
@@ -493,7 +500,10 @@ class SeisDAE(DeepDenoiser):
 
             # Add skip connections
             if self.skip_connections:
-                x = torch.cat([skip, x], dim=1)  # Skip connections (concatenation)
+                try:
+                    x = torch.cat([skip, x], dim=1)  # Skip connections (concatenation)
+                except RuntimeError:
+                    print()
 
             x = self.activation(bn2(conv_same(x)))
 
@@ -569,7 +579,10 @@ class SeisDAE(DeepDenoiser):
         signal_stft = piggyback * batch.numpy()[:, 0, :]
 
         _, denoised_signal = istft(
-            Zxx=signal_stft, fs=self.sampling_rate, nfft=self.nfft, nperseg=self.nperseg
+            Zxx=signal_stft,
+            fs=self.sampling_rate,
+            nfft=self.nfft,
+            nperseg=self.nperseg,
         )
 
         return (
@@ -601,21 +614,3 @@ def padding_transpose_conv2d_layers(
         padding[idx] = int(pad)
 
     return tuple(padding)
-
-
-def output_shape_conv2d_layers(input_shape, padding, kernel_size, stride):
-    output_shape = [0] * len(input_shape)
-    for idx in range(len(input_shape)):
-        out = (input_shape[idx] + 2 * padding[idx] - kernel_size[idx]) / stride[idx] + 1
-        output_shape[idx] = int(out)
-
-    return tuple(output_shape)
-
-
-def output_shape_transpose_conv2_layers(input_shape, padding, kernel_size, stride):
-    output_shape = [0] * len(input_shape)
-    for idx in range(len(input_shape)):
-        out = (input_shape[idx] - 1) * stride[idx] - 2 * padding[idx] + kernel_size[idx]
-        output_shape[idx] = int(out)
-
-    return tuple(output_shape)
