@@ -770,7 +770,7 @@ class StandardLabeller(PickLabeller):
         return f"StandardLabeller (label_type={self.label_type}, dim={self.dim})"
 
 
-class DenoiserLabeller(SupervisedLabeller):
+class STFTDenoiserLabeller(SupervisedLabeller):
     """
     Create supervised labels for DeepDenoiser and SeisDAE with short-time Fourier transform (STFT).
     Noise samples from noise_dataset are randomly selected and earthquakes waveforms are deteriorated

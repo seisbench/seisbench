@@ -15,13 +15,13 @@ from .augmentation import (
 )
 from .generator import GenericGenerator, GroupGenerator, SteeredGenerator
 from .labeling import (
-    DenoiserLabeller,
     DetectionLabeller,
     PickLabeller,
     ProbabilisticLabeller,
     ProbabilisticPointLabeller,
     StandardLabeller,
     StepLabeller,
+    STFTDenoiserLabeller,
     SupervisedLabeller,
 )
 from .windows import (
