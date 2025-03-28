@@ -286,6 +286,45 @@ class UpConvBlock(nn.Module):
         return x
 
 
+class AttentionGate(nn.Module):
+    def __init__(self, in_channels, gating_channels, inter_channels):
+        super().__init__()
+        self.W_x = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=inter_channels,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            bias=False,
+        )
+        self.W_g = nn.Conv2d(
+            in_channels=gating_channels,
+            out_channels=inter_channels,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            bias=False,
+        )
+        self.psi = nn.Conv2d(
+            in_channels=inter_channels,
+            out_channels=1,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            bias=False,
+        )
+        self.relu = nn.ReLU(inplace=True)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x, g):
+        x1 = self.W_x(x)
+        g1 = self.W_g(g)
+        psi = self.relu(x1 + g1)
+        psi = self.sigmoid(self.psi(psi))
+
+        return x * psi
+
+
 class SeisDAE(DeepDenoiser):
     """ """
 
@@ -308,6 +347,7 @@ class SeisDAE(DeepDenoiser):
         scale: tuple[float, float] = (0, 1),
         nfft: int = 60,
         nperseg: int = 30,
+        attention: bool = False,
         **kwargs,
     ):
 
@@ -349,6 +389,7 @@ class SeisDAE(DeepDenoiser):
         self.norm = norm
         self.scale = scale
         self.norm_factors = None
+        self.attention = attention
 
         # Determine input shape from STFT and check if STFT and ISTFT work
         self.nfft = nfft
@@ -390,8 +431,10 @@ class SeisDAE(DeepDenoiser):
         )
         self.in_bn = nn.BatchNorm2d(num_features=self.filters_root, eps=1e-3)
 
+        # Set up ModuleLists for encoder, decoder and attention gates
         self.down_branch = nn.ModuleList()
         self.up_branch = nn.ModuleList()
+        self.attention_gates = nn.ModuleList()
 
         # Down branch (Contracting path / Encoder)
         last_filters = self.filters_root
@@ -472,6 +515,15 @@ class SeisDAE(DeepDenoiser):
 
             self.up_branch.append(nn.ModuleList([conv_up, bn1, conv_same, bn2]))
 
+            # Setting up attention layers (also if self.attention is False)
+            self.attention_gates.append(
+                AttentionGate(
+                    in_channels=filters,
+                    gating_channels=last_filters,
+                    inter_channels=filters // 2,
+                )
+            )
+
         # Final layer
         self.out = nn.Conv2d(
             in_channels=last_filters,
@@ -490,20 +542,19 @@ class SeisDAE(DeepDenoiser):
                 skip_connections.append(x)
                 x = self.activation(bn2(conv_down(x)))
 
-        for i, ((conv_up, bn1, conv_same, bn2), skip) in enumerate(
-            zip(self.up_branch, skip_connections[::-1])
+        for i, ((conv_up, bn1, conv_same, bn2), att_gate, skip) in enumerate(
+            zip(self.up_branch, self.attention_gates, skip_connections[::-1])
         ):
             x = self.activation(bn1(conv_up(x)))
 
             # Crop x to correct size as given from down branch
             x = self.crop(x, skip)
 
-            # Add skip connections
+            # Add skip connections and attention gates, if self.attention is True
             if self.skip_connections:
-                try:
-                    x = torch.cat([skip, x], dim=1)  # Skip connections (concatenation)
-                except RuntimeError:
-                    print()
+                if self.attention:
+                    skip = att_gate(skip, x)
+                x = torch.cat([skip, x], dim=1)  # Skip connections (concatenation)
 
             x = self.activation(bn2(conv_same(x)))
 
