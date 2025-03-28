@@ -46,6 +46,6 @@ This will change the repository used within the current runtime.
 For a more permanent solution, put the backup repository into your SeisBench config file (usually at `.seisbench/config.json`).
 Simply add the following line: ::
 
-    "remote_root": "https://seisbench.gfz-potsdam.de/mirror/"
+    "remote_root": "https://seisbench.gfz.de/mirror/"
 
 This will redefine the default, i.e., SeisBench will always access the backup root.
