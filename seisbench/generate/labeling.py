@@ -849,13 +849,12 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         x = x[component_idx, :]
         metadata["trace_component_order"] = self.component[component_idx]
 
-        # Defining scale for noise amplitude
-        scale = np.random.uniform(*self.scale)
-
-        if self.scaling_type == "peak":
-            scale = scale * np.max(np.abs(x - np.mean(x, axis=-1, keepdims=True)))
-        elif self.scaling_type == "std":
-            scale = scale * np.std(x)
+        # Defining scale for earthquake and noise amplitude
+        # I.e., scale for earthquake and noise can become, for example, zero and thus either no noise or
+        # earthquake waveform exists. Using this approach, the denoiser learns better to distinguish between noise
+        # and earthquake.
+        scale_earthquake = np.random.uniform(*self.scale)
+        scale_noise = np.random.uniform(*self.scale)
 
         # Draw random noise sample from the dataset and cut to same length as x
         n = self.noise_generator[np.random.randint(low=0, high=self.noise_samples)]["X"]
@@ -871,7 +870,6 @@ class STFTDenoiserLabeller(SupervisedLabeller):
             n = n / (np.max(np.abs(n)) + self.eps)
         elif self.scaling_type == "std":
             n = n / (np.std(n) + self.eps)
-        n = n * scale
 
         # Cutting noise to same length as x
         if len(n) - len(x) < 0:
@@ -887,10 +885,14 @@ class STFTDenoiserLabeller(SupervisedLabeller):
             spoint = 0
         n = n[spoint : spoint + len(x)]
 
+        # Scale earthquake (x) and noise (n) waveforms
+        x *= scale_earthquake
+        n *= scale_noise
+
         # Add noise and signal to create noisy signal
         noisy = x + n
 
-        # Normalize noisy, x and n by normalization factor of noisy
+        # Normalize noisy, x and n by normalization factor of noisy to range [-1, 1]
         if self.scaling_type == "peak":
             norm_noisy = np.max(np.abs(noisy)) + self.eps
         elif self.scaling_type == "std":
