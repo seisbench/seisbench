@@ -40,3 +40,28 @@ def output_shape_conv2d_layers(
         output_shape[idx] = int(out)
 
     return tuple(output_shape)
+
+
+def padding_transpose_conv2d_layers(
+    input_shape: tuple[int, int],
+    output_shape: tuple[int, int],
+    kernel_size: tuple[int, int],
+    stride: tuple[int, int],
+):
+    """
+    Determining correct padding of transpose 2D convolutional layers. Note the input and output shape of layers must
+    be known.
+
+    :param input_shape: input shape of Conv2D layer
+    :param output_shape: output shape of Conv2D layer
+    :param kernel_size: kernel size of Conv2D layer
+    :param stride: stride of Conv2D layer
+    """
+    padding = [0] * len(input_shape)
+    for idx in range(len(input_shape)):
+        pad = (
+            (input_shape[idx] - 1) * stride[idx] - output_shape[idx] + kernel_size[idx]
+        ) / 2
+        padding[idx] = int(pad)
+
+    return tuple(padding)

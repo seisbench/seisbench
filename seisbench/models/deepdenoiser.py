@@ -6,7 +6,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from scipy.signal import istft, stft
 
-from ..util.torch_helpers import output_shape_conv2d_layers
+from ..util.torch_helpers import (
+    output_shape_conv2d_layers,
+    padding_transpose_conv2d_layers,
+)
 from .base import WaveformModel
 
 
@@ -649,19 +652,3 @@ class SeisDAE(DeepDenoiser):
         model_args["nperseg"] = self.nperseg
 
         return model_args
-
-
-def padding_transpose_conv2d_layers(
-    input_shape: tuple[int, int],
-    output_shape: tuple[int, int],
-    kernel_size: tuple[int, int],
-    stride: tuple[int, int],
-):
-    padding = [0] * len(input_shape)
-    for idx in range(len(input_shape)):
-        pad = (
-            (input_shape[idx] - 1) * stride[idx] - output_shape[idx] + kernel_size[idx]
-        ) / 2
-        padding[idx] = int(pad)
-
-    return tuple(padding)
