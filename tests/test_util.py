@@ -1,11 +1,13 @@
 import logging
 import os
 import pickle
+from http.cookiejar import UTC_ZONES
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import obspy
+import pandas as pd
 import pytest
 import requests
 import scipy.signal
@@ -260,3 +262,54 @@ def test_pad_packed_sequence():
     assert packed.shape == (4, 7, 3)
     assert np.sum(packed == 1) == sum(x.size for x in seq)
     assert np.sum(packed == 0) == packed.size - sum(x.size for x in seq)
+
+
+def test_pick_list_to_dataframe():
+    picks = seisbench.util.PickList()
+    assert len(picks.to_dataframe()) == 0
+
+    t0 = obspy.UTCDateTime()
+    t1 = t0 + 10
+
+    picks = seisbench.util.PickList(
+        [
+            seisbench.util.Pick("XX.YY.Z1", t0, t0 + 10, t0 + 5, 0.9, "P"),
+            seisbench.util.Pick("XX.YY.Z2", t1, t1 + 10, t1 + 5, 0.6, "S"),
+        ]
+    )
+    pick_df = picks.to_dataframe()
+
+    assert len(pick_df) == 2
+    assert np.allclose(
+        (pick_df["end_time"] - pick_df["time"]) / pd.Timedelta(1, "s"), 5
+    )
+    assert np.allclose(
+        (pick_df["time"] - pick_df["start_time"]) / pd.Timedelta(1, "s"), 5
+    )
+    assert all(pick_df["station"] == ["XX.YY.Z1", "XX.YY.Z2"])
+    assert all(pick_df["phase"] == ["P", "S"])
+    assert all(pick_df["probability"] == [0.9, 0.6])
+
+
+def test_detection_list_to_dataframe():
+    detections = seisbench.util.DetectionList()
+    assert len(detections.to_dataframe()) == 0
+
+    t0 = obspy.UTCDateTime()
+    t1 = t0 + 10
+
+    detections = seisbench.util.DetectionList(
+        [
+            seisbench.util.Detection("XX.YY.Z1", t0, t0 + 5, 0.9),
+            seisbench.util.Detection("XX.YY.Z2", t1, t1 + 5, 0.6),
+        ]
+    )
+    detection_df = detections.to_dataframe()
+
+    assert len(detection_df) == 2
+    assert np.allclose(
+        (detection_df["end_time"] - detection_df["start_time"]) / pd.Timedelta(1, "s"),
+        5,
+    )
+    assert all(detection_df["station"] == ["XX.YY.Z1", "XX.YY.Z2"])
+    assert all(detection_df["probability"] == [0.9, 0.6])
