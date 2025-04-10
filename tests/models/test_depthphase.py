@@ -351,7 +351,8 @@ def test_depthphasemodel_qc(tmp_path):
         assert np.isnan(model._qc_prediction(prob, 100.0))
 
 
-@pytest.mark.slow  # Test is slow and depends on SeisBench repository and FDSN web service
+# @pytest.mark.slow  # Test is slow and depends on SeisBench repository and FDSN web service
+@pytest.mark.skip(reason="The dependency on the GFZ webservice causes flaky tests.")
 @patch("seisbench.__version__", "0.5.0")  #
 def test_depth_finder():
     networks = {"GFZ": ["GE"]}
