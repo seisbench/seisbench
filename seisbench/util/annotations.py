@@ -1,6 +1,8 @@
 import re
 from types import SimpleNamespace
 
+import pandas as pd
+
 MAX_ENTRIES_STR = 10
 
 
@@ -95,6 +97,33 @@ class PickList(list):
 
         return PickList(filtered)
 
+    def to_dataframe(self) -> pd.DataFrame:
+        """
+        Converts the pick list to a Pandas DataFrame. This is useful to export the picks.
+
+        For example, to export the picks as a csv, use ``picks.to_dataframe().to_csv("picks.csv")``.
+        """
+
+        pick_df = []
+        for p in self:
+            pick_df.append(
+                {
+                    "station": p.trace_id,
+                    "time": p.peak_time.datetime,
+                    "start_time": p.start_time.datetime,
+                    "end_time": p.end_time.datetime,
+                    "probability": p.peak_value,
+                    "phase": p.phase,
+                }
+            )
+        pick_df = pd.DataFrame(pick_df)
+
+        if len(pick_df) > 0:
+            pick_df.sort_values("time", inplace=True)
+            pick_df.reset_index(inplace=True)
+
+        return pick_df
+
 
 class DetectionList(PickList):
     """
@@ -118,6 +147,31 @@ class DetectionList(PickList):
         return DetectionList(
             super().select(trace_id=trace_id, min_confidence=min_confidence)
         )
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """
+        Converts the detection list to a Pandas DataFrame. This is useful to export the picks.
+
+        For example, to export the picks as a csv, use ``detections.to_dataframe().to_csv("detections.csv")``.
+        """
+
+        detection_df = []
+        for p in self:
+            detection_df.append(
+                {
+                    "station": p.trace_id,
+                    "start_time": p.start_time.datetime,
+                    "end_time": p.end_time.datetime,
+                    "probability": p.peak_value,
+                }
+            )
+        detection_df = pd.DataFrame(detection_df)
+
+        if len(detection_df) > 0:
+            detection_df.sort_values("start_time", inplace=True)
+            detection_df.reset_index(inplace=True)
+
+        return detection_df
 
 
 class Pick:
