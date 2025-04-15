@@ -98,9 +98,12 @@ class CEED(BenchmarkDataset):
             for s_event, g_event in tqdm(
                 f.items(), desc=f"Compiling metadata for chunk {chunk}"
             ):
+                event_metadata = {k: v for k, v in g_event.attrs.items()}
+                # The key "depth_km" is used on both event and station level, so we need to rename it here
+                event_metadata["source_depth_km"] = event_metadata.get("depth_km")
                 for s_trace, g_trace in g_event.items():
                     trace_metadata = {
-                        **{k: v for k, v in g_event.attrs.items()},
+                        **event_metadata,
                         **{k: v for k, v in g_trace.attrs.items()},
                         "trace_name": f"{s_event}/{s_trace}",
                     }
@@ -112,7 +115,7 @@ class CEED(BenchmarkDataset):
             "begin_time": "trace_start_time",
             "end_time": "trace_end_time",
             "snr": "trace_snr_db",
-            "depth_km": "source_depth_km",
+            "depth_km": "station_depth_km",
             "event_id": "source_id_list",
             "event_time": "source_origin_time",
             "event_time_index": "source_origin_time_sample",
