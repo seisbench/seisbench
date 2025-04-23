@@ -54,4 +54,4 @@ jobs:
 
       - name: Test with pytest
         run: |
-          pytest --durations=10 -p no:faulthandler tests/
+          pytest --durations=10 tests/
