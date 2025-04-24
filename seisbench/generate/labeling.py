@@ -842,15 +842,13 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         # Note, if more than one component is given, components of signal and noise are not mixed
         if len(self.component) == 1:
             component_idx = metadata["trace_component_order"].index(self.component)
+            metadata["trace_component_order"] = self.component
         else:
             component_idx = random.randint(0, len(self.component) - 1)
+            metadata["trace_component_order"] = self.component[component_idx]
 
         # Select component from x and modify metadata
         x = x[component_idx, :]
-        if len(self.component) == 1:
-            metadata["trace_component_order"] = self.component
-        else:
-            metadata["trace_component_order"] = self.component[component_idx]
 
         # Defining scale for earthquake and noise amplitude
         # I.e., scale for earthquake and noise can become, for example, zero and thus either no noise or
