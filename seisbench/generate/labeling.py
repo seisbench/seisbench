@@ -847,7 +847,10 @@ class STFTDenoiserLabeller(SupervisedLabeller):
 
         # Select component from x and modify metadata
         x = x[component_idx, :]
-        metadata["trace_component_order"] = self.component[component_idx]
+        if len(self.component) == 1:
+            metadata["trace_component_order"] = self.component
+        else:
+            metadata["trace_component_order"] = self.component[component_idx]
 
         # Defining scale for earthquake and noise amplitude
         # I.e., scale for earthquake and noise can become, for example, zero and thus either no noise or
