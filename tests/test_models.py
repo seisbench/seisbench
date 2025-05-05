@@ -2504,3 +2504,32 @@ def test_annotate_obstransformer():
     assert isinstance(output, sbu.ClassifyOutput)
     assert isinstance(output.picks, sbu.PickList)
     assert output.creator == model.name
+
+
+def test_fractional_sample_handling():
+    t0 = UTCDateTime("2000-01-01 00:00:00")
+    common_metadata = {
+        "network": "XX",
+        "station": "YYY",
+        "location": "",
+        "sampling_rate": 100,
+    }
+    stream = obspy.Stream(
+        [
+            obspy.Trace(
+                np.ones(10000),
+                header={
+                    "starttime": t0 + i / 1000.0,
+                    "channel": f"HH{c}",
+                    **common_metadata,
+                },
+            )
+            for i, c in enumerate("ZNE")
+        ]
+    )
+
+    model = seisbench.models.PhaseNet(sampling_rate=100)
+
+    ann = model.annotate(stream, blinding=(0, 0))
+    for trace in ann:
+        assert trace.stats.starttime == t0 + 1.0 / 1000.0
