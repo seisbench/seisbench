@@ -1775,6 +1775,7 @@ class WaveformModel(SeisBenchModel, ABC):
             (len(stations), len(component_order), int((t1 - t0) * sampling_rate + 2))
         )  # +2 avoids fractional errors
 
+        t_offsets = []
         for trace in stream:
             p = int((trace.stats.starttime - t0) * sampling_rate)
             if trace.id[-1] not in comp_dict:
@@ -1782,6 +1783,10 @@ class WaveformModel(SeisBenchModel, ABC):
             comp_idx = comp_dict[trace.id[-1]]
             sta_idx = station_dict[get_station_key(trace)]
             data[sta_idx, comp_idx, p : p + len(trace.data)] = trace.data
+
+            t_offsets.append(trace.stats.get("t_offset", 0.0))
+
+        t0 += np.mean(t_offsets)
 
         data = data[:, :, :-1]  # Remove fractional error +1
         if self._grouping.grouping == "channel":
@@ -2380,6 +2385,9 @@ class GroupingHelper:
         """
         Shifts the starttime of every member to a valid fractional second according to the sampling rate.
         Assumes there is a hypothetical sample at UTCDateTime(0).
+        This alignment is required for the downstream trace matching to work.
+        The offset is written to the trace stats at ``t_offset``, such that
+        ``true_starttime = fix_starttime + t_offset``.
 
         For example, at 20 Hz sampling rate:
         0.05 is okay
@@ -2389,6 +2397,11 @@ class GroupingHelper:
             ts = trace.stats.starttime.timestamp
             ts *= trace.stats.sampling_rate
             ts = np.round(ts) / trace.stats.sampling_rate
+
+            trace.stats.t_offset = (
+                trace.stats.starttime.timestamp - ts
+            )  # How much we offset the data
+
             trace.stats.starttime = obspy.UTCDateTime(ts)
 
     def _get_intervals(
