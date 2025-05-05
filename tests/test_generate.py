@@ -2390,3 +2390,33 @@ def test_probabilistic_labeller_labels():
         label_columns=["trace_P_arrival_sample"],
         model_labels=["NA", "P", "pS", "PKIKP"],
     )
+
+
+def test_clean_state_dict_type_check():
+    state_dict = {}
+    generator = seisbench.generate.GenericGenerator(None)
+    generator._clean_state_dict(state_dict)  # Passes without issue
+
+    state_dict = {
+        "X": (np.ones(10), {"a": 1}),
+        "y": (np.ones(10), None),
+    }
+    generator._clean_state_dict(state_dict)  # Passes without issue
+
+    state_dict = {
+        "X": np.ones(10),
+    }
+    with pytest.raises(ValueError):
+        generator._clean_state_dict(state_dict)  # Missing metadata
+
+    state_dict = {
+        "X": np.ones(2),
+    }
+    with pytest.raises(ValueError):
+        generator._clean_state_dict(state_dict)  # Invalid entry but of length 2
+
+    state_dict = {
+        "X": (np.ones(10), "Not a dict"),
+    }
+    with pytest.raises(ValueError):
+        generator._clean_state_dict(state_dict)  # Invalid metadata entry
