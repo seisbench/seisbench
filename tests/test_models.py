@@ -589,6 +589,7 @@ def test_reassemble_blocks_array():
 
     trace_stats = obspy.read()[0].stats
 
+    t0 = UTCDateTime()
     out = []
     argdict = {"stride": 100, "sampling_rate": 100}
     buffer = defaultdict(list)
@@ -596,7 +597,7 @@ def test_reassemble_blocks_array():
     starts = [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200, 8100, 9000, 9001]
 
     for i in range(12):
-        elem = (np.ones((1000, 3)), (0, starts[i], 12, trace_stats, 0))
+        elem = (np.ones((1000, 3)), (t0, starts[i], 12, trace_stats, 0))
         out_elem = dummy._reassemble_blocks_array(elem, buffer, argdict)
         if out_elem is not None:
             out += [out_elem[0]]
@@ -612,6 +613,7 @@ def test_reassemble_blocks_array_stack_options():
         component_order="ZNE", in_samples=1000, sampling_rate=100, pred_sample=(0, 1000)
     )
 
+    t0 = UTCDateTime()
     trace_stats = obspy.read()[0].stats
 
     for stacking in {"max", "avg"}:
@@ -622,7 +624,7 @@ def test_reassemble_blocks_array_stack_options():
         starts = [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200, 8100, 9000, 9001]
 
         for i in range(12):
-            elem = (np.ones((1000, 3)) + i, (0, starts[i], 12, trace_stats, 0))
+            elem = (np.ones((1000, 3)) + i, (t0, starts[i], 12, trace_stats, 0))
             out_elem = dummy._reassemble_blocks_array(elem, buffer, argdict)
             if out_elem is not None:
                 out += [out_elem[0]]

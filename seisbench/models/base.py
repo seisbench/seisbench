@@ -1266,16 +1266,16 @@ class WaveformModel(SeisBenchModel, ABC):
                 preds[0],
                 np.nan,
                 shape=(
+                    coverage,
                     preds[0].shape[0],
                     pred_length,
                     preds[0].shape[-1],
-                    coverage,
                 ),
             )
             for i, (pred, start) in enumerate(zip(preds, starts)):
                 pred_start = int(start * prediction_sample_factor)
                 pred_merge[
-                    :, pred_start : pred_start + pred.shape[1], :, i % coverage
+                    i % coverage, :, pred_start : pred_start + pred.shape[1], :
                 ] = pred
 
             with warnings.catch_warnings():
@@ -1283,10 +1283,10 @@ class WaveformModel(SeisBenchModel, ABC):
                     warnings.filterwarnings(
                         action="ignore", message="Mean of empty slice"
                     )
-                    preds = bn.nanmean(pred_merge, axis=-1)
+                    preds = bn.nanmean(pred_merge, axis=0)
                 elif stack_method == "max":
                     warnings.filterwarnings(action="ignore", message="All-NaN")
-                    preds = bn.nanmax(pred_merge, axis=-1)
+                    preds = bn.nanmax(pred_merge, axis=0)
                 # Case of stack_method not in avg or max is caught by assert above
 
             if self._grouping.grouping == "channel":
