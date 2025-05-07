@@ -1228,21 +1228,21 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         Reassembles array predictions into numpy arrays.
         """
-        overlap = self._argdict_get_with_default(argdict, "overlap")
-        stack_method = self._argdict_get_with_default(
-            argdict, "stacking"
-        ).lower()  # This is a breaking change for v 0.3 - see PR#99
-        assert (
-            stack_method in self._stack_options
-        ), f"Stacking method {stack_method} unknown. Known options are: {self._stack_options}"
         window, metadata = elem
         t0, s, len_starts, stations, bucket_id = metadata
-        key = f"{t0}_{'__'.join(stations)}"
+        key = (t0.timestamp, "__".join(stations))
         buffer[key].append(elem)
 
         output = None
 
         if len(buffer[key]) == len_starts:
+            overlap = self._argdict_get_with_default(argdict, "overlap")
+            stack_method = self._argdict_get_with_default(
+                argdict, "stacking"
+            ).lower()  # This is a breaking change for v 0.3 - see PR#99
+            assert (
+                stack_method in self._stack_options
+            ), f"Stacking method {stack_method} unknown. Known options are: {self._stack_options}"
             preds = [(s, window) for window, (_, s, _, _, _) in buffer[key]]
             preds = sorted(
                 preds, key=lambda x: x[0]
@@ -1262,22 +1262,20 @@ class WaveformModel(SeisBenchModel, ABC):
             pred_length = int(
                 np.ceil((np.max(starts) + self.in_samples) * prediction_sample_factor)
             )
-            pred_merge = (
-                np.zeros_like(
-                    preds[0],
-                    shape=(
-                        preds[0].shape[0],
-                        pred_length,
-                        preds[0].shape[-1],
-                        coverage,
-                    ),
-                )
-                * np.nan
+            pred_merge = np.full_like(
+                preds[0],
+                np.nan,
+                shape=(
+                    coverage,
+                    preds[0].shape[0],
+                    pred_length,
+                    preds[0].shape[-1],
+                ),
             )
             for i, (pred, start) in enumerate(zip(preds, starts)):
                 pred_start = int(start * prediction_sample_factor)
                 pred_merge[
-                    :, pred_start : pred_start + pred.shape[1], :, i % coverage
+                    i % coverage, :, pred_start : pred_start + pred.shape[1], :
                 ] = pred
 
             with warnings.catch_warnings():
@@ -1285,10 +1283,10 @@ class WaveformModel(SeisBenchModel, ABC):
                     warnings.filterwarnings(
                         action="ignore", message="Mean of empty slice"
                     )
-                    preds = bn.nanmean(pred_merge, axis=-1)
+                    preds = bn.nanmean(pred_merge, axis=0)
                 elif stack_method == "max":
                     warnings.filterwarnings(action="ignore", message="All-NaN")
-                    preds = bn.nanmax(pred_merge, axis=-1)
+                    preds = bn.nanmax(pred_merge, axis=0)
                 # Case of stack_method not in avg or max is caught by assert above
 
             if self._grouping.grouping == "channel":
@@ -1395,10 +1393,13 @@ class WaveformModel(SeisBenchModel, ABC):
         Add fake dimensions to make pred shape (stations, samples, channels)
         """
         if self._grouping.grouping == "instrument":
-            pred = np.expand_dims(pred, 0)
+            return pred[None]
         if self._grouping.grouping == "channel":
-            pred = np.expand_dims(np.expand_dims(pred, -1), 0)
-        return pred
+            return pred[None, ..., None]
+        raise NotImplementedError(
+            f"Grouping {self._grouping.grouping} not implemented. "
+            "Please use 'instrument' or 'channel'."
+        )
 
     def annotate_stream_pre(self, stream, argdict):
         """
