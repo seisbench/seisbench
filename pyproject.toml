@@ -44,7 +44,7 @@ include = ["seisbench*"]
 
 [project.optional-dependencies]
 development = ["flake8", "black", "isort", "pre-commit"]
-tests = ["pytest", "pytest-asyncio"]
+tests = ["pytest"]
 
 [tool.setuptools_scm]
 
