@@ -1706,6 +1706,30 @@ def test_list_pretrained(tmp_path):
                 ) == {"bla": "123", "test": "123", "foo": "123"}
 
 
+def test_list_pretrained404(tmp_path):
+    with patch("seisbench.models.GPD._model_path") as model_path:
+        model_path.return_value = tmp_path
+
+        def raise404(*args, **kwargs):
+            raise ValueError(f"Invalid URL. Request returned status code 404.")
+
+        with patch("seisbench.util.ls_webdav") as ls_webdav:
+            ls_webdav.side_effect = raise404
+
+            assert (
+                seisbench.models.GPD.list_pretrained(details=False, remote=True) == []
+            )
+
+        def raise505(*args, **kwargs):
+            raise ValueError(f"Invalid URL. Request returned status code 505.")
+
+        with patch("seisbench.util.ls_webdav") as ls_webdav:
+            ls_webdav.side_effect = raise505
+
+            with pytest.raises(ValueError):
+                seisbench.models.GPD.list_pretrained(details=False, remote=True)
+
+
 def test_get_latest_docstring(tmp_path):
     with patch("seisbench.models.GPD._model_path") as model_path:
         model_path.return_value = tmp_path

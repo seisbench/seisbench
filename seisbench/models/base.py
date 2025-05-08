@@ -324,11 +324,21 @@ class SeisBenchModel(nn.Module):
 
         if remote:
             remote_path = cls._remote_path()
-            weights += [
-                cls._parse_weight_filename(x)[0]
-                for x in seisbench.util.ls_webdav(remote_path)
-                if cls._parse_weight_filename(x)[0] is not None
-            ]
+            try:
+                remote_list = seisbench.util.ls_webdav(remote_path)
+
+                weights += [
+                    cls._parse_weight_filename(x)[0]
+                    for x in remote_list
+                    if cls._parse_weight_filename(x)[0] is not None
+                ]
+
+            except ValueError as e:
+                if "code 404" in str(e):
+                    weights = []
+
+                else:
+                    raise e
 
         # Unique
         weights = sorted(list(set(weights)))
