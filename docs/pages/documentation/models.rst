@@ -57,6 +57,14 @@ Depth phase models
     :undoc-members:
     :show-inheritance:
 
+DKPN
+-----------------------------------
+
+.. autoclass:: seisbench.models.dkpn.DKPN
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 EQTransformer
 -----------------------------------
 
