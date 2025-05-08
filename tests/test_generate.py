@@ -1101,6 +1101,22 @@ def test_colums_to_dict_and_labels(model_labels):
     assert label_ids == {"p": 0, "s": 1, "Noise": 2}
 
 
+def test_colums_to_dict_and_labels_warning(caplog):
+    with caplog.at_level("WARNING"):
+        seisbench.generate.labeling.PickLabeller._columns_to_dict_and_labels(
+            ["trace_p_arrival_sample", "trace_s_arrival_sample"]
+        )
+
+    assert "Found key in labeler" not in caplog.text
+
+    with caplog.at_level("WARNING"):
+        seisbench.generate.labeling.PickLabeller._columns_to_dict_and_labels(
+            ["trace_p_arrival_sample_xyz", "trace_s_arrival_sample"]
+        )
+
+    assert "Found key in labeler" in caplog.text
+
+
 @pytest.mark.parametrize(
     "noise_column",
     [True, False],
