@@ -333,6 +333,10 @@ class SeisDAE(DeepDenoiser):
 
     _annotate_args = WaveformModel._annotate_args.copy()
     _annotate_args["overlap"] = (_annotate_args["overlap"][0], 1500)
+    _annotate_args["blinding"] = (
+        "Number of prediction samples to discard on each side of each window prediction",
+        (0, 0),
+    )
 
     def __init__(
         self,
@@ -638,6 +642,15 @@ class SeisDAE(DeepDenoiser):
             nfft=self.nfft,
             nperseg=self.nperseg,
         )
+
+        # Apply blinding
+        prenan, postnan = argdict.get(
+            "blinding", self._annotate_args.get("blinding")[1]
+        )
+        if prenan > 0:
+            denoised_signal[:, :prenan] = np.nan
+        if postnan > 0:
+            denoised_signal[:, -postnan:] = np.nan
 
         return (
             denoised_signal * self.norm_factors[:, None]
