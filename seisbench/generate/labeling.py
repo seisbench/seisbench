@@ -875,8 +875,8 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         # Cutting noise to same length as x
         if len(n) - len(x) < 0:
             msg = (
-                f"The length of the data ({len(x)}) and the noise ({len(n)}) must either be the same or the "
-                f"shape of the noise must be larger than the shape of the data."
+                f"The length of the data ({len(x)} samples) and the noise ({len(n)} samples) must either be the same "
+                f"or the shape of the noise must be larger than the shape of the data."
             )
             raise ValueError(msg)
 
