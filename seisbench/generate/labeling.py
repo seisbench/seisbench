@@ -195,6 +195,12 @@ class PickLabeller(SupervisedLabeller, ABC):
 
         labels = sorted(list(np.unique(list(label_columns.values()))))
 
+        if any(not x.endswith("_sample") for x in label_columns.keys()):
+            seisbench.logger.warning(
+                f"Found key in labeler that does not end in '_sample'. "
+                f"If your dataset uses automatic resampling, the label position might be wrong."
+            )
+
         if model_labels:
             label_ids = {
                 label: [*model_labels].index(label) for label in labels

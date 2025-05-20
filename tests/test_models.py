@@ -589,6 +589,7 @@ def test_reassemble_blocks_array():
 
     trace_stats = obspy.read()[0].stats
 
+    t0 = UTCDateTime()
     out = []
     argdict = {"stride": 100, "sampling_rate": 100}
     buffer = defaultdict(list)
@@ -596,7 +597,7 @@ def test_reassemble_blocks_array():
     starts = [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200, 8100, 9000, 9001]
 
     for i in range(12):
-        elem = (np.ones((1000, 3)), (0, starts[i], 12, trace_stats, 0))
+        elem = (np.ones((1000, 3)), (t0, starts[i], 12, trace_stats, 0))
         out_elem = dummy._reassemble_blocks_array(elem, buffer, argdict)
         if out_elem is not None:
             out += [out_elem[0]]
@@ -612,6 +613,7 @@ def test_reassemble_blocks_array_stack_options():
         component_order="ZNE", in_samples=1000, sampling_rate=100, pred_sample=(0, 1000)
     )
 
+    t0 = UTCDateTime()
     trace_stats = obspy.read()[0].stats
 
     for stacking in {"max", "avg"}:
@@ -622,7 +624,7 @@ def test_reassemble_blocks_array_stack_options():
         starts = [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200, 8100, 9000, 9001]
 
         for i in range(12):
-            elem = (np.ones((1000, 3)) + i, (0, starts[i], 12, trace_stats, 0))
+            elem = (np.ones((1000, 3)) + i, (t0, starts[i], 12, trace_stats, 0))
             out_elem = dummy._reassemble_blocks_array(elem, buffer, argdict)
             if out_elem is not None:
                 out += [out_elem[0]]
@@ -1704,6 +1706,30 @@ def test_list_pretrained(tmp_path):
                 ) == {"bla": "123", "test": "123", "foo": "123"}
 
 
+def test_list_pretrained404(tmp_path):
+    with patch("seisbench.models.GPD._model_path") as model_path:
+        model_path.return_value = tmp_path
+
+        def raise404(*args, **kwargs):
+            raise ValueError(f"Invalid URL. Request returned status code 404.")
+
+        with patch("seisbench.util.ls_webdav") as ls_webdav:
+            ls_webdav.side_effect = raise404
+
+            assert (
+                seisbench.models.GPD.list_pretrained(details=False, remote=True) == []
+            )
+
+        def raise505(*args, **kwargs):
+            raise ValueError(f"Invalid URL. Request returned status code 505.")
+
+        with patch("seisbench.util.ls_webdav") as ls_webdav:
+            ls_webdav.side_effect = raise505
+
+            with pytest.raises(ValueError):
+                seisbench.models.GPD.list_pretrained(details=False, remote=True)
+
+
 def test_get_latest_docstring(tmp_path):
     with patch("seisbench.models.GPD._model_path") as model_path:
         model_path.return_value = tmp_path
@@ -2504,3 +2530,32 @@ def test_annotate_obstransformer():
     assert isinstance(output, sbu.ClassifyOutput)
     assert isinstance(output.picks, sbu.PickList)
     assert output.creator == model.name
+
+
+def test_fractional_sample_handling():
+    t0 = UTCDateTime("2000-01-01 00:00:00")
+    common_metadata = {
+        "network": "XX",
+        "station": "YYY",
+        "location": "",
+        "sampling_rate": 100,
+    }
+    stream = obspy.Stream(
+        [
+            obspy.Trace(
+                np.ones(10000),
+                header={
+                    "starttime": t0 + i / 1000.0,
+                    "channel": f"HH{c}",
+                    **common_metadata,
+                },
+            )
+            for i, c in enumerate("ZNE")
+        ]
+    )
+
+    model = seisbench.models.PhaseNet(sampling_rate=100)
+
+    ann = model.annotate(stream, blinding=(0, 0))
+    for trace in ann:
+        assert trace.stats.starttime == t0 + 1.0 / 1000.0

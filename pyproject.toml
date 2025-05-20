@@ -26,9 +26,7 @@ classifiers = [
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
 ]
 dependencies = [
-    # < 2 pinning is required for obspy (https://github.com/obspy/obspy/issues/3484)
-    # remove once fixed with obspy 1.5
-    "numpy>=1.21.6, <2.0",
+    "numpy>=1.21.6",
     "pandas>=1.1",
     "h5py>=3.1",
     "obspy>=1.3.1",
@@ -44,7 +42,7 @@ include = ["seisbench*"]
 
 [project.optional-dependencies]
 development = ["flake8", "black", "isort", "pre-commit"]
-tests = ["pytest", "pytest-asyncio"]
+tests = ["pytest"]
 
 [tool.setuptools_scm]
 

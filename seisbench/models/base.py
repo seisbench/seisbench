@@ -324,11 +324,21 @@ class SeisBenchModel(nn.Module):
 
         if remote:
             remote_path = cls._remote_path()
-            weights += [
-                cls._parse_weight_filename(x)[0]
-                for x in seisbench.util.ls_webdav(remote_path)
-                if cls._parse_weight_filename(x)[0] is not None
-            ]
+            try:
+                remote_list = seisbench.util.ls_webdav(remote_path)
+
+                weights += [
+                    cls._parse_weight_filename(x)[0]
+                    for x in remote_list
+                    if cls._parse_weight_filename(x)[0] is not None
+                ]
+
+            except ValueError as e:
+                if "code 404" in str(e):
+                    weights = []
+
+                else:
+                    raise e
 
         # Unique
         weights = sorted(list(set(weights)))
@@ -1228,21 +1238,21 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         Reassembles array predictions into numpy arrays.
         """
-        overlap = self._argdict_get_with_default(argdict, "overlap")
-        stack_method = self._argdict_get_with_default(
-            argdict, "stacking"
-        ).lower()  # This is a breaking change for v 0.3 - see PR#99
-        assert (
-            stack_method in self._stack_options
-        ), f"Stacking method {stack_method} unknown. Known options are: {self._stack_options}"
         window, metadata = elem
         t0, s, len_starts, stations, bucket_id = metadata
-        key = f"{t0}_{'__'.join(stations)}"
+        key = (t0.timestamp, "__".join(stations))
         buffer[key].append(elem)
 
         output = None
 
         if len(buffer[key]) == len_starts:
+            overlap = self._argdict_get_with_default(argdict, "overlap")
+            stack_method = self._argdict_get_with_default(
+                argdict, "stacking"
+            ).lower()  # This is a breaking change for v 0.3 - see PR#99
+            assert (
+                stack_method in self._stack_options
+            ), f"Stacking method {stack_method} unknown. Known options are: {self._stack_options}"
             preds = [(s, window) for window, (_, s, _, _, _) in buffer[key]]
             preds = sorted(
                 preds, key=lambda x: x[0]
@@ -1262,22 +1272,20 @@ class WaveformModel(SeisBenchModel, ABC):
             pred_length = int(
                 np.ceil((np.max(starts) + self.in_samples) * prediction_sample_factor)
             )
-            pred_merge = (
-                np.zeros_like(
-                    preds[0],
-                    shape=(
-                        preds[0].shape[0],
-                        pred_length,
-                        preds[0].shape[-1],
-                        coverage,
-                    ),
-                )
-                * np.nan
+            pred_merge = np.full_like(
+                preds[0],
+                np.nan,
+                shape=(
+                    coverage,
+                    preds[0].shape[0],
+                    pred_length,
+                    preds[0].shape[-1],
+                ),
             )
             for i, (pred, start) in enumerate(zip(preds, starts)):
                 pred_start = int(start * prediction_sample_factor)
                 pred_merge[
-                    :, pred_start : pred_start + pred.shape[1], :, i % coverage
+                    i % coverage, :, pred_start : pred_start + pred.shape[1], :
                 ] = pred
 
             with warnings.catch_warnings():
@@ -1285,10 +1293,10 @@ class WaveformModel(SeisBenchModel, ABC):
                     warnings.filterwarnings(
                         action="ignore", message="Mean of empty slice"
                     )
-                    preds = bn.nanmean(pred_merge, axis=-1)
+                    preds = bn.nanmean(pred_merge, axis=0)
                 elif stack_method == "max":
                     warnings.filterwarnings(action="ignore", message="All-NaN")
-                    preds = bn.nanmax(pred_merge, axis=-1)
+                    preds = bn.nanmax(pred_merge, axis=0)
                 # Case of stack_method not in avg or max is caught by assert above
 
             if self._grouping.grouping == "channel":
@@ -1395,10 +1403,13 @@ class WaveformModel(SeisBenchModel, ABC):
         Add fake dimensions to make pred shape (stations, samples, channels)
         """
         if self._grouping.grouping == "instrument":
-            pred = np.expand_dims(pred, 0)
+            return pred[None]
         if self._grouping.grouping == "channel":
-            pred = np.expand_dims(np.expand_dims(pred, -1), 0)
-        return pred
+            return pred[None, ..., None]
+        raise NotImplementedError(
+            f"Grouping {self._grouping.grouping} not implemented. "
+            "Please use 'instrument' or 'channel'."
+        )
 
     def annotate_stream_pre(self, stream, argdict):
         """
@@ -1775,6 +1786,7 @@ class WaveformModel(SeisBenchModel, ABC):
             (len(stations), len(component_order), int((t1 - t0) * sampling_rate + 2))
         )  # +2 avoids fractional errors
 
+        t_offsets = []
         for trace in stream:
             p = int((trace.stats.starttime - t0) * sampling_rate)
             if trace.id[-1] not in comp_dict:
@@ -1782,6 +1794,10 @@ class WaveformModel(SeisBenchModel, ABC):
             comp_idx = comp_dict[trace.id[-1]]
             sta_idx = station_dict[get_station_key(trace)]
             data[sta_idx, comp_idx, p : p + len(trace.data)] = trace.data
+
+            t_offsets.append(trace.stats.get("t_offset", 0.0))
+
+        t0 += np.mean(t_offsets)
 
         data = data[:, :, :-1]  # Remove fractional error +1
         if self._grouping.grouping == "channel":
@@ -2380,6 +2396,9 @@ class GroupingHelper:
         """
         Shifts the starttime of every member to a valid fractional second according to the sampling rate.
         Assumes there is a hypothetical sample at UTCDateTime(0).
+        This alignment is required for the downstream trace matching to work.
+        The offset is written to the trace stats at ``t_offset``, such that
+        ``true_starttime = fix_starttime + t_offset``.
 
         For example, at 20 Hz sampling rate:
         0.05 is okay
@@ -2389,6 +2408,11 @@ class GroupingHelper:
             ts = trace.stats.starttime.timestamp
             ts *= trace.stats.sampling_rate
             ts = np.round(ts) / trace.stats.sampling_rate
+
+            trace.stats.t_offset = (
+                trace.stats.starttime.timestamp - ts
+            )  # How much we offset the data
+
             trace.stats.starttime = obspy.UTCDateTime(ts)
 
     def _get_intervals(

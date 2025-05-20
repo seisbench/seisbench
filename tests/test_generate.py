@@ -1101,6 +1101,22 @@ def test_colums_to_dict_and_labels(model_labels):
     assert label_ids == {"p": 0, "s": 1, "Noise": 2}
 
 
+def test_colums_to_dict_and_labels_warning(caplog):
+    with caplog.at_level("WARNING"):
+        seisbench.generate.labeling.PickLabeller._columns_to_dict_and_labels(
+            ["trace_p_arrival_sample", "trace_s_arrival_sample"]
+        )
+
+    assert "Found key in labeler" not in caplog.text
+
+    with caplog.at_level("WARNING"):
+        seisbench.generate.labeling.PickLabeller._columns_to_dict_and_labels(
+            ["trace_p_arrival_sample_xyz", "trace_s_arrival_sample"]
+        )
+
+    assert "Found key in labeler" in caplog.text
+
+
 @pytest.mark.parametrize(
     "noise_column",
     [True, False],
@@ -2390,3 +2406,33 @@ def test_probabilistic_labeller_labels():
         label_columns=["trace_P_arrival_sample"],
         model_labels=["NA", "P", "pS", "PKIKP"],
     )
+
+
+def test_clean_state_dict_type_check():
+    state_dict = {}
+    generator = seisbench.generate.GenericGenerator(None)
+    generator._clean_state_dict(state_dict)  # Passes without issue
+
+    state_dict = {
+        "X": (np.ones(10), {"a": 1}),
+        "y": (np.ones(10), None),
+    }
+    generator._clean_state_dict(state_dict)  # Passes without issue
+
+    state_dict = {
+        "X": np.ones(10),
+    }
+    with pytest.raises(ValueError):
+        generator._clean_state_dict(state_dict)  # Missing metadata
+
+    state_dict = {
+        "X": np.ones(2),
+    }
+    with pytest.raises(ValueError):
+        generator._clean_state_dict(state_dict)  # Invalid entry but of length 2
+
+    state_dict = {
+        "X": (np.ones(10), "Not a dict"),
+    }
+    with pytest.raises(ValueError):
+        generator._clean_state_dict(state_dict)  # Invalid metadata entry

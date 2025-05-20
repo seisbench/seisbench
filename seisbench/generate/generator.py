@@ -85,9 +85,22 @@ class GenericGenerator(Dataset):
         return {"X": self.dataset.get_sample(idx)}
 
     def _clean_state_dict(self, state_dict):
-        # Remove all metadata from the output
-        state_dict = {k: v[0] for k, v in state_dict.items()}
-        return state_dict
+        cleaned_state_dict = {}
+
+        for k, v in state_dict.items():
+            if isinstance(v, tuple) and len(v) == 2:
+                metadata = v[1]
+                if isinstance(metadata, dict) or metadata is None:
+                    # Remove all metadata from the output
+                    cleaned_state_dict[k] = v[0]
+                else:
+                    raise ValueError(f"Metadata for key '{k}' is not a dict or None.")
+            else:
+                raise ValueError(
+                    f"Value for key '{k}' does not follow the scheme (data, metadata)."
+                )
+
+        return cleaned_state_dict
 
 
 class SteeredGenerator(GenericGenerator):
