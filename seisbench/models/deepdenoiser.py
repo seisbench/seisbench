@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from scipy.signal import istft, stft
 
 from ..util.torch_helpers import (
+    min_max_normalization,
     output_shape_conv2d_layers,
     padding_transpose_conv2d_layers,
 )
@@ -363,6 +364,7 @@ class SeisDAE(DeepDenoiser):
             "Seismic signal denoising and decomposition using deep neural networks. "
             "IEEE Transactions on Geoscience and Remote Sensing, 57.11(2019), 9476 - 9488. "
             "https://doi.org/10.1109/TGRS.2019.2926772"
+            " "
             "Heuel, J., & Friederich, W. (2022). "
             "Suppression of wind turbine noise from seismological data using nonlinear thresholding "
             "and denoising autoencoder. "
@@ -523,6 +525,7 @@ class SeisDAE(DeepDenoiser):
             self.up_branch.append(nn.ModuleList([conv_up, bn1, conv_same, bn2]))
 
             # Setting up attention layers (also if self.attention is False)
+            # During the forward pass the attention layer is only applied if self.attention is True
             self.attention_gates.append(
                 AttentionGate(
                     in_channels=filters,
@@ -594,9 +597,9 @@ class SeisDAE(DeepDenoiser):
             nperseg=self.nperseg,
         )
 
-        # Normalize STFT
-        noisy_stft_real = noisy_stft.real / np.max(np.abs(noisy_stft.real))
-        noisy_stft_imag = noisy_stft.imag / np.max(np.abs(noisy_stft.imag))
+        # Min-max normalize STFT
+        noisy_stft_real = min_max_normalization(x=noisy_stft.real)
+        noisy_stft_imag = min_max_normalization(x=noisy_stft.imag)
 
         noisy_input = torch.stack(
             tensors=[torch.Tensor(noisy_stft_real), torch.Tensor(noisy_stft_imag)],
@@ -627,11 +630,7 @@ class SeisDAE(DeepDenoiser):
         self, batch: torch.Tensor, piggyback: Any, argdict: dict[str, Any]
     ) -> torch.Tensor:
         """
-
-        :param batch:
-        :param piggyback:
-        :param argdict:
-        :return:
+        Does postprocessing when predicted datasets
         """
         # Multiply piggyback (noisy signal) with batch (predicted mask)
         signal_stft = piggyback * batch.numpy()[:, 0, :]

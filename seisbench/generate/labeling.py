@@ -10,6 +10,8 @@ from scipy.signal import stft
 import seisbench
 from seisbench import config
 
+from ..util.torch_helpers import min_max_normalization
+
 
 class SupervisedLabeller(ABC):
     """
@@ -941,8 +943,12 @@ class STFTDenoiserLabeller(SupervisedLabeller):
             shape=(2, *stft_n.shape)
         )  # Target, i.e. masks for signal and noise
 
-        X[0, :, :] = stft_noisy.real / (np.max(np.abs(stft_noisy.real)) + self.eps)
-        X[1, :, :] = stft_noisy.imag / (np.max(np.abs(stft_noisy.imag)) + self.eps)
+        X[0, :, :] = min_max_normalization(
+            x=stft_noisy.real, eps=self.eps
+        )  # Min-max normalize real input
+        X[1, :, :] = min_max_normalization(
+            x=stft_noisy.imag, eps=self.eps
+        )  # Min-max normalize imag input
         y[0, :, :] = 1 / (1 + np.abs(stft_n) / (np.abs(stft_x) + self.eps))
         y[1, :, :] = 1 - y[0, :, :]
 

@@ -65,3 +65,14 @@ def padding_transpose_conv2d_layers(
         padding[idx] = int(pad)
 
     return tuple(padding)
+
+
+def min_max_normalization(x: np.array, eps: float = 1e-10) -> np.array:
+    """
+    Min-max normalize a numpy array, i.e. values are in the range [0, 1].
+
+    :param x: numpy array of arbitrary shape
+    :param eps: Float to avoid division by zeros
+    :return: min-max normalized input array
+    """
+    return (x - np.min(x)) / (np.max(x) - np.min(x) + eps)
