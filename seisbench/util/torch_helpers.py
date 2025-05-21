@@ -76,3 +76,15 @@ def min_max_normalization(x: np.array, eps: float = 1e-10) -> np.array:
     :return: min-max normalized input array
     """
     return (x - np.min(x)) / (np.max(x) - np.min(x) + eps)
+
+
+def z_score_normalization(x: np.array) -> np.array:
+    """
+    Normalize data by z-score
+    .. math::
+        \frax{x - \mu}{\sigma}
+
+    :param x: numpy array of arbitrary shape
+    :return: normalized input array using z-score
+    """
+    return (x - np.mean(x)) / np.std(x)

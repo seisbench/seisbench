@@ -10,7 +10,7 @@ from scipy.signal import stft
 import seisbench
 from seisbench import config
 
-from ..util.torch_helpers import min_max_normalization
+from ..util.torch_helpers import min_max_normalization, z_score_normalization
 
 
 class SupervisedLabeller(ABC):
@@ -790,6 +790,11 @@ class STFTDenoiserLabeller(SupervisedLabeller):
                   (see scaling_type). Default value is (0, 1).
     :param scaling_type: Method how to find the relative amplitude of the input array. Either from the absolute maximum
                          (peak) or from the standard deviation (std). Default is peak.
+    :param normalization: Method how to normalize the input time-frequency representations. Either using 'min-max'
+                          normalization (normalizes to range [0, 1]) or 'z-score' normalization by subtracting mean
+                          and dividing by standard deviation. The normalization methods are applied separately to
+                          real and imaginary input of the time-frequency representation.
+                          Default is 'z-score'.
     :param component: Component to take into account for training. Default are three components, ZNE.
                       If DeepDenoiser/SeisDAE is only trained with a single component, use e.g., component="Z".
                       Otherwise, DeepDenoiser/SeisDAE is trained with all components, however, noise samples are only
@@ -811,6 +816,7 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         noise_dataset: seisbench.data.base.WaveformDataset,
         scale: tuple[float, float] = (0, 1),
         scaling_type: str = "peak",
+        normalization: str = "z-score",
         component: str = "ZNE",
         nfft: int = 60,
         nperseg: int = 30,
@@ -825,6 +831,7 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         self.noise_dataset = noise_dataset
         self.scale = scale
         self.scaling_type = scaling_type.lower()
+        self.normalization = normalization
         self.key = key
         self.component = component
         self.noise_generator = seisbench.generate.GenericGenerator(noise_dataset)
@@ -836,6 +843,10 @@ class STFTDenoiserLabeller(SupervisedLabeller):
 
         if scaling_type.lower() not in ["std", "peak"]:
             msg = "Argument scaling_type must be either 'std' or 'peak'."
+            raise ValueError(msg)
+
+        if self.normalization.lower() not in ["min-max", "z-score"]:
+            msg = f"Normalization method {self.normalization} is not known. Either use 'min-max' or 'z-score'."
             raise ValueError(msg)
 
     def __call__(self, state_dict):
@@ -943,12 +954,15 @@ class STFTDenoiserLabeller(SupervisedLabeller):
             shape=(2, *stft_n.shape)
         )  # Target, i.e. masks for signal and noise
 
-        X[0, :, :] = min_max_normalization(
-            x=stft_noisy.real, eps=self.eps
-        )  # Min-max normalize real input
-        X[1, :, :] = min_max_normalization(
-            x=stft_noisy.imag, eps=self.eps
-        )  # Min-max normalize imag input
+        # Normalize real and imaginary parts of STFT
+        if self.normalization is "min-max":
+            X[0, :, :] = min_max_normalization(x=stft_noisy.real, eps=self.eps)
+            X[1, :, :] = min_max_normalization(x=stft_noisy.imag, eps=self.eps)
+        elif self.normalization is "z-score":
+            X[0, :, :] = z_score_normalization(stft_noisy.real)
+            X[1, :, :] = z_score_normalization(stft_noisy.imag)
+
+        # Compute target masking function
         y[0, :, :] = 1 / (1 + np.abs(stft_n) / (np.abs(stft_x) + self.eps))
         y[1, :, :] = 1 - y[0, :, :]
 

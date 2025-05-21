@@ -10,6 +10,7 @@ from ..util.torch_helpers import (
     min_max_normalization,
     output_shape_conv2d_layers,
     padding_transpose_conv2d_layers,
+    z_score_normalization,
 )
 from .base import WaveformModel
 
@@ -352,6 +353,7 @@ class SeisDAE(DeepDenoiser):
         activation=torch.relu,
         output_activation=torch.nn.Softmax(dim=1),
         norm: str = "peak",
+        normalization: str = "z-score",
         scale: tuple[float, float] = (0, 1),
         nfft: int = 60,
         nperseg: int = 30,
@@ -396,6 +398,7 @@ class SeisDAE(DeepDenoiser):
         self.activation = activation
         self.output_activation = output_activation
         self.norm = norm
+        self.normalization = normalization
         self.scale = scale
         self.norm_factors = None
         self.attention = attention
@@ -597,9 +600,13 @@ class SeisDAE(DeepDenoiser):
             nperseg=self.nperseg,
         )
 
-        # Min-max normalize STFT
-        noisy_stft_real = min_max_normalization(x=noisy_stft.real)
-        noisy_stft_imag = min_max_normalization(x=noisy_stft.imag)
+        # Normalize real and imaginary input either by min-max or z-score
+        if self.normalization is "min-max":
+            noisy_stft_real = min_max_normalization(x=noisy_stft.real)
+            noisy_stft_imag = min_max_normalization(x=noisy_stft.imag)
+        elif self.normalization is "z-score":
+            noisy_stft_real = z_score_normalization(x=noisy_stft.real)
+            noisy_stft_imag = z_score_normalization(x=noisy_stft.imag)
 
         noisy_input = torch.stack(
             tensors=[torch.Tensor(noisy_stft_real), torch.Tensor(noisy_stft_imag)],
@@ -613,6 +620,9 @@ class SeisDAE(DeepDenoiser):
         return noisy_input, noisy_stft
 
     def _normalize_trace(self, batch: torch.Tensor):
+        """
+        Normalize each trace and save norm factors to scale back denoised traces.
+        """
         for trace_id in range(batch.shape[0]):
             batch[trace_id, :] -= torch.mean(input=batch[trace_id, :])  # Demean trace
             if self.norm == "peak":
@@ -659,6 +669,7 @@ class SeisDAE(DeepDenoiser):
         model_args = super().get_model_args()
         model_args["sampling_rate"] = self.sampling_rate
         model_args["norm"] = self.norm
+        model_args["normalization"] = self.normalization
         model_args["in_samples"] = self.in_samples
         model_args["nfft"] = self.nfft
         model_args["nperseg"] = self.nperseg
