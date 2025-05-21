@@ -601,10 +601,10 @@ class SeisDAE(DeepDenoiser):
         )
 
         # Normalize real and imaginary input either by min-max or z-score
-        if self.normalization is "min-max":
+        if self.normalization == "min-max":
             noisy_stft_real = min_max_normalization(x=noisy_stft.real)
             noisy_stft_imag = min_max_normalization(x=noisy_stft.imag)
-        elif self.normalization is "z-score":
+        elif self.normalization == "z-score":
             noisy_stft_real = z_score_normalization(x=noisy_stft.real)
             noisy_stft_imag = z_score_normalization(x=noisy_stft.imag)
 
