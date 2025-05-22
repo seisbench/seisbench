@@ -12,18 +12,18 @@ import seisbench.util as sbu
 from .base import Conv1dSame, WaveformModel, _cache_migration_v0_v3
 
 
-class skynet(WaveformModel):
+class Skynet(WaveformModel):
     """
-    .. document_args:: seisbench.models skynet regional picker
+    .. document_args:: seisbench.models Skynet 
     """
 
     _annotate_args = WaveformModel._annotate_args.copy()
-    _annotate_args["*_threshold"] = ("Detection threshold for the provided phase", 0.3)
+    _annotate_args["*_threshold"] = ("Detection threshold for the provided phase", 0.5)
     _annotate_args["blinding"] = (
         "Number of prediction samples to discard on each side of each window prediction",
         (0, 0),
     )
-    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 1500)
+    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 15000)
 
 
     def __init__(
@@ -32,8 +32,7 @@ class skynet(WaveformModel):
         classes=3,
         phases="PSN",
         sampling_rate=100,
-        norm="peak"
-        filter_factor: int=1,
+        norm="peak",
         **kwargs,
     ):
         citation = (
@@ -58,20 +57,11 @@ class skynet(WaveformModel):
         self.in_channels = in_channels
         self.classes = classes
         self.norm = norm
-        self.filter_factor = filter_factor
-        self.depth = 5
-        self.kernel_size = 7
-        self.stride = 4
-        self.filters_root = 8
-        self.activation = torch.relu
-
+        kernel_size = 7
+        stride = 4
+	
         pad_size = int(kernel_size/2)
 
-        if torch.cuda.is_available():
-            self.device = torch.device("cuda")
-        else:
-            self.device = torch.device("cpu")
-        # do I need to make all variables self.var?
         self.conv1  = nn.Conv1d(in_channels,8,  kernel_size=kernel_size,stride=1,padding='same')
         self.bn1    = nn.BatchNorm1d(num_features=8,eps=1e-3)
         self.conv2  = nn.Conv1d(8,8,  kernel_size=kernel_size,stride=1,padding='same')
@@ -118,11 +108,11 @@ class skynet(WaveformModel):
         self.bnd7    = nn.BatchNorm1d(num_features=8,eps=1e-3)
         self.dconv8  = nn.Conv1d(16,8,kernel_size=kernel_size,stride=1,padding='same')
         self.bnd8    = nn.BatchNorm1d(num_features=8,eps=1e-3)
-        self.dconv9  = nn.Conv1d(8,out_channels,kernel_size=kernel_size,stride=1,padding='same')
+        self.dconv9  = nn.Conv1d(8,classes,kernel_size=kernel_size,stride=1,padding='same')
 
         self.softmax = nn.Softmax(dim=1)
 
-    def forward(self,X):
+    def forward(self,X,logits=False):
 
         X1  = torch.relu(self.bn1(self.conv1(X)))
         X2  = torch.relu(self.bn2(self.conv2(X1)))
@@ -138,7 +128,7 @@ class skynet(WaveformModel):
         X10_a = torch.relu(self.bn11(self.conv11(X10)))
         X10_b = torch.relu(self.bn12(self.conv12(X10_a)))
         X10_c = torch.relu(self.bnd0(self.dconv0(X10_b)))
-        X10_c = torch.cat((X10_c,torch.zeros((X10_c.shape[0],X10_c.shape[1],1),device=self.device)),dim=-1)
+        X10_c = torch.cat((X10_c,torch.zeros((X10_c.shape[0],X10_c.shape[1],1),device=X10_c.device)),dim=-1)
         X10_c = torch.cat((X10,X10_c),dim=1)
         X10_d = torch.relu(self.bnd01(self.dconv01(X10_c)))
         X11 = torch.relu(self.bnd1(self.dconv1(X10_d)))
@@ -147,41 +137,31 @@ class skynet(WaveformModel):
         X13 = torch.relu(self.bnd3(self.dconv3(X12)))
         X14 = torch.relu(self.bnd4(self.dconv4(torch.cat((X13,X6),dim=1))))
         X15 = torch.relu(self.bnd5(self.dconv5(X14)))
-        X15 = torch.cat((X15,torch.zeros((X15.shape[0],X15.shape[1],1),device=self.device)),dim=2)
+        X15 = torch.cat((X15,torch.zeros((X15.shape[0],X15.shape[1],1),device=X15.device)),dim=2)
         X16 = torch.relu(self.bnd6(self.dconv6(torch.cat((X15,X4),dim=1))))
         X17 = torch.relu(self.bnd7(self.dconv7(X16)))
-        X17 = torch.cat((X17,torch.zeros((X17.shape[0],X17.shape[1],1),device=self.device)),dim=2)
+        X17 = torch.cat((X17,torch.zeros((X17.shape[0],X17.shape[1],1),device=X17.device)),dim=2)
         X18 = torch.relu(self.bnd8(self.dconv8(torch.cat((X17,X2),dim=1))))
         X19 = self.dconv9(X18)
         # add the softmax 
-        X20 = self.softmax(X19)
+        #X20 = self.softmax(X19)
+        if logits:
+            return X19
+        else:
+            return self.softmax(X19)
 
-        return X20
-
-
-    @staticmethod
-    def _merge_skip(skip, x):
-        offset = (x.shape[-1] - skip.shape[-1]) // 2
-        x_resize = x[:, :, offset : offset + skip.shape[-1]]
-
-        return torch.cat([skip, x_resize], dim=1)
 
     def annotate_batch_pre(
         self, batch: torch.Tensor, argdict: dict[str, Any]
     ) -> torch.Tensor:
         batch = batch - batch.mean(axis=-1, keepdims=True)
-        if self.norm_detrend:
-            batch = sbu.torch_detrend(batch)
-        if self.norm_amp_per_comp:
-            peak = batch.abs().max(axis=-1, keepdims=True)[0]
+        if self.norm == "std":
+            #std = batch.std(axis=(-1,-2), keepdims=True)
+            std = batch.std(axis=-1, keepdims=True).mean(axis=-2, keepdims=True)
+            batch = batch / (std + 1e-10)
+        elif self.norm == "peak":
+            peak = batch.abs().max(axis=-2, keepdims=True)[0].max(axis=-1, keepdims=True)[0]
             batch = batch / (peak + 1e-10)
-        else:
-            if self.norm == "std":
-                std = batch.std(axis=-1, keepdims=True)
-                batch = batch / (std + 1e-10)
-            elif self.norm == "peak":
-                peak = batch.abs().max(axis=-1, keepdims=True)[0]
-                batch = batch / (peak + 1e-10)
 
         return batch
 
@@ -244,79 +224,6 @@ class skynet(WaveformModel):
         model_args["phases"] = self.labels
         model_args["sampling_rate"] = self.sampling_rate
         model_args["norm"] = self.norm
-        model_args["norm_amp_per_comp"] = self.norm_amp_per_comp
-        model_args["norm_detrend"] = self.norm_detrend
 
         return model_args
-
-    @classmethod
-    def from_pretrained_expand(
-        cls, name, version_str="latest", update=False, force=False, wait_for_file=False
-    ):
-        """
-        Load pretrained model with weights and copy the input channel weights that match the Z component to a new,
-        4th dimension that is used to process the hydrophone component of the input trace.
-
-        For further instructions, see :py:func:`~seisbench.models.base.SeisBenchModel.from_pretrained`. This method
-        differs from :py:func:`~seisbench.models.base.SeisBenchModel.from_pretrained` in that it does not call helper
-        functions to load the model weights. Instead it covers the same logic and, in addition, takes intermediate
-        steps to insert a new `in_channels` dimension to the loaded model and copy weights.
-
-        :param name: Model name prefix.
-        :type name: str
-        :param version_str: Version of the weights to load. Either a version string or "latest". The "latest" model is
-                            the model with the highest version number.
-        :type version_str: str
-        :param force: Force execution of download callback, defaults to False
-        :type force: bool, optional
-        :param update: If true, downloads potential new weights file and config from the remote repository.
-                       The old files are retained with their version suffix.
-        :type update: bool
-        :param wait_for_file: Whether to wait on partially downloaded files, defaults to False
-        :type wait_for_file: bool, optional
-        :return: Model instance
-        :rtype: SeisBenchModel
-        """
-        cls._cleanup_local_repository()
-        _cache_migration_v0_v3()
-
-        if version_str == "latest":
-            versions = cls.list_versions(name, remote=update)
-            # Always query remote versions if cache is empty
-            if len(versions) == 0:
-                versions = cls.list_versions(name, remote=True)
-
-            if len(versions) == 0:
-                raise ValueError(f"No version for weight '{name}' available.")
-            version_str = max(versions, key=version.parse)
-
-        weight_path, metadata_path = cls._pretrained_path(name, version_str)
-
-        cls._ensure_weight_files(
-            name, version_str, weight_path, metadata_path, force, wait_for_file
-        )
-
-        if metadata_path.is_file():
-            with open(metadata_path, "r") as f:
-                weights_metadata = json.load(f)
-        else:
-            weights_metadata = {}
-        model_args = weights_metadata.get("model_args", {})
-        model_args["in_channels"] = 4
-        cls._check_version_requirement(weights_metadata)
-        model = cls(**model_args)
-
-        model._weights_metadata = weights_metadata
-        model._parse_metadata()
-
-        state_dict = torch.load(weight_path)
-        old_weight = state_dict["inc.weight"]
-        state_dict["inc.weight"] = torch.zeros(
-            old_weight.shape[0], old_weight.shape[1] + 1, old_weight.shape[2]
-        ).type_as(old_weight)
-        state_dict["inc.weight"][:, :3, ...] = old_weight
-        state_dict["inc.weight"][:, 3, ...] = old_weight[:, 0, ...]
-        model.load_state_dict(state_dict)
-        return model
-
 
