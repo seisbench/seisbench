@@ -71,7 +71,7 @@ class skynet(WaveformModel):
             self.device = torch.device("cuda")
         else:
             self.device = torch.device("cpu")
-        # do I need to make all variables sel.var?
+        # do I need to make all variables self.var?
         self.conv1  = nn.Conv1d(in_channels,8,  kernel_size=kernel_size,stride=1,padding='same')
         self.bn1    = nn.BatchNorm1d(num_features=8,eps=1e-3)
         self.conv2  = nn.Conv1d(8,8,  kernel_size=kernel_size,stride=1,padding='same')
