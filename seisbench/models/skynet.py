@@ -32,7 +32,7 @@ class skynet(WaveformModel):
         classes=3,
         phases="PSN",
         sampling_rate=100,
-        norm="std"
+        norm="peak"
         filter_factor: int=1,
         **kwargs,
     ):
