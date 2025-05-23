@@ -24,7 +24,8 @@ class Skynet(WaveformModel):
         (0, 0),
     )
     _annotate_args["overlap"] = (_annotate_args["overlap"][0], 15000)
-
+    _annotate_args["component_order"]="ENZ"
+    _annotate_args["stacking"] = (_annotate_args["stacking"][0], "max")
 
     def __init__(
         self,
