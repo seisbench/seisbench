@@ -476,6 +476,9 @@ class VariableLengthPhaseNet(PhaseNet):
     .. document_args:: seisbench.models VariableLengthPhaseNet
     """
 
+    _annotate_args = PhaseNet._annotate_args.copy()
+    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 0.5)
+
     def __init__(
         self,
         in_samples=600,
@@ -501,7 +504,6 @@ class VariableLengthPhaseNet(PhaseNet):
             citation=citation,
             in_samples=in_samples,
             output_type="array",
-            default_args={"overlap": in_samples // 2},
             pred_sample=(0, in_samples),
             labels=phases,
             sampling_rate=sampling_rate,
