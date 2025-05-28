@@ -73,18 +73,18 @@ GPD
     :undoc-members:
     :show-inheritance:
 
-OBSTransformer
------------------------------------
-
-.. automodule:: seisbench.models.obstransformer
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
 LFEDetect
 -----------------------------------
 
 .. automodule:: seisbench.models.lfe_detect
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+OBSTransformer
+-----------------------------------
+
+.. automodule:: seisbench.models.obstransformer
     :members:
     :undoc-members:
     :show-inheritance:
@@ -101,6 +101,14 @@ PickBlue
 -----------------------------------
 
 .. automodule:: seisbench.models.pickblue
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+Skynet
+-----------------------------------
+
+.. automodule:: seisbench.models.skynet
     :members:
     :undoc-members:
     :show-inheritance:
