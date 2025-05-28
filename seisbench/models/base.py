@@ -725,7 +725,8 @@ class WaveformModel(SeisBenchModel, ABC):
     _annotate_args = {
         "batch_size": ("Batch size for the model", 256),
         "overlap": (
-            "Overlap between prediction windows in samples (only for window prediction models)",
+            "Overlap between prediction windows. Values between 0 and 1 are treated as fractions of the window length. "
+            "Values above 1 a sample counts. (only for window prediction models)",
             0,
         ),
         "stacking": (
@@ -1073,6 +1074,13 @@ class WaveformModel(SeisBenchModel, ABC):
 
             elem = await queue_in.get()
 
+    def _get_overlap(self, argdict):
+        overlap = self._argdict_get_with_default(argdict, "overlap")
+        if overlap < 1:
+            return int(overlap * self.in_samples)
+        else:
+            return overlap
+
     async def _async_predictions_to_streams(self, queue_in, queue_out):
         """
         Wrapper with queue IO functionality around :py:func:`_predictions_to_stream`
@@ -1191,7 +1199,7 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         Cuts numpy arrays into fragments for array prediction models.
         """
-        overlap = self._argdict_get_with_default(argdict, "overlap")
+        overlap = self._get_overlap(argdict)
 
         t0, block, stations = elem
 
@@ -1246,7 +1254,7 @@ class WaveformModel(SeisBenchModel, ABC):
         output = None
 
         if len(buffer[key]) == len_starts:
-            overlap = self._argdict_get_with_default(argdict, "overlap")
+            overlap = self._get_overlap(argdict)
             stack_method = self._argdict_get_with_default(
                 argdict, "stacking"
             ).lower()  # This is a breaking change for v 0.3 - see PR#99

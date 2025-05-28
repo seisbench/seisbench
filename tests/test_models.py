@@ -1008,6 +1008,20 @@ def test_annotate_phasenet(filter_factor):
     assert output.creator == model.name
 
 
+def test_annotate_overlap():
+    # Tests that the annotate function works the same with fractional and sample overlap
+    model = seisbench.models.PhaseNet(
+        sampling_rate=400,
+    )  # Higher sampling rate ensures trace is long enough
+    stream = obspy.read()
+
+    annotations1 = model.annotate(stream, overlap=0.5)
+    annotations2 = model.annotate(stream, overlap=int(0.5 * model.in_samples))
+    assert len(annotations1) == len(annotations2)
+    for t1, t2 in zip(annotations1, annotations2):
+        assert (t1.data == t2.data).all()
+
+
 @pytest.mark.parametrize("output_activation", ["sigmoid", "softmax"])
 @pytest.mark.parametrize("norm", ["std", "peak"])
 @pytest.mark.parametrize("in_samples", [1337, 3001, 6000])
