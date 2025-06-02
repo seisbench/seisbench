@@ -955,10 +955,10 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         )  # Target, i.e. masks for signal and noise
 
         # Normalize real and imaginary parts of STFT
-        if self.normalization is "min-max":
+        if self.normalization == "min-max":
             X[0, :, :] = min_max_normalization(x=stft_noisy.real, eps=self.eps)
             X[1, :, :] = min_max_normalization(x=stft_noisy.imag, eps=self.eps)
-        elif self.normalization is "z-score":
+        elif self.normalization == "z-score":
             X[0, :, :] = z_score_normalization(stft_noisy.real)
             X[1, :, :] = z_score_normalization(stft_noisy.imag)
 
