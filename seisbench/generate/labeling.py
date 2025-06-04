@@ -824,8 +824,6 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         key: tuple[str, str] = ("X", "y"),
         **kwargs,
     ):
-        # TODO: noise should be optional for data sets with noise and signal in one data set
-
         super().__init__(label_type="binary", dim=2)
 
         self.noise_dataset = noise_dataset
