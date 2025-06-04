@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Union
 
 import numpy as np
 import torch
@@ -6,12 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from scipy.signal import istft, stft
 
-from ..util.torch_helpers import (
-    min_max_normalization,
-    output_shape_conv2d_layers,
-    padding_transpose_conv2d_layers,
-    z_score_normalization,
-)
+from ..util.torch_helpers import min_max_normalization, z_score_normalization
 from .base import WaveformModel
 
 
@@ -292,42 +287,109 @@ class UpConvBlock(nn.Module):
 
 
 class AttentionGate(nn.Module):
-    def __init__(self, in_channels, gating_channels, inter_channels):
+    def __init__(
+        self,
+        in_channels_encoder: int,
+        in_channels_decoder: int,
+        inter_channels: int,
+        bias: bool = False,
+    ):
         super().__init__()
-        self.W_x = nn.Conv2d(
-            in_channels=in_channels,
-            out_channels=inter_channels,
-            kernel_size=1,
-            stride=1,
-            padding=0,
-            bias=False,
+        self.W_g = nn.Sequential(
+            nn.Conv2d(
+                in_channels_decoder,
+                inter_channels,
+                kernel_size=1,
+                stride=1,
+                padding=0,
+                bias=bias,
+            ),
+            nn.BatchNorm2d(inter_channels),
         )
-        self.W_g = nn.Conv2d(
-            in_channels=gating_channels,
-            out_channels=inter_channels,
-            kernel_size=1,
-            stride=1,
-            padding=0,
-            bias=False,
+        self.W_x = nn.Sequential(
+            nn.Conv2d(
+                in_channels_encoder,
+                inter_channels,
+                kernel_size=1,
+                stride=1,
+                padding=0,
+                bias=bias,
+            ),
+            nn.BatchNorm2d(inter_channels),
         )
-        self.psi = nn.Conv2d(
-            in_channels=inter_channels,
-            out_channels=1,
-            kernel_size=1,
-            stride=1,
-            padding=0,
-            bias=False,
+        self.psi = nn.Sequential(
+            nn.Conv2d(inter_channels, 1, kernel_size=1, stride=1, padding=0, bias=bias),
+            nn.BatchNorm2d(1),
+            nn.Sigmoid(),
         )
         self.relu = nn.ReLU(inplace=True)
-        self.sigmoid = nn.Sigmoid()
 
-    def forward(self, x, g):
-        x1 = self.W_x(x)
-        g1 = self.W_g(g)
-        psi = self.relu(x1 + g1)
-        psi = self.sigmoid(self.psi(psi))
+    def forward(self, x_encoder, g_decoder):
+        g1 = self.W_g(g_decoder)
+        x1 = self.W_x(x_encoder)
+        psi = self.relu(g1 + x1)
+        psi = self.psi(psi)
 
-        return x * psi
+        return x_encoder * psi  # element-wise gating
+
+
+class ConvBlock(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: Union[int, tuple[int, int]] = 3,
+        stride: Union[int, tuple[int, int]] = 1,
+        drop_rate: float = 0.3,
+        use_bias: bool = False,
+    ):
+        super().__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=1,
+                bias=use_bias,
+            ),
+            nn.BatchNorm2d(num_features=out_channels),
+            nn.ReLU(),
+            nn.Dropout(p=drop_rate),
+        )
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+class TransposeConvBlock(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: Union[int, tuple[int, int]] = 3,
+        stride: Union[int, tuple[int, int]] = 1,
+        drop_rate: float = 0.3,
+        use_bias: bool = False,
+    ):
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.ConvTranspose2d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=1,
+                output_padding=1,
+                bias=use_bias,
+            ),
+            nn.BatchNorm2d(num_features=out_channels),
+            nn.ReLU(),
+            nn.Dropout(drop_rate),
+        )
+
+    def forward(self, x):
+        return self.block(x)
 
 
 class SeisDAE(DeepDenoiser):
@@ -349,9 +411,9 @@ class SeisDAE(DeepDenoiser):
         depth: int = 6,
         kernel_size: tuple[int, int] = (3, 3),
         strides: tuple[int, int] = (2, 2),
-        skip_connections: bool = True,
-        activation=torch.relu,
         output_activation=torch.nn.Softmax(dim=1),
+        drop_rate: float = 0.0,
+        use_bias: bool = False,
         norm: str = "peak",
         normalization: str = "z-score",
         scale: tuple[float, float] = (0, 1),
@@ -394,9 +456,9 @@ class SeisDAE(DeepDenoiser):
         self.depth = depth
         self.kernel_size = kernel_size
         self.stride = strides
-        self.skip_connections = skip_connections
-        self.activation = activation
         self.output_activation = output_activation
+        self.drop_rate = drop_rate
+        self.use_bias = use_bias
         self.norm = norm
         self.normalization = normalization
         self.scale = scale
@@ -434,148 +496,107 @@ class SeisDAE(DeepDenoiser):
         self.default_args["nfft"] = self.nfft
         self.default_args["npserg"] = self.nperseg
 
-        # Initial layer
-        self.inc = nn.Conv2d(
-            in_channels=self.in_channels,
-            out_channels=self.filters_root,
-            kernel_size=self.kernel_size,
-            padding="same",
-        )
-        self.in_bn = nn.BatchNorm2d(num_features=self.filters_root, eps=1e-3)
-
-        # Set up ModuleLists for encoder, decoder and attention gates
-        self.down_branch = nn.ModuleList()
-        self.up_branch = nn.ModuleList()
+        #########################################################################################################
+        self.encoder_blocks = nn.ModuleList()
+        self.down_blocks = nn.ModuleList()
+        self.decoder_blocks = nn.ModuleList()
+        self.up_blocks = nn.ModuleList()
         self.attention_gates = nn.ModuleList()
 
-        # Down branch (Contracting path / Encoder)
-        last_filters = self.filters_root
-        down_shapes = {-1: self.input_shape}
-        for i in range(self.depth):
-            filters = int(2**i * self.filters_root)
-            conv_same = nn.Conv2d(
-                in_channels=last_filters,
-                out_channels=filters,
-                kernel_size=self.kernel_size,
-                padding="same",
-                bias=False,
-            )
-            last_filters = filters
-            bn1 = nn.BatchNorm2d(num_features=filters, eps=1e-3)
-
-            if i == self.depth - 1:
-                conv_down = None
-                bn2 = None
-            else:
-                down_shapes.update(
-                    {
-                        i: output_shape_conv2d_layers(
-                            input_shape=down_shapes[i - 1],
-                            padding=(1, 1),
-                            kernel_size=self.kernel_size,
-                            stride=self.stride,
-                        )
-                    }
+        # Encoder
+        for i in range(depth):
+            out_channels = 2**i * self.filters_root
+            self.encoder_blocks.append(
+                ConvBlock(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    kernel_size=self.kernel_size,
+                    drop_rate=self.drop_rate,
+                    use_bias=self.use_bias,
                 )
-                conv_down = nn.Conv2d(
-                    in_channels=filters,
-                    out_channels=filters,
+            )
+            if i < depth - 1:
+                self.down_blocks.append(
+                    ConvBlock(
+                        in_channels=out_channels,
+                        out_channels=out_channels,
+                        kernel_size=self.kernel_size,
+                        stride=self.stride,
+                        drop_rate=self.drop_rate,
+                        use_bias=self.use_bias,
+                    )
+                )
+            in_channels = out_channels
+
+        # Decoder
+        for i in range(depth - 2, -1, -1):
+            in_channels = 2 ** (i + 1) * self.filters_root
+            out_channels = 2**i * self.filters_root
+            self.up_blocks.append(
+                TransposeConvBlock(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
                     kernel_size=self.kernel_size,
                     stride=self.stride,
-                    padding=(1, 1),
-                    bias=False,
+                    drop_rate=self.drop_rate,
+                    use_bias=self.use_bias,
                 )
-                bn2 = nn.BatchNorm2d(filters, eps=1e-3)
-
-            self.down_branch.append(nn.ModuleList([conv_same, bn1, conv_down, bn2]))
-
-        # Up branch (Expansive path / Decoder)
-        for i in range(self.depth - 2, -1, -1):
-            filters = int(2**i * self.filters_root)
-
-            padding = padding_transpose_conv2d_layers(
-                input_shape=down_shapes[i],
-                output_shape=down_shapes[i - 1],
-                kernel_size=self.kernel_size,
-                stride=self.stride,
             )
-
-            conv_up = nn.ConvTranspose2d(
-                in_channels=last_filters,
-                out_channels=filters,
-                kernel_size=self.kernel_size,
-                stride=self.stride,
-                padding=padding,
-                bias=False,
-            )
-            last_filters = filters
-            bn1 = nn.BatchNorm2d(filters, eps=1e-3)
-
-            if self.skip_connections:
-                in_channels_conv_same = int(2 ** (i + 1) * self.filters_root)
-            else:
-                in_channels_conv_same = filters
-
-            conv_same = nn.Conv2d(
-                in_channels=in_channels_conv_same,
-                out_channels=filters,
-                kernel_size=self.kernel_size,
-                padding="same",
-                bias=False,
-            )
-            bn2 = nn.BatchNorm2d(filters, eps=1e-3)
-
-            self.up_branch.append(nn.ModuleList([conv_up, bn1, conv_same, bn2]))
-
-            # Setting up attention layers (also if self.attention is False)
-            # During the forward pass the attention layer is only applied if self.attention is True
             self.attention_gates.append(
                 AttentionGate(
-                    in_channels=filters,
-                    gating_channels=last_filters,
-                    inter_channels=filters // 2,
+                    in_channels_encoder=out_channels,
+                    in_channels_decoder=out_channels,
+                    inter_channels=out_channels // 2,
+                )
+            )
+            self.decoder_blocks.append(
+                ConvBlock(
+                    in_channels=out_channels,
+                    out_channels=out_channels,
+                    kernel_size=self.kernel_size,
+                    drop_rate=self.drop_rate,
+                    use_bias=self.use_bias,
                 )
             )
 
-        # Final layer
-        self.out = nn.Conv2d(
-            in_channels=last_filters,
-            out_channels=self.in_channels,
-            kernel_size=(1, 1),
-            padding="same",
+        self.output_conv = nn.Conv2d(
+            in_channels=self.filters_root, out_channels=self.in_channels, kernel_size=1
         )
 
     def forward(self, x):
-        x = self.activation(self.in_bn(self.inc(x)))
+        enc_features = []  # List to store encoder feature for skip connections
 
-        skip_connections = []
-        for i, (conv_same, bn1, conv_down, bn2) in enumerate(self.down_branch):
-            x = self.activation(bn1(conv_same(x)))
-            if conv_down is not None:
-                skip_connections.append(x)
-                x = self.activation(bn2(conv_down(x)))
+        # Encoder
+        for i in range(self.depth):
+            x = self.encoder_blocks[i](x)
+            enc_features.append(x)
+            if i < self.depth - 1:
+                x = self.down_blocks[i](x)
 
-        for i, ((conv_up, bn1, conv_same, bn2), att_gate, skip) in enumerate(
-            zip(self.up_branch, self.attention_gates, skip_connections[::-1])
-        ):
-            x = self.activation(bn1(conv_up(x)))
+        # Decoder
+        for i in range(self.depth - 2, -1, -1):
+            x = self.up_blocks[self.depth - 2 - i](x)
 
-            # Crop x to correct size as given from down branch
-            x = self.crop(x, skip)
+            # Pad if needed to match encoder feature size
+            diff_y = enc_features[i].size(2) - x.size(2)
+            diff_x = enc_features[i].size(3) - x.size(3)
+            x = F.pad(
+                x,
+                [diff_x // 2, diff_x - diff_x // 2, diff_y // 2, diff_y - diff_y // 2],
+            )
 
-            # Add skip connections and attention gates, if self.attention is True
-            if self.skip_connections:
-                if self.attention:
-                    skip = att_gate(skip, x)
-                x = torch.cat([skip, x], dim=1)  # Skip connections (concatenation)
+            if self.attention:  # Apply attention gate to encoder feature
+                skip = self.attention_gates[self.depth - 2 - i](enc_features[i], x)
+                x = x + skip  # gated skip connection
+            else:  # No attention gate
+                x = x + enc_features[i]  # Skip connection
+            x = self.decoder_blocks[self.depth - 2 - i](x)
 
-            x = self.activation(bn2(conv_same(x)))
+        x = self.output_conv(x)
 
         # Apply out activation function
         if self.output_activation:
-            x = self.output_activation(self.out(x))
-        else:
-            x = self.out(x)
+            x = self.output_activation(x)
 
         return x
 
