@@ -6,7 +6,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from scipy.signal import istft, stft
 
-from ..util.torch_helpers import min_max_normalization, z_score_normalization
 from .base import WaveformModel
 
 
@@ -415,7 +414,6 @@ class SeisDAE(DeepDenoiser):
         drop_rate: float = 0.0,
         use_bias: bool = False,
         norm: str = "peak",
-        normalization: str = "z-score",
         scale: tuple[float, float] = (0, 1),
         nfft: int = 60,
         nperseg: int = 30,
@@ -449,8 +447,8 @@ class SeisDAE(DeepDenoiser):
             **kwargs,
         )
 
-        self.in_samples = in_samples  # XXX not necessary
-        self.sampling_rate = sampling_rate  # XXX not necessary
+        self.in_samples = in_samples
+        self.sampling_rate = sampling_rate
         self.in_channels = in_channels
         self.filters_root = filters_root
         self.depth = depth
@@ -460,7 +458,6 @@ class SeisDAE(DeepDenoiser):
         self.drop_rate = drop_rate
         self.use_bias = use_bias
         self.norm = norm
-        self.normalization = normalization
         self.scale = scale
         self.norm_factors = None
         self.attention = attention
@@ -496,7 +493,7 @@ class SeisDAE(DeepDenoiser):
         self.default_args["nfft"] = self.nfft
         self.default_args["npserg"] = self.nperseg
 
-        #########################################################################################################
+        # Allocate empty lists for all branches of Autoencoder
         self.encoder_blocks = nn.ModuleList()
         self.down_blocks = nn.ModuleList()
         self.decoder_blocks = nn.ModuleList()
@@ -600,12 +597,6 @@ class SeisDAE(DeepDenoiser):
 
         return x
 
-    @staticmethod
-    def crop(tensor, target_tensor):
-        """Crop the tensor to match the target tensor size."""
-        _, _, h, w = target_tensor.size()
-        return tensor[:, :, :h, :w]
-
     def annotate_batch_pre(
         self, batch: torch.Tensor, argdict: dict[str, Any]
     ) -> torch.Tensor:
@@ -621,13 +612,9 @@ class SeisDAE(DeepDenoiser):
             nperseg=self.nperseg,
         )
 
-        # Normalize real and imaginary input either by min-max or z-score
-        if self.normalization == "min-max":
-            noisy_stft_real = min_max_normalization(x=noisy_stft.real)
-            noisy_stft_imag = min_max_normalization(x=noisy_stft.imag)
-        elif self.normalization == "z-score":
-            noisy_stft_real = z_score_normalization(x=noisy_stft.real)
-            noisy_stft_imag = z_score_normalization(x=noisy_stft.imag)
+        # Normalize real and imaginary input to range [-1, 1]
+        noisy_stft_real = noisy_stft.real / np.max(np.abs(noisy_stft.real))
+        noisy_stft_imag = noisy_stft.imag / np.max(np.abs(noisy_stft.imag))
 
         noisy_input = torch.stack(
             tensors=[torch.Tensor(noisy_stft_real), torch.Tensor(noisy_stft_imag)],
@@ -661,9 +648,9 @@ class SeisDAE(DeepDenoiser):
         self, batch: torch.Tensor, piggyback: Any, argdict: dict[str, Any]
     ) -> torch.Tensor:
         """
-        Does postprocessing when predicted datasets
+        Does postprocessing when predicting datasets
         """
-        # Multiply piggyback (noisy signal) with batch (predicted mask)
+        # Multiply piggyback (STFT of noisy signal) with batch (predicted mask) for signal
         signal_stft = piggyback * batch.numpy()[:, 0, :]
 
         _, denoised_signal = istft(
@@ -690,7 +677,6 @@ class SeisDAE(DeepDenoiser):
         model_args = super().get_model_args()
         model_args["sampling_rate"] = self.sampling_rate
         model_args["norm"] = self.norm
-        model_args["normalization"] = self.normalization
         model_args["in_samples"] = self.in_samples
         model_args["nfft"] = self.nfft
         model_args["nperseg"] = self.nperseg

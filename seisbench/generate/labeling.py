@@ -816,7 +816,6 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         noise_dataset: seisbench.data.base.WaveformDataset,
         scale: tuple[float, float] = (0, 1),
         scaling_type: str = "peak",
-        normalization: str = "z-score",
         component: str = "ZNE",
         nfft: int = 60,
         nperseg: int = 30,
@@ -829,7 +828,6 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         self.noise_dataset = noise_dataset
         self.scale = scale
         self.scaling_type = scaling_type.lower()
-        self.normalization = normalization
         self.key = key
         self.component = component
         self.noise_generator = seisbench.generate.GenericGenerator(noise_dataset)
@@ -839,12 +837,8 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         self.eps = eps
         self.kwargs = kwargs
 
-        if scaling_type.lower() not in ["std", "peak"]:
+        if self.scaling_type.lower() not in ["std", "peak"]:
             msg = "Argument scaling_type must be either 'std' or 'peak'."
-            raise ValueError(msg)
-
-        if self.normalization.lower() not in ["min-max", "z-score"]:
-            msg = f"Normalization method {self.normalization} is not known. Either use 'min-max' or 'z-score'."
             raise ValueError(msg)
 
     def __call__(self, state_dict):
@@ -880,13 +874,16 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         # Select noise component
         n = n[component_idx, :]
 
-        # Removing mean from noise samples
+        # Removing mean from earthquake and noise samples
+        x -= np.mean(x, axis=-1, keepdims=True)
         n -= np.mean(n, axis=-1, keepdims=True)
 
-        # Normalize noise samples
+        # Normalize earthquake and noise samples
         if self.scaling_type == "peak":
+            x = x / np.max(np.abs(x) + self.eps)
             n = n / (np.max(np.abs(n)) + self.eps)
         elif self.scaling_type == "std":
+            x = x / (np.std(x) + self.eps)
             n = n / (np.std(n) + self.eps)
 
         # Cutting noise to same length as x
@@ -916,6 +913,7 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         elif self.scaling_type == "std":
             norm_noisy = np.std(noisy) + self.eps
 
+        # Scale earthquake, noise and noisy waveform with same scaling factor, that noisy is in range [-1, 1]
         x = x / norm_noisy
         n = n / norm_noisy
         noisy = noisy / norm_noisy
@@ -952,13 +950,9 @@ class STFTDenoiserLabeller(SupervisedLabeller):
             shape=(2, *stft_n.shape)
         )  # Target, i.e. masks for signal and noise
 
-        # Normalize real and imaginary parts of STFT
-        if self.normalization == "min-max":
-            X[0, :, :] = min_max_normalization(x=stft_noisy.real, eps=self.eps)
-            X[1, :, :] = min_max_normalization(x=stft_noisy.imag, eps=self.eps)
-        elif self.normalization == "z-score":
-            X[0, :, :] = z_score_normalization(stft_noisy.real)
-            X[1, :, :] = z_score_normalization(stft_noisy.imag)
+        # Normalize real and imaginary parts of STFT to range [-1, 1]
+        X[0, :, :] = stft_noisy.real / (np.max(np.abs(stft_noisy.real)) + self.eps)
+        X[1, :, :] = stft_noisy.imag / (np.max(np.abs(stft_noisy.imag)) + self.eps)
 
         # Compute target masking function
         y[0, :, :] = 1 / (1 + np.abs(stft_n) / (np.abs(stft_x) + self.eps))
