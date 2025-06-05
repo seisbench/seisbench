@@ -790,11 +790,6 @@ class STFTDenoiserLabeller(SupervisedLabeller):
                   (see scaling_type). Default value is (0, 1).
     :param scaling_type: Method how to find the relative amplitude of the input array. Either from the absolute maximum
                          (peak) or from the standard deviation (std). Default is peak.
-    :param normalization: Method how to normalize the input time-frequency representations. Either using 'min-max'
-                          normalization (normalizes to range [0, 1]) or 'z-score' normalization by subtracting mean
-                          and dividing by standard deviation. The normalization methods are applied separately to
-                          real and imaginary input of the time-frequency representation.
-                          Default is 'z-score'.
     :param component: Component to take into account for training. Default are three components, ZNE.
                       If DeepDenoiser/SeisDAE is only trained with a single component, use e.g., component="Z".
                       Otherwise, DeepDenoiser/SeisDAE is trained with all components, however, noise samples are only
