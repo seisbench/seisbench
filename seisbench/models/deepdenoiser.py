@@ -392,7 +392,40 @@ class TransposeConvBlock(nn.Module):
 
 
 class SeisDAE(DeepDenoiser):
-    """ """
+    """
+    Seismic Denoising Autoencoder using U-Net Architecture with additional attention gates.
+    A configurable denoising autoencoder for seismic waveform data that operates in the
+    time-frequency domain using the Short-Time Fourier Transform (STFT). The model is based
+    on a U-Net structure with optional attention gates and skip connections.
+
+    :param in_samples: Length of the input waveform in samples. Default is 3000 samples.
+    :param in_channels: Number of input channels (e.g., 2 for real and imaginary STFT components).
+                        Default are 2 channels.
+    :param sampling_rate: Sampling rate of the waveform data in Hz.
+                          Default sampling rate is 100 Hz.
+    :param filters_root: Number of filters in the first convolutional layer (doubles with depth).
+                         Default is 8.
+    :param depth: Number of encoding/decoding levels in the U-Net.
+                  Default is 6 for STFT
+    :param kernel_size: Kernel size for convolutional layers.
+                        Default is (3, 3).
+    :param strides: Stride size used for down/upsampling using Conv2D and transpose Conv2D layers.
+                    Defautl is (2, 2).
+    :param output_activation: Activation function applied to final output
+                              Default is Softmax.
+    :param drop_rate: Dropout rate used throughout the network.
+                      Default drop_rate is 0
+    :param use_bias: Whether to use bias in convolutional layers.
+                     Default is False.
+    :param norm: Type of normalization applied to traces ("peak" or "std").
+                 Default is "peak"
+    :param nfft: Length of the FFT used, if a zero padded FFT is desired for scipy STFT.
+                 If None, the FFT length is nperseg.
+    :param nperseg: Length of each segment for scipy STFT. Default is 60
+    :param attention: Whether to use attention gates in skip connections or not.
+                      Default is False
+    :param kwargs: Additional arguments passed to the base `WaveformModel`.
+    """
 
     _annotate_args = WaveformModel._annotate_args.copy()
     _annotate_args["overlap"] = (_annotate_args["overlap"][0], 1500)
@@ -414,7 +447,6 @@ class SeisDAE(DeepDenoiser):
         drop_rate: float = 0.0,
         use_bias: bool = False,
         norm: str = "peak",
-        scale: tuple[float, float] = (0, 1),
         nfft: int = 60,
         nperseg: int = 30,
         attention: bool = False,
@@ -422,11 +454,6 @@ class SeisDAE(DeepDenoiser):
     ):
 
         citation = (
-            "Zhu, W., Mousavi, S. M., & Beroza, G. C. (2019). "
-            "Seismic signal denoising and decomposition using deep neural networks. "
-            "IEEE Transactions on Geoscience and Remote Sensing, 57.11(2019), 9476 - 9488. "
-            "https://doi.org/10.1109/TGRS.2019.2926772"
-            " "
             "Heuel, J., & Friederich, W. (2022). "
             "Suppression of wind turbine noise from seismological data using nonlinear thresholding "
             "and denoising autoencoder. "
@@ -458,7 +485,6 @@ class SeisDAE(DeepDenoiser):
         self.drop_rate = drop_rate
         self.use_bias = use_bias
         self.norm = norm
-        self.scale = scale
         self.norm_factors = None
         self.attention = attention
 
