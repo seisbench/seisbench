@@ -491,7 +491,7 @@ class SeisDAE(DeepDenoiser):
 
         # Write STFT values to default args dictionary
         self.default_args["nfft"] = self.nfft
-        self.default_args["npserg"] = self.nperseg
+        self.default_args["nperseg"] = self.nperseg
 
         # Allocate empty lists for all branches of Autoencoder
         self.encoder_blocks = nn.ModuleList()
@@ -501,11 +501,12 @@ class SeisDAE(DeepDenoiser):
         self.attention_gates = nn.ModuleList()
 
         # Encoder
+        cur_channels = in_channels
         for i in range(depth):
             out_channels = 2**i * self.filters_root
             self.encoder_blocks.append(
                 ConvBlock(
-                    in_channels=in_channels,
+                    in_channels=cur_channels,
                     out_channels=out_channels,
                     kernel_size=self.kernel_size,
                     drop_rate=self.drop_rate,
@@ -523,7 +524,7 @@ class SeisDAE(DeepDenoiser):
                         use_bias=self.use_bias,
                     )
                 )
-            in_channels = out_channels
+            cur_channels = out_channels
 
         # Decoder
         for i in range(depth - 2, -1, -1):
@@ -539,13 +540,17 @@ class SeisDAE(DeepDenoiser):
                     use_bias=self.use_bias,
                 )
             )
-            self.attention_gates.append(
-                AttentionGate(
-                    in_channels_encoder=out_channels,
-                    in_channels_decoder=out_channels,
-                    inter_channels=out_channels // 2,
+            if self.attention:
+                self.attention_gates.append(
+                    AttentionGate(
+                        in_channels_encoder=out_channels,
+                        in_channels_decoder=out_channels,
+                        inter_channels=out_channels // 2,
+                    )
                 )
-            )
+            else:
+                self.attention_gates.append(None)
+
             self.decoder_blocks.append(
                 ConvBlock(
                     in_channels=out_channels,

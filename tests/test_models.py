@@ -1098,6 +1098,13 @@ def test_annotate_deep_denoiser():
         assert annotations[i].data.shape == (3000,)
 
 
+def test_seisdae_forward():
+    model = seisbench.models.SeisDAE(in_samples=3000, in_channels=2, attention=True)
+    x = torch.randn(1, 2, *model.input_shape[1:])  # [B, C, Freq, Time]
+    out = model(x)
+    assert out.shape == x.shape
+
+
 def test_eqtransformer_annotate_batch_post():
     model = seisbench.models.EQTransformer()
 
