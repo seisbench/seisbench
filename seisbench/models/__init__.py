@@ -12,3 +12,4 @@ from .phasenet import PhaseNet, PhaseNetLight, VariableLengthPhaseNet
 from .pickblue import PickBlue
 from .skynet import Skynet
 from .team import PhaseTEAM
+from .dkpn import DKPN
