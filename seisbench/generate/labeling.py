@@ -873,8 +873,8 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         n = n[component_idx, :]
 
         # Removing mean from earthquake and noise samples
-        x -= np.mean(x, axis=-1, keepdims=True)
-        n -= np.mean(n, axis=-1, keepdims=True)
+        x = x - np.mean(x, axis=-1, keepdims=True)
+        n = n - np.mean(n, axis=-1, keepdims=True)
 
         # Normalize earthquake and noise samples
         if self.scaling_type == "peak":
