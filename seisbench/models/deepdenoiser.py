@@ -286,6 +286,27 @@ class UpConvBlock(nn.Module):
 
 
 class AttentionGate(nn.Module):
+    """
+    Attention Gate for U-Net architectures.
+
+    This module implements an attention mechanism that selectively emphasizes relevant features
+    in encoder outputs before concatenation with decoder features. It is based on the additive
+    attention gating mechanism from *Attention U-Net: Learning Where to Look for the Pancreas*
+    (Oktay et al., 2018).
+
+        .. admonition:: Citation
+          Ozan Oktay, Jo Schlemper, Loic Le Folgoc, Matthew Lee, Mattias Heinrich, Kazunari Misawa,
+          Kensaku Morim, Steven McDonagh, Nils Y Hammerla, Bernhard Kainz, Ben Glocker, Daniel Rueckert (2018)
+          Attention U-Net: Learning Where to Look for the Pancreas
+
+          https://arxiv.org/abs/1804.03999
+
+    :param in_channels_encoder: Number of input channels from the encoder (skip connection).
+    :param in_channels_decoder: Number of input channels from the decoder (gating signal).
+    :param inter_channels: Number of intermediate channels used in attention computations.
+    :param bias: If True, adds a learnable bias to the convolution layers. Default is False.
+    """
+
     def __init__(
         self,
         in_channels_encoder: int,
