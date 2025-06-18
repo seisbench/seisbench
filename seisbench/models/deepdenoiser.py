@@ -410,7 +410,7 @@ class SeisDAE(DeepDenoiser):
     :param kernel_size: Kernel size for convolutional layers.
                         Default is (3, 3).
     :param strides: Stride size used for down/upsampling using Conv2D and transpose Conv2D layers.
-                    Defautl is (2, 2).
+                    Default is (2, 2).
     :param output_activation: Activation function applied to final output
                               Default is Softmax.
     :param drop_rate: Dropout rate used throughout the network.
