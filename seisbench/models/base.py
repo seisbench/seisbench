@@ -97,6 +97,28 @@ class SeisBenchModel(nn.Module):
         return self._citation
 
     @property
+    def device(self):
+        return next(self.parameters()).device
+
+    def to_preferred_device(self, verbose: bool = False):
+        """
+        Move the model to an accelerator if available.
+        Currently, this function checks for CUDA and MPS accelerators (in this order).
+
+        The function does *not* automatically move models to TPU.
+        Check out `torch_xla` to see how to move models to TPU.
+
+        :param verbose: If true, prints the new device of the model.
+        """
+        if torch.cuda.is_available():
+            self.to("cuda")
+        elif torch.backends.mps.is_available():
+            self.to("mps")
+
+        if verbose:
+            print(f"Model device: {self.device}")
+
+    @property
     def weights_docstring(self):
         return self._weights_docstring
 
@@ -838,10 +860,6 @@ class WaveformModel(SeisBenchModel, ABC):
 
     def __str__(self):
         return f"Component order:\t{self.component_order}\n{super().__str__()}"
-
-    @property
-    def device(self):
-        return next(self.parameters()).device
 
     @property
     def component_order(self):
