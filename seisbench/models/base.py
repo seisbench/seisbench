@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import math
@@ -57,6 +59,382 @@ def _cache_migration_v0_v3():
         (seisbench.cache_model_root / "phasenet").rename(
             seisbench.cache_model_root / "phasenetlight"
         )
+
+
+class GroupingHelper:
+    """
+    A helper class for grouping streams for the annotate function.
+    In most cases, no direct interaction with this class is required.
+    However, when implementing new models, subclassing this helper allows for more flexibility.
+    """
+
+    def __init__(self, grouping: str) -> None:
+        self._grouping = grouping
+
+        self._grouping_functions = {
+            "instrument": self._group_instrument,
+            "channel": self._group_channel,
+            "full": self._group_full,
+        }
+
+        if grouping not in self._grouping_functions:
+            raise ValueError(f"Unknown grouping parameter '{self.grouping}'.")
+
+    @property
+    def grouping(self):
+        return self._grouping
+
+    def group_stream(
+        self,
+        stream: obspy.Stream,
+        strict: bool,
+        min_length_s: float,
+        comp_dict: dict[str, int],
+    ) -> list[list[obspy.Trace]]:
+        """
+        Perform grouping of input stream.
+        In addition, enforces the strict mode, i.e, if strict=True only keeps segments where all components are available,
+        and discards segments that are too short.
+        For grouping=channel no checks are performed.
+
+        :param stream: Input stream
+        :param strict: If streams should be treated strict as for waveform model.
+                       Only applied if grouping is "full".
+        :param min_length_s: Minimum length of a segment in seconds.
+                             Only applied if grouping is "full".
+        :param comp_dict: Mapping of component characters to int.
+                          Only used if grouping is "full".
+        :return: Grouped list of list traces.
+        """
+        return self._grouping_functions[self.grouping](
+            stream, strict, min_length_s, comp_dict
+        )
+
+    @staticmethod
+    def trace_id_without_component(trace: obspy.Trace):
+        return f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
+
+    def _group_instrument(
+        self, stream: obspy.Stream, *args, **kwargs
+    ) -> list[list[obspy.Trace]]:
+        pre_groups = defaultdict(list)
+        for trace in stream:
+            pre_groups[self.trace_id_without_component(trace)].append(trace)
+
+        groups = []
+        for group in pre_groups.values():
+            groups.extend(self._group_full(obspy.Stream(group), *args, **kwargs))
+
+        return groups
+
+    def _group_channel(
+        self, stream: obspy.Stream, *args, **kwargs
+    ) -> list[list[obspy.Trace]]:
+        pre_groups = defaultdict(list)
+        for trace in stream:
+            pre_groups[trace.id].append(trace)
+
+        groups = []
+        for group in pre_groups.values():
+            groups.extend(
+                self._group_full(obspy.Stream(group), *args, channel=True, **kwargs)
+            )
+
+        return groups
+
+    def _group_full(
+        self,
+        stream: obspy.Stream,
+        strict: bool,
+        min_length_s: float,
+        comp_dict: dict[str, int],
+        channel: bool = False,
+    ) -> list[list[obspy.Trace]]:
+        intervals = self._get_intervals(
+            stream, strict, min_length_s, comp_dict, channel=channel
+        )
+
+        return self._assemble_groups(stream, intervals)
+
+    @staticmethod
+    def _bin_search_idx(coords: list[obspy.UTCDateTime], t: obspy.UTCDateTime) -> int:
+        mini = 0
+        maxi = len(coords)
+
+        while (maxi - mini) != 1:
+            m = (maxi + mini) // 2
+            if coords[m] > t:
+                maxi = m
+            else:
+                mini = m
+        return mini
+
+    @staticmethod
+    def _align_fractional_samples(stream: obspy.Stream) -> None:
+        """
+        Shifts the starttime of every member to a valid fractional second according to the sampling rate.
+        Assumes there is a hypothetical sample at UTCDateTime(0).
+        This alignment is required for the downstream trace matching to work.
+        The offset is written to the trace stats at ``t_offset``, such that
+        ``true_starttime = fix_starttime + t_offset``.
+
+        For example, at 20 Hz sampling rate:
+        0.05 is okay
+        0.06 is not
+        """
+        for trace in stream:
+            ts = trace.stats.starttime.timestamp
+            ts *= trace.stats.sampling_rate
+            ts = np.round(ts) / trace.stats.sampling_rate
+
+            trace.stats.t_offset = (
+                trace.stats.starttime.timestamp - ts
+            )  # How much we offset the data
+
+            trace.stats.starttime = obspy.UTCDateTime(ts)
+
+    def _get_intervals(
+        self,
+        stream: obspy.Stream,
+        strict: bool,
+        min_length_s: float,
+        comp_dict: dict[str, int],
+        channel: bool = False,
+    ) -> list[tuple[list[str], obspy.UTCDateTime, obspy.UTCDateTime]]:
+        if channel:
+            strict = False
+
+        self._align_fractional_samples(stream)
+
+        # Do coordinate compression
+        coords = np.unique(
+            [trace.stats.starttime for trace in stream]
+            + [trace.stats.endtime for trace in stream]
+        )
+        coords = sorted(list(coords))
+        if len(coords) <= 1:
+            return []
+
+        if channel:
+            n_comp = 1
+            stations = sorted(list(set(trace.id for trace in stream)))
+        else:
+            n_comp = max(comp_dict.values()) + 1
+            stations = sorted(
+                list(set(self.trace_id_without_component(trace) for trace in stream))
+            )
+
+        sta_dict = {sta: i for i, sta in enumerate(stations)}
+
+        covered = np.zeros((len(stations), n_comp, len(coords) - 1), dtype=bool)
+
+        for trace in stream:
+            p0 = self._bin_search_idx(coords, trace.stats.starttime)
+            p1 = self._bin_search_idx(coords, trace.stats.endtime)
+
+            if channel:
+                comp_idx = 0
+                sta_idx = sta_dict[trace.id]
+            else:
+                if trace.id[-1] not in comp_dict:
+                    continue
+
+                comp_idx = comp_dict[trace.id[-1]]
+                sta_idx = sta_dict[self.trace_id_without_component(trace)]
+
+            covered[sta_idx, comp_idx, p0:p1] = True
+
+        if strict:
+            covered = covered.all(axis=1)
+        else:
+            covered = covered.any(axis=1)
+
+        covered, coords = self._merge_intervals(covered, coords, min_length_s)
+
+        intervals = []
+
+        act = covered[:, 0]
+        start_i = 0
+        for i in range(1, covered.shape[1]):
+            if np.all(act == covered[:, i]):
+                # Same station coverage in both blocks, merge the intervals
+                continue
+            else:
+                if act.any():
+                    interval_stations = [
+                        sta for sta, m in zip(stations, act) if m
+                    ]  # Active stations in interval
+                    t0 = coords[start_i]
+                    t1 = coords[i]
+
+                    intervals.append((interval_stations, t0, t1))
+
+                start_i = i
+                act = covered[:, i]
+
+        if act.any():
+            interval_stations = [
+                sta for sta, m in zip(stations, act) if m
+            ]  # Active stations in interval
+            t0 = coords[start_i]
+            t1 = coords[covered.shape[1]]
+            intervals.append((interval_stations, t0, t1))
+
+        return intervals
+
+    def _merge_intervals(
+        self, covered: np.ndarray, coords: list[obspy.UTCDateTime], min_length_s: float
+    ) -> tuple[np.ndarray, list[obspy.UTCDateTime]]:
+        # Goal: Maximize "stations * time" while ensuring no segment is too short
+        # Use a greedy approach for maximizing which will not always lead to the globally optimal results
+        # but usually to reasonably good results.
+        has_warned = np.zeros(1, dtype=bool)
+
+        def encompassing_interval(t0: obspy.UTCDateTime, t1: obspy.UTCDateTime):
+            p0 = self._bin_search_idx(coords, t0)
+            # Move index to actual left border of this segment
+            while p0 > 0:
+                if (covered[:, p0 - 1] == covered[:, p0]).all():
+                    p0 -= 1
+                else:
+                    break
+
+            p1 = self._bin_search_idx(coords, t1)
+            if coords[p1] != t1:
+                # This ensures that coords[p1] is greater or equal than t1
+                p1 += 1
+            # Move index to actual right border of this segment
+            while p1 < covered.shape[-1] - 1:
+                if (covered[:, p1 + 1] == covered[:, p1]).all():
+                    p1 += 1
+                else:
+                    break
+
+            return p0, p1
+
+        def merge_costs(t0: obspy.UTCDateTime, t1: obspy.UTCDateTime) -> float:
+            if t0 < coords[0] or t1 > coords[-1]:
+                # The interval is not actually fully covered
+                return np.inf
+
+            p0, p1 = encompassing_interval(t0, t1)
+
+            cost = 0
+
+            merged_cover = np.all(
+                covered[:, p0:p1], axis=1
+            )  # Stations present in the whole interval
+            if (
+                not merged_cover.any()
+            ):  # This is never better than just deleting the center interval
+                return np.inf
+
+            for p in range(p0, p1):
+                if t0 - coords[p] > min_length_s:  # Left border profits from splitting
+                    delta_t = t0 - (coords[p + 1] - min_length_s)
+                elif (
+                    coords[p + 1] - t1 > min_length_s
+                ):  # Right border profits from splitting
+                    delta_t = t1 - (coords[p] + min_length_s)
+                else:
+                    delta_t = coords[p + 1] - coords[p]
+                delta_sta = np.sum(covered[:, p]) - np.sum(merged_cover)
+                cost += delta_t * delta_sta
+
+            return cost
+
+        def merge_interval(t0: obspy.UTCDateTime, t1: obspy.UTCDateTime) -> None:
+            p0, p1 = encompassing_interval(t0, t1)
+            merged_cover = np.all(covered[:, p0:p1], axis=1)
+            for p in range(p0, p1):
+                if t0 - coords[p] > min_length_s:  # Left border profits from splitting
+                    coords[p + 1] = t0  # End interval earlier
+                elif (
+                    coords[p + 1] - t1 > min_length_s
+                ):  # Right border profits from splitting
+                    coords[p] = t1  # Start interval later
+                else:
+                    covered[:, p] = merged_cover
+
+        def fix_interval_if_necessary(act: np.ndarray, p0: int, p1: int):
+            t0 = coords[p0]
+            t1 = coords[p1]
+
+            if act.any() and t1 - t0 < min_length_s:
+                # Fixing required
+                # Iterate over all reasonable merging times and find the cheapest
+                # Reasonable merge intervals:
+                # - every interval covering the target, starting either at a coord to the left
+                #   or ending at a coord to the right
+                # - if corner interval has at least min_length_s left, make new coord
+                # - else, just merge intervals
+
+                if not has_warned[0]:
+                    has_warned[0] = True
+                    seisbench.logger.warning(
+                        "Parts of the input stream consist of fragments shorter than the number "
+                        "of input samples or misaligned traces. Output might be empty."
+                    )
+
+                candidate_starts = []
+                for p in range(p0, -1, -1):
+                    if t1 - coords[p] > min_length_s:
+                        break
+                    candidate_starts.append(coords[p])
+                for p in range(p0 + 1, len(coords)):
+                    if coords[p] - t0 > min_length_s:
+                        break
+                    candidate_starts.append(coords[p] - min_length_s)
+
+                candidate_starts = np.unique(candidate_starts)
+
+                candidate_merge_costs = [
+                    merge_costs(t, t + min_length_s) for t in candidate_starts
+                ]
+
+                if np.isinf(np.min(candidate_merge_costs)):
+                    # Only delete if there is no other option.
+                    # This improves coverage over time
+                    act &= False
+                else:
+                    best_merge = np.argmin(candidate_merge_costs)
+                    merge_interval(
+                        candidate_starts[best_merge],
+                        candidate_starts[best_merge] + min_length_s,
+                    )
+
+        act = covered[:, 0]
+        start_i = 0
+
+        for i in range(1, covered.shape[1]):
+            if np.all(act == covered[:, i]):
+                # Same station coverage in both blocks, merge the intervals
+                continue
+            else:
+                fix_interval_if_necessary(act, start_i, i)
+
+                start_i = i
+                act = covered[:, i]
+
+        fix_interval_if_necessary(act, start_i, covered.shape[1])
+
+        return covered, coords
+
+    @staticmethod
+    def _assemble_groups(
+        stream: obspy.Stream,
+        intervals: list[tuple[list[str], obspy.UTCDateTime, obspy.UTCDateTime]],
+    ) -> list[list[obspy.Trace]]:
+        groups = []
+        for stations, t0, t1 in intervals:
+            sub = stream.slice(t0, t1)
+            group = []
+            for station in stations:
+                for trace in sub.select(id=station + "*"):
+                    group.append(trace)
+            groups.append(group)
+
+        return groups
 
 
 class SeisBenchModel(nn.Module):
@@ -674,13 +1052,11 @@ class WaveformModel(SeisBenchModel, ABC):
 
     .. document_args:: seisbench.models WaveformModel
 
-    :param component_order: Specify component order (e.g. ['ZNE']), defaults to None.
-    :type component_order: list, optional
+    :param component_order: Specify component order (e.g. 'ZNE'), defaults to None.
     :param sampling_rate: Sampling rate of the model, defaults to None.
                           If sampling rate is not None, the annotate and classify functions will automatically resample
                           incoming traces and validate correct sampling rate if the model overwrites
                           :py:func:`annotate_stream_pre`.
-    :type sampling_rate: float
     :param output_type: The type of output from the model. Current options are:
 
                         - "point" for a point prediction, i.e., the probability of containing a pick in the window
@@ -694,30 +1070,21 @@ class WaveformModel(SeisBenchModel, ABC):
                         - "regression" for a regression value, i.e., the sample of the arrival within a window.
                           This will only provide a :py:func:`classify` function.
 
-    :type output_type: str
     :param default_args: Default arguments to use in annotate and classify functions
-    :type default_args: dict[str, any]
     :param in_samples: Number of input samples in time
-    :type in_samples: int
     :param pred_sample: For a "point" prediction: sample number of the sample in a window for which the prediction is
                         valid. For an "array" prediction: a tuple of first and last sample defining the prediction
                         range. Note that the number of output samples and input samples within the given range are
                         not required to agree.
-    :type pred_sample: int, tuple
     :param labels: Labels for the different predictions in the output, e.g., Noise, P, S. If a function is passed,
                    it will be called for every label generation and be provided with the stats of the trace that was
                    annotated.
-    :type labels: list or string or callable
     :param filter_args: Arguments to be passed to :py:func:`obspy.filter` in :py:func:`annotate_stream_pre`
-    :type filter_args: tuple
     :param filter_kwargs: Keyword arguments to be passed to :py:func:`obspy.filter` in :py:func:`annotate_stream_pre`
-    :type filter_kwargs: dict
     :param grouping: Level of grouping for annotating streams. Supports "instrument", "channel" and "full".
                      Alternatively, a custom GroupingHelper can be passed.
-    :type grouping: Union[str, GroupingHelper]
     :param allow_padding: If True, annotate will pad different windows if they have different sizes.
                           This is useful, for example, for multi-station methods.
-    :type allow_padding: bool
     :param kwargs: Kwargs are passed to the superclass
     """
 
@@ -755,17 +1122,17 @@ class WaveformModel(SeisBenchModel, ABC):
 
     def __init__(
         self,
-        component_order=None,
-        sampling_rate=None,
-        output_type=None,
-        default_args=None,
-        in_samples=None,
-        pred_sample=0,
-        labels=None,
-        filter_args=None,
-        filter_kwargs=None,
-        grouping="instrument",
-        allow_padding=False,
+        component_order: Optional[list | str] = None,
+        sampling_rate: Optional[float] = None,
+        output_type: Optional[str] = None,
+        default_args: Optional[dict[str, Any]] = None,
+        in_samples: Optional[int] = None,
+        pred_sample: Optional[int | tuple[int, int]] = 0,
+        labels: Optional[str | list[str]] = None,
+        filter_args: Optional[tuple] = None,
+        filter_kwargs: Optional[dict[str, Any]] = None,
+        grouping: str | GroupingHelper = "instrument",
+        allow_padding: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -996,15 +1363,13 @@ class WaveformModel(SeisBenchModel, ABC):
             await queue_groups.put(group)
         await queue_groups.put(None)
 
-        await process_streams_to_arrays
-        await queue_raw_blocks.put(None)
-        await process_cut_fragments
-        await queue_raw_fragments.put(None)
-        await process_predict
-        await queue_postprocessed_pred.put(None)
-        await process_reassemble_blocks
-        await queue_pred_blocks.put(None)
-        await process_predictions_to_streams
+        await asyncio.gather(
+            process_streams_to_arrays,
+            process_cut_fragments,
+            process_predict,
+            process_reassemble_blocks,
+            process_predictions_to_streams,
+        )
 
         while True:
             try:
@@ -1042,6 +1407,7 @@ class WaveformModel(SeisBenchModel, ABC):
             )
             await queue_out.put((t0, block, stations))
             group = await queue_in.get()
+        await queue_out.put(None)
 
     async def _async_predict(self, queue_in, queue_out, argdict):
         """
@@ -1056,10 +1422,19 @@ class WaveformModel(SeisBenchModel, ABC):
 
         elem = await queue_in.get()
         while True:
+            shape_change = False
             if elem is not None:
                 buffer.append(elem)
 
-            if len(buffer) == batch_size or (elem is None and len(buffer) > 0):
+                if len(buffer) >= 2 and buffer[-1][0].shape != buffer[-2][0].shape:
+                    buffer = buffer[:-1]
+                    shape_change = True
+
+            if (
+                shape_change
+                or len(buffer) == batch_size
+                or (elem is None and len(buffer) > 0)
+            ):
                 pred = await asyncio.to_thread(
                     self._predict_buffer,
                     [window for window, _ in buffer],
@@ -1069,15 +1444,20 @@ class WaveformModel(SeisBenchModel, ABC):
                     await queue_out.put((pred_window, metadata))
                 buffer = []
 
+            if shape_change:
+                buffer.append(elem)
+
             if elem is None:
                 break
 
             elem = await queue_in.get()
 
-    def _get_overlap(self, argdict):
+        await queue_out.put(None)
+
+    def _get_overlap(self, in_samples: int, argdict) -> int:
         overlap = self._argdict_get_with_default(argdict, "overlap")
         if overlap < 1:
-            return int(overlap * self.in_samples)
+            return int(overlap * in_samples)
         else:
             return overlap
 
@@ -1108,6 +1488,7 @@ class WaveformModel(SeisBenchModel, ABC):
                 await queue_out.put(output_elem)
 
             elem = await queue_in.get()
+        await queue_out.put(None)
 
     def _cut_fragments_point(self, t0, block, stations, argdict):
         """
@@ -1152,6 +1533,8 @@ class WaveformModel(SeisBenchModel, ABC):
 
             elem = await queue_in.get()
 
+        await queue_out.put(None)
+
     def _reassemble_blocks_point(self, elem, buffer, argdict):
         """
         Reassembles point predictions into numpy arrays. Returns None except if a buffer was processed.
@@ -1194,20 +1577,30 @@ class WaveformModel(SeisBenchModel, ABC):
 
             for output_elem in self._cut_fragments_array(elem, argdict):
                 await queue_out.put(output_elem)
+        await queue_out.put(None)
+
+    def _get_in_pred_samples(self, block: np.ndarray) -> tuple[int, tuple[int, int]]:
+        """
+        To enable dynamic window sizes, depending on the shape of the input waveforms, this function can be overwritten.
+        The sample axis is the last axis in the `block` variable.
+
+        For an example, see the test_dynamic_samples unit test.
+        """
+        return self.in_samples, self.pred_sample
 
     def _cut_fragments_array(self, elem, argdict):
         """
         Cuts numpy arrays into fragments for array prediction models.
         """
-        overlap = self._get_overlap(argdict)
 
         t0, block, stations = elem
 
         bucket_id = np.random.randint(int(1e9))
 
-        starts = np.arange(
-            0, block.shape[-1] - self.in_samples + 1, self.in_samples - overlap
-        )
+        in_samples, pred_sample = self._get_in_pred_samples(block)
+        overlap = self._get_overlap(in_samples, argdict)
+
+        starts = np.arange(0, block.shape[-1] - in_samples + 1, in_samples - overlap)
         if len(starts) == 0:
             seisbench.logger.warning(
                 "Parts of the input stream consist of fragments shorter than the number "
@@ -1216,15 +1609,25 @@ class WaveformModel(SeisBenchModel, ABC):
             return
 
         # Add one more trace to the end
-        if starts[-1] + self.in_samples < block.shape[-1]:
-            starts = np.concatenate([starts, [block.shape[-1] - self.in_samples]])
+        if starts[-1] + in_samples < block.shape[-1]:
+            starts = np.concatenate([starts, [block.shape[-1] - in_samples]])
 
         # Generate windows and preprocess
+        # The combination of stations and t0 is a unique identifier
+        # s can be used to reassemble the block, len(starts) allows to identify if the block is complete yet
+        key = (t0.timestamp, "__".join(stations))
         for s in starts:
-            window = block[..., s : s + self.in_samples]
-            # The combination of stations and t0 is a unique identifier
-            # s can be used to reassemble the block, len(starts) allows to identify if the block is complete yet
-            metadata = (t0, s, len(starts), stations, bucket_id)
+            window = block[..., s : s + in_samples]
+            metadata = (
+                key,
+                t0,
+                s,
+                len(starts),
+                stations,
+                bucket_id,
+                in_samples,
+                pred_sample,
+            )
             yield window, metadata
 
     async def _async_reassemble_blocks_array(self, queue_in, queue_out, argdict):
@@ -1242,26 +1645,27 @@ class WaveformModel(SeisBenchModel, ABC):
             if output_elem is not None:
                 await queue_out.put(output_elem)
 
+        await queue_out.put(None)
+
     def _reassemble_blocks_array(self, elem, buffer, argdict):
         """
         Reassembles array predictions into numpy arrays.
         """
         window, metadata = elem
-        t0, s, len_starts, stations, bucket_id = metadata
-        key = (t0.timestamp, "__".join(stations))
+        key, t0, s, len_starts, stations, bucket_id, in_samples, pred_sample = metadata
         buffer[key].append(elem)
 
         output = None
 
         if len(buffer[key]) == len_starts:
-            overlap = self._get_overlap(argdict)
+            overlap = self._get_overlap(in_samples, argdict)
             stack_method = self._argdict_get_with_default(
                 argdict, "stacking"
             ).lower()  # This is a breaking change for v 0.3 - see PR#99
             assert (
                 stack_method in self._stack_options
             ), f"Stacking method {stack_method} unknown. Known options are: {self._stack_options}"
-            preds = [(s, window) for window, (_, s, _, _, _) in buffer[key]]
+            preds = [(s, window) for window, (_, _, s, _, _, _, _, _) in buffer[key]]
             preds = sorted(
                 preds, key=lambda x: x[0]
             )  # Sort by start (overwrite keys to make sure window is never used as key)
@@ -1271,14 +1675,14 @@ class WaveformModel(SeisBenchModel, ABC):
 
             # Number of prediction samples per input sample
             prediction_sample_factor = preds[0].shape[1] / (
-                self.pred_sample[1] - self.pred_sample[0]
+                pred_sample[1] - pred_sample[0]
             )
 
             # Maximum number of predictions covering a point
-            coverage = int(np.ceil(self.in_samples / (self.in_samples - overlap) + 1))
+            coverage = int(np.ceil(in_samples / (in_samples - overlap) + 1))
 
             pred_length = int(
-                np.ceil((np.max(starts) + self.in_samples) * prediction_sample_factor)
+                np.ceil((np.max(starts) + in_samples) * prediction_sample_factor)
             )
             pred_merge = np.full_like(
                 preds[0],
@@ -1312,7 +1716,7 @@ class WaveformModel(SeisBenchModel, ABC):
             elif self._grouping.grouping == "instrument":
                 preds = preds[0]
 
-            pred_time = t0 + self.pred_sample[0] / argdict["sampling_rate"]
+            pred_time = t0 + pred_sample[0] / argdict["sampling_rate"]
             pred_rate = argdict["sampling_rate"] * prediction_sample_factor
 
             output = ((pred_rate, pred_time, preds), stations)
@@ -2289,379 +2693,3 @@ class CustomLSTM(nn.Module):
 
         # Keep second argument for consistency with PyTorch LSTM
         return output, None
-
-
-class GroupingHelper:
-    """
-    A helper class for grouping streams for the annotate function.
-    In most cases, no direct interaction with this class is required.
-    However, when implementing new models, subclassing this helper allows for more flexibility.
-    """
-
-    def __init__(self, grouping: str) -> None:
-        self._grouping = grouping
-
-        self._grouping_functions = {
-            "instrument": self._group_instrument,
-            "channel": self._group_channel,
-            "full": self._group_full,
-        }
-
-        if grouping not in self._grouping_functions:
-            raise ValueError(f"Unknown grouping parameter '{self.grouping}'.")
-
-    @property
-    def grouping(self):
-        return self._grouping
-
-    def group_stream(
-        self,
-        stream: obspy.Stream,
-        strict: bool,
-        min_length_s: float,
-        comp_dict: dict[str, int],
-    ) -> list[list[obspy.Trace]]:
-        """
-        Perform grouping of input stream.
-        In addition, enforces the strict mode, i.e, if strict=True only keeps segments where all components are available,
-        and discards segments that are too short.
-        For grouping=channel no checks are performed.
-
-        :param stream: Input stream
-        :param strict: If streams should be treated strict as for waveform model.
-                       Only applied if grouping is "full".
-        :param min_length_s: Minimum length of a segment in seconds.
-                             Only applied if grouping is "full".
-        :param comp_dict: Mapping of component characters to int.
-                          Only used if grouping is "full".
-        :return: Grouped list of list traces.
-        """
-        return self._grouping_functions[self.grouping](
-            stream, strict, min_length_s, comp_dict
-        )
-
-    @staticmethod
-    def trace_id_without_component(trace: obspy.Trace):
-        return f"{trace.stats.network}.{trace.stats.station}.{trace.stats.location}"
-
-    def _group_instrument(
-        self, stream: obspy.Stream, *args, **kwargs
-    ) -> list[list[obspy.Trace]]:
-        pre_groups = defaultdict(list)
-        for trace in stream:
-            pre_groups[self.trace_id_without_component(trace)].append(trace)
-
-        groups = []
-        for group in pre_groups.values():
-            groups.extend(self._group_full(obspy.Stream(group), *args, **kwargs))
-
-        return groups
-
-    def _group_channel(
-        self, stream: obspy.Stream, *args, **kwargs
-    ) -> list[list[obspy.Trace]]:
-        pre_groups = defaultdict(list)
-        for trace in stream:
-            pre_groups[trace.id].append(trace)
-
-        groups = []
-        for group in pre_groups.values():
-            groups.extend(
-                self._group_full(obspy.Stream(group), *args, channel=True, **kwargs)
-            )
-
-        return groups
-
-    def _group_full(
-        self,
-        stream: obspy.Stream,
-        strict: bool,
-        min_length_s: float,
-        comp_dict: dict[str, int],
-        channel: bool = False,
-    ) -> list[list[obspy.Trace]]:
-        intervals = self._get_intervals(
-            stream, strict, min_length_s, comp_dict, channel=channel
-        )
-
-        return self._assemble_groups(stream, intervals)
-
-    @staticmethod
-    def _bin_search_idx(coords: list[obspy.UTCDateTime], t: obspy.UTCDateTime) -> int:
-        mini = 0
-        maxi = len(coords)
-
-        while (maxi - mini) != 1:
-            m = (maxi + mini) // 2
-            if coords[m] > t:
-                maxi = m
-            else:
-                mini = m
-        return mini
-
-    @staticmethod
-    def _align_fractional_samples(stream: obspy.Stream) -> None:
-        """
-        Shifts the starttime of every member to a valid fractional second according to the sampling rate.
-        Assumes there is a hypothetical sample at UTCDateTime(0).
-        This alignment is required for the downstream trace matching to work.
-        The offset is written to the trace stats at ``t_offset``, such that
-        ``true_starttime = fix_starttime + t_offset``.
-
-        For example, at 20 Hz sampling rate:
-        0.05 is okay
-        0.06 is not
-        """
-        for trace in stream:
-            ts = trace.stats.starttime.timestamp
-            ts *= trace.stats.sampling_rate
-            ts = np.round(ts) / trace.stats.sampling_rate
-
-            trace.stats.t_offset = (
-                trace.stats.starttime.timestamp - ts
-            )  # How much we offset the data
-
-            trace.stats.starttime = obspy.UTCDateTime(ts)
-
-    def _get_intervals(
-        self,
-        stream: obspy.Stream,
-        strict: bool,
-        min_length_s: float,
-        comp_dict: dict[str, int],
-        channel: bool = False,
-    ) -> list[tuple[list[str], obspy.UTCDateTime, obspy.UTCDateTime]]:
-        if channel:
-            strict = False
-
-        self._align_fractional_samples(stream)
-
-        # Do coordinate compression
-        coords = np.unique(
-            [trace.stats.starttime for trace in stream]
-            + [trace.stats.endtime for trace in stream]
-        )
-        coords = sorted(list(coords))
-        if len(coords) <= 1:
-            return []
-
-        if channel:
-            n_comp = 1
-            stations = sorted(list(set(trace.id for trace in stream)))
-        else:
-            n_comp = max(comp_dict.values()) + 1
-            stations = sorted(
-                list(set(self.trace_id_without_component(trace) for trace in stream))
-            )
-
-        sta_dict = {sta: i for i, sta in enumerate(stations)}
-
-        covered = np.zeros((len(stations), n_comp, len(coords) - 1), dtype=bool)
-
-        for trace in stream:
-            p0 = self._bin_search_idx(coords, trace.stats.starttime)
-            p1 = self._bin_search_idx(coords, trace.stats.endtime)
-
-            if channel:
-                comp_idx = 0
-                sta_idx = sta_dict[trace.id]
-            else:
-                if trace.id[-1] not in comp_dict:
-                    continue
-
-                comp_idx = comp_dict[trace.id[-1]]
-                sta_idx = sta_dict[self.trace_id_without_component(trace)]
-
-            covered[sta_idx, comp_idx, p0:p1] = True
-
-        if strict:
-            covered = covered.all(axis=1)
-        else:
-            covered = covered.any(axis=1)
-
-        covered, coords = self._merge_intervals(covered, coords, min_length_s)
-
-        intervals = []
-
-        act = covered[:, 0]
-        start_i = 0
-        for i in range(1, covered.shape[1]):
-            if np.all(act == covered[:, i]):
-                # Same station coverage in both blocks, merge the intervals
-                continue
-            else:
-                if act.any():
-                    interval_stations = [
-                        sta for sta, m in zip(stations, act) if m
-                    ]  # Active stations in interval
-                    t0 = coords[start_i]
-                    t1 = coords[i]
-
-                    intervals.append((interval_stations, t0, t1))
-
-                start_i = i
-                act = covered[:, i]
-
-        if act.any():
-            interval_stations = [
-                sta for sta, m in zip(stations, act) if m
-            ]  # Active stations in interval
-            t0 = coords[start_i]
-            t1 = coords[covered.shape[1]]
-            intervals.append((interval_stations, t0, t1))
-
-        return intervals
-
-    def _merge_intervals(
-        self, covered: np.ndarray, coords: list[obspy.UTCDateTime], min_length_s: float
-    ) -> tuple[np.ndarray, list[obspy.UTCDateTime]]:
-        # Goal: Maximize "stations * time" while ensuring no segment is too short
-        # Use a greedy approach for maximizing which will not always lead to the globally optimal results
-        # but usually to reasonably good results.
-        has_warned = np.zeros(1, dtype=bool)
-
-        def encompassing_interval(t0: obspy.UTCDateTime, t1: obspy.UTCDateTime):
-            p0 = self._bin_search_idx(coords, t0)
-            # Move index to actual left border of this segment
-            while p0 > 0:
-                if (covered[:, p0 - 1] == covered[:, p0]).all():
-                    p0 -= 1
-                else:
-                    break
-
-            p1 = self._bin_search_idx(coords, t1)
-            if coords[p1] != t1:
-                # This ensures that coords[p1] is greater or equal than t1
-                p1 += 1
-            # Move index to actual right border of this segment
-            while p1 < covered.shape[-1] - 1:
-                if (covered[:, p1 + 1] == covered[:, p1]).all():
-                    p1 += 1
-                else:
-                    break
-
-            return p0, p1
-
-        def merge_costs(t0: obspy.UTCDateTime, t1: obspy.UTCDateTime) -> float:
-            if t0 < coords[0] or t1 > coords[-1]:
-                # The interval is not actually fully covered
-                return np.inf
-
-            p0, p1 = encompassing_interval(t0, t1)
-
-            cost = 0
-
-            merged_cover = np.all(
-                covered[:, p0:p1], axis=1
-            )  # Stations present in the whole interval
-            if (
-                not merged_cover.any()
-            ):  # This is never better than just deleting the center interval
-                return np.inf
-
-            for p in range(p0, p1):
-                if t0 - coords[p] > min_length_s:  # Left border profits from splitting
-                    delta_t = t0 - (coords[p + 1] - min_length_s)
-                elif (
-                    coords[p + 1] - t1 > min_length_s
-                ):  # Right border profits from splitting
-                    delta_t = t1 - (coords[p] + min_length_s)
-                else:
-                    delta_t = coords[p + 1] - coords[p]
-                delta_sta = np.sum(covered[:, p]) - np.sum(merged_cover)
-                cost += delta_t * delta_sta
-
-            return cost
-
-        def merge_interval(t0: obspy.UTCDateTime, t1: obspy.UTCDateTime) -> None:
-            p0, p1 = encompassing_interval(t0, t1)
-            merged_cover = np.all(covered[:, p0:p1], axis=1)
-            for p in range(p0, p1):
-                if t0 - coords[p] > min_length_s:  # Left border profits from splitting
-                    coords[p + 1] = t0  # End interval earlier
-                elif (
-                    coords[p + 1] - t1 > min_length_s
-                ):  # Right border profits from splitting
-                    coords[p] = t1  # Start interval later
-                else:
-                    covered[:, p] = merged_cover
-
-        def fix_interval_if_necessary(act: np.ndarray, p0: int, p1: int):
-            t0 = coords[p0]
-            t1 = coords[p1]
-
-            if act.any() and t1 - t0 < min_length_s:
-                # Fixing required
-                # Iterate over all reasonable merging times and find the cheapest
-                # Reasonable merge intervals:
-                # - every interval covering the target, starting either at a coord to the left
-                #   or ending at a coord to the right
-                # - if corner interval has at least min_length_s left, make new coord
-                # - else, just merge intervals
-
-                if not has_warned[0]:
-                    has_warned[0] = True
-                    seisbench.logger.warning(
-                        "Parts of the input stream consist of fragments shorter than the number "
-                        "of input samples or misaligned traces. Output might be empty."
-                    )
-
-                candidate_starts = []
-                for p in range(p0, -1, -1):
-                    if t1 - coords[p] > min_length_s:
-                        break
-                    candidate_starts.append(coords[p])
-                for p in range(p0 + 1, len(coords)):
-                    if coords[p] - t0 > min_length_s:
-                        break
-                    candidate_starts.append(coords[p] - min_length_s)
-
-                candidate_starts = np.unique(candidate_starts)
-
-                candidate_merge_costs = [
-                    merge_costs(t, t + min_length_s) for t in candidate_starts
-                ]
-
-                if np.isinf(np.min(candidate_merge_costs)):
-                    # Only delete if there is no other option.
-                    # This improves coverage over time
-                    act &= False
-                else:
-                    best_merge = np.argmin(candidate_merge_costs)
-                    merge_interval(
-                        candidate_starts[best_merge],
-                        candidate_starts[best_merge] + min_length_s,
-                    )
-
-        act = covered[:, 0]
-        start_i = 0
-
-        for i in range(1, covered.shape[1]):
-            if np.all(act == covered[:, i]):
-                # Same station coverage in both blocks, merge the intervals
-                continue
-            else:
-                fix_interval_if_necessary(act, start_i, i)
-
-                start_i = i
-                act = covered[:, i]
-
-        fix_interval_if_necessary(act, start_i, covered.shape[1])
-
-        return covered, coords
-
-    @staticmethod
-    def _assemble_groups(
-        stream: obspy.Stream,
-        intervals: list[tuple[list[str], obspy.UTCDateTime, obspy.UTCDateTime]],
-    ) -> list[list[obspy.Trace]]:
-        groups = []
-        for stations, t0, t1 in intervals:
-            sub = stream.slice(t0, t1)
-            group = []
-            for station in stations:
-                for trace in sub.select(id=station + "*"):
-                    group.append(trace)
-            groups.append(group)
-
-        return groups
