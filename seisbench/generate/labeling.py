@@ -1,9 +1,11 @@
 import copy
+import random
 import re
 from abc import ABC, abstractmethod
 from typing import Union
 
 import numpy as np
+from scipy.signal import stft
 
 import seisbench
 from seisbench import config
@@ -772,6 +774,208 @@ class StandardLabeller(PickLabeller):
 
     def __str__(self):
         return f"StandardLabeller (label_type={self.label_type}, dim={self.dim})"
+
+
+class STFTDenoiserLabeller(SupervisedLabeller):
+    """
+    Create supervised labels for DeepDenoiser and SeisDAE with short-time Fourier transform (STFT).
+    Noise samples from noise_dataset are randomly selected and earthquakes waveforms are deteriorated
+    by adding randomly scaled earthquake and noise waveforms.
+
+    :param noise_dataset: Seisbench WaveformDataset that only contains noise waveforms for training.
+    :param scale: Tuple of minimum and maximum relative amplitude of the noise.
+                  Relative amplitude is defined either by the absolute maximum or the root-mean-square of input array
+                  (see scaling_type). Default value is (0, 1).
+    :param scaling_type: Method how to find the relative amplitude of the input array. Either from the absolute maximum
+                         (peak) or from the standard deviation (std). Default is peak.
+    :param component: Component to take into account for training. Default are three components, ZNE.
+                      If DeepDenoiser/SeisDAE is only trained with a single component, use e.g., component="Z".
+                      Otherwise, DeepDenoiser/SeisDAE is trained with all components, however, noise samples are only
+                      added on same component of earthquake waveforms, i.e., on Z-component are only added noise
+                      waveforms of Z-component and so on.
+    :param sampling_rate: Sampling rate in Hz of earthquake waveform and noise dataset.
+                          If sampling_rate = None, sampling_rate is taken from metadata
+                          with key "trace_sampling_rate_hz". Default is None.
+    :param key: The keys for reading from and writing to the state dict.
+                If key is a single string, the corresponding entry in state dict is modified.
+                Otherwise, a 2-tuple is expected, with the first string indicating the key to
+                read from and the second one the key to write to.
+                Default key is ("X", "y").
+    :param nfft: Length of the FFT used, if a zero padded FFT is desired for scipy STFT.
+                 If None, the FFT length is nperseg.
+    :param nperseg: Length of each segment for scipy STFT. Default is 60
+    :param eps: Avoiding division by zero, default is 1e-12.
+    """
+
+    def __init__(
+        self,
+        noise_dataset: seisbench.data.base.WaveformDataset,
+        scale: tuple[float, float] = (0, 1),
+        scaling_type: str = "peak",
+        component: str = "ZNE",
+        sampling_rate: Union[float, None] = None,
+        nfft: int = 60,
+        nperseg: int = 30,
+        eps: float = 1e-12,
+        key: tuple[str, str] = ("X", "y"),
+        **kwargs,
+    ):
+        super().__init__(label_type="binary", dim=2)
+
+        self.noise_dataset = noise_dataset
+        self.scale = scale
+        self.scaling_type = scaling_type.lower()
+        self.key = key
+        self.component = component
+        self.sampling_rate = sampling_rate
+        self.noise_generator = seisbench.generate.GenericGenerator(noise_dataset)
+        self.noise_samples = len(noise_dataset)
+        self.nfft = nfft
+        self.nperseg = nperseg
+        self.eps = eps
+        self.kwargs = kwargs
+
+        if self.scaling_type.lower() not in ["std", "peak"]:
+            msg = "Argument scaling_type must be either 'std' or 'peak'."
+            raise ValueError(msg)
+
+    def __call__(self, state_dict):
+        x, metadata = state_dict[self.key[0]]
+
+        if self.key[0] != self.key[1]:
+            # Ensure data and metadata is not modified inplace unless input and output key are anyhow identical
+            metadata = copy.deepcopy(metadata)
+            x = x.copy()
+
+        # Select component if only one is given. If more than one component is given, choose random component
+        # Note, if more than one component is given, components of signal and noise are not mixed
+        if len(self.component) == 1:
+            component_idx = metadata["trace_component_order"].index(self.component)
+            metadata["trace_component_order"] = self.component
+        else:
+            component_idx = random.randint(0, len(self.component) - 1)
+            metadata["trace_component_order"] = self.component[component_idx]
+
+        # Select component from x and modify metadata
+        x = x[component_idx, :]
+
+        # Defining scale for earthquake and noise amplitude
+        # I.e., scale for earthquake and noise can become, for example, zero and thus either no noise or
+        # earthquake waveform exists. Using this approach, the denoiser learns better to distinguish between noise
+        # and earthquake.
+        scale_earthquake = np.random.uniform(*self.scale)
+        scale_noise = np.random.uniform(*self.scale)
+
+        # Draw random noise sample from the dataset and cut to same length as x
+        n = self.noise_generator[np.random.randint(low=0, high=self.noise_samples)]["X"]
+
+        # Select noise component
+        n = n[component_idx, :]
+
+        # Removing mean from earthquake and noise samples
+        x = x - np.mean(x, axis=-1, keepdims=True)
+        n = n - np.mean(n, axis=-1, keepdims=True)
+
+        # Normalize earthquake and noise samples
+        if self.scaling_type == "peak":
+            x = x / np.max(np.abs(x) + self.eps)
+            n = n / (np.max(np.abs(n)) + self.eps)
+        elif self.scaling_type == "std":
+            x = x / (np.std(x) + self.eps)
+            n = n / (np.std(n) + self.eps)
+
+        # Cutting noise to same length as x
+        if len(n) - len(x) < 0:
+            msg = (
+                f"The length of the data ({len(x)} samples) and the noise ({len(n)} samples) must either be the same "
+                f"or the shape of the noise must be larger than the shape of the data."
+            )
+            raise ValueError(msg)
+
+        if len(n) - len(x) > 0:
+            spoint = np.random.randint(low=0, high=len(n) - len(x))
+        else:
+            spoint = 0
+        n = n[spoint : spoint + len(x)]
+
+        # Scale earthquake (x) and noise (n) waveforms
+        x *= scale_earthquake
+        n *= scale_noise
+
+        # Add noise and signal to create noisy signal
+        noisy = x + n
+
+        # Normalize noisy, x and n by normalization factor of noisy to range [-1, 1]
+        if self.scaling_type == "peak":
+            norm_noisy = np.max(np.abs(noisy)) + self.eps
+        elif self.scaling_type == "std":
+            norm_noisy = np.std(noisy) + self.eps
+
+        # Scale earthquake, noise and noisy waveform with same scaling factor, that noisy is in range [-1, 1]
+        x = x / norm_noisy
+        n = n / norm_noisy
+        noisy = noisy / norm_noisy
+
+        # Perform STFT of x, n, and noisy
+        _, _, stft_x = stft(
+            x=x,
+            fs=self.sampling_rate or metadata["trace_sampling_rate_hz"],
+            nperseg=self.nperseg,
+            nfft=self.nfft,
+            **self.kwargs,
+        )
+        _, _, stft_n = stft(
+            x=n,
+            fs=self.sampling_rate or metadata["trace_sampling_rate_hz"],
+            nperseg=self.nperseg,
+            nfft=self.nfft,
+            **self.kwargs,
+        )
+        _, _, stft_noisy = stft(
+            x=noisy,
+            fs=self.sampling_rate or metadata["trace_sampling_rate_hz"],
+            nperseg=self.nperseg,
+            nfft=self.nfft,
+            **self.kwargs,
+        )
+
+        # Determine output masks
+        X = np.empty(
+            shape=(2, *stft_n.shape)
+        )  # Input, i.e. real and imag part of noisy
+
+        y = np.empty(
+            shape=(2, *stft_n.shape)
+        )  # Target, i.e. masks for signal and noise
+
+        # Normalize real and imaginary parts of STFT to range [-1, 1]
+        X[0, :, :] = stft_noisy.real / (np.max(np.abs(stft_noisy.real)) + self.eps)
+        X[1, :, :] = stft_noisy.imag / (np.max(np.abs(stft_noisy.imag)) + self.eps)
+
+        # Compute target masking function
+        y[0, :, :] = 1 / (1 + np.abs(stft_n) / (np.abs(stft_x) + self.eps))
+        y[1, :, :] = 1 - y[0, :, :]
+
+        # Replace nan values in X and y
+        X = np.nan_to_num(X)
+        y = np.nan_to_num(y)
+
+        # Update state_dicts for input and target
+        state_dict[self.key[0]] = (X, metadata)
+        state_dict[self.key[1]] = (y, metadata)
+
+    def label(self, X, metadata):
+        """
+        Label method is passed since __call__ creates input and correct masking functions.
+        Both, input and output are transformed into time-frequency domain.
+        """
+        pass
+
+    def __str__(self):
+        return (
+            f"Labeller for STFT and masking functions for Denoiser "
+            f"(nfft={self.nfft}, nperseg={self.nperseg})"
+        )
 
 
 def gaussian_pick(onset, length, sigma):
