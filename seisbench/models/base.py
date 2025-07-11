@@ -1814,6 +1814,8 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         Add fake dimensions to make pred shape (stations, samples, channels)
         """
+        if self._grouping.grouping == "full":
+            return pred
         if self._grouping.grouping == "instrument":
             return pred[None]
         if self._grouping.grouping == "channel":
