@@ -9,7 +9,7 @@ from functools import partial
 from itertools import groupby
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Iterable, Literal, NotRequired, TypedDict, cast
+from typing import Iterable, Literal, cast
 from zipfile import ZipFile
 
 import numpy as np
@@ -23,7 +23,7 @@ from obspy.geodetics import gps2dist_azimuth
 from obspy.io.nordic.core import read_nordic
 
 from seisbench import logger
-from seisbench.data.base import BenchmarkDataset
+from seisbench.data.base import BenchmarkDataset, EventParameters, TraceParameters
 from seisbench.util import download_http
 from seisbench.util.trace_ops import (
     rotate_stream_to_zne,
@@ -49,9 +49,19 @@ STATION_MAPPING = {
     "VACW": "VAC",
     "KVCW": "KVC",
     "KRCW": "KRC",
+    "ZEIT": "ZEITZ",
+    "LEIB": "LEIB1",
 }
 
 COMPONENT_ORDER = "ZNE"
+RNG = np.random.default_rng(31337)
+
+PICK_WHITELIST = {
+    "Pg",
+    "Sg",
+}
+
+WEBNET_SWITCH_SH_CH_CHANNEL = datetime(2015, 5, 26)
 
 STATION_NETWORK_CACHE: dict[str, str] = {}
 
@@ -75,7 +85,7 @@ Thuringia network (TH), and Czech network (CZ) and is provided by the
 BGR (Bundesanstalt für Geowissenschaften und Rohstoffe) and Geofon.
 
 Catalog and Picks:
-* https://doi.org/10.25532/OPARA-771
+* https://opara.zih.tu-dresden.de/items/5387886f-25f2-4faf-8dca-33981d898ab9
 
 Seismic Networks:
 * https://doi.org/10.7914/SN/SX
@@ -85,7 +95,9 @@ Seismic Networks:
 """
         self._client = MultiClient()
         self._client.add_client(Client("BGR"))
-        self._client.add_client(Client("GEOFON", eida_token=None))
+        self._client.add_client(
+            Client("GEOFON", eida_token="/home/marius/.ssh/eidatoken.pgp")
+        )
         self._client.add_client(Client("LMU"))
 
         super().__init__(
@@ -125,9 +137,9 @@ Seismic Networks:
             stations = get_stations(catalog)
             starttime, endtime = get_catalog_timerange(catalog)
             inv = self._client.get_inventory(
-                stations=stations,
-                starttime=starttime,
-                endtime=endtime,
+                stations=stations
+                # starttime=starttime,
+                # endtime=endtime,
             )
             inv.write(str(inventory_file), format="STATIONXML")
 
@@ -192,7 +204,7 @@ Seismic Networks:
             )
 
         rotate_stream_to_zne(stream, inventory=inventory)
-        sampling_rate = homogenize_sampling_rate(stream, sampling_rate)
+        sampling_rate = await homogenize_sampling_rate(stream, sampling_rate)
 
         stream = stream.slice(tmin, tmax)
         actual_t_start, data, completeness = stream_to_array(
@@ -249,7 +261,11 @@ Seismic Networks:
 
         cat = fixup_catalog(cat, inv)
 
-        async def download_event_data(event_work: list, timeout: float | None = 60.0):
+        async def download_event_data(
+            event_work: list,
+            timeout: float | None = 60.0,
+            split: Literal["train", "dev", "test"] = "train",
+        ) -> int:
             n_stations = 0
             n_work = len(event_work)
             try:
@@ -258,14 +274,19 @@ Seismic Networks:
                 ):
                     try:
                         event_params, trace_params, data = await result
+                        event_params["split"] = split
                     except Exception as exc:
-                        logger.error(
+                        logger.warning(
                             "Error processing event %s: %s",
                             event.short_str(),
                             exc,
                         )
                         continue
-                    writer.add_trace({**event_params, **trace_params}, data)
+                    await asyncio.to_thread(
+                        writer.add_trace,
+                        {**event_params, **trace_params},
+                        data,
+                    )
                     logger.debug(
                         "Processed station %s (%d/%d)",
                         event.short_str(),
@@ -275,8 +296,7 @@ Seismic Networks:
                     n_stations += 1
             except asyncio.TimeoutError:
                 logger.error(
-                    "Timeout while downloading event data for %s.",
-                    event.resource_id,
+                    "Timeout while downloading event data for %s.", event.resource_id
                 )
             return n_stations
 
@@ -303,7 +323,7 @@ Seismic Networks:
                 )
                 event_work.append(work)
 
-            n_stations = asyncio.run(download_event_data(event_work))
+            n_stations = asyncio.run(download_event_data(event_work, split=get_split()))
             n_stations_total += n_stations
             logger.info(
                 "Downloaded %d waveform examples. %d stations for event %s (%d/%d)",
@@ -375,6 +395,11 @@ class MultiClient:
         starttime: datetime = datetime.min,
         endtime: datetime = datetime.max,
     ) -> Stream:
+        if not self._network:
+            raise ValueError(
+                "No networks discovered. "
+                "Please call get_inventory() first to discover networks."
+            )
         client = self._network[network]
 
         logger.debug("Fetching waveforms from client %s", client.base_url)
@@ -430,55 +455,6 @@ class MultiClient:
         return inventory
 
 
-class EventParameters(TypedDict):
-    split: Literal["train", "dev", "test"]
-
-    source_id: str
-    source_origin_time: str
-    source_origin_uncertainty_sec: float
-    source_latitude_deg: float
-    source_latitude_uncertainty_km: float
-    source_longitude_deg: float
-    source_longitude_uncertainty_km: float
-    source_depth_km: float
-    source_depth_uncertainty_km: float
-
-    source_magnitude: NotRequired[float]
-    source_magnitude_uncertainty: NotRequired[float]
-    source_magnitude_type: NotRequired[str]
-    source_magnitude_author: NotRequired[str]
-
-    source_focal_mechanism_t_azimuth: NotRequired[float]
-    source_focal_mechanism_t_plunge: NotRequired[float]
-    source_focal_mechanism_t_length: NotRequired[float]
-    source_focal_mechanism_p_azimuth: NotRequired[float]
-    source_focal_mechanism_p_plunge: NotRequired[float]
-    source_focal_mechanism_p_length: NotRequired[float]
-    source_focal_mechanism_n_azimuth: NotRequired[float]
-    source_focal_mechanism_n_plunge: NotRequired[float]
-    source_focal_mechanism_n_length: NotRequired[float]
-
-
-class TraceParameters(TypedDict):
-    trace_name: str
-
-    path_back_azimuth_deg: float
-    station_network_code: str
-    station_code: str
-    trace_channel: str
-    station_location_code: str
-    station_latitude_deg: float
-    station_longitude_deg: float
-    station_elevation_m: float
-
-    trace_sampling_rate_hz: NotRequired[float]
-    trace_completeness: NotRequired[float]
-    trace_has_spikes: NotRequired[np.bool]
-    trace_start_time: NotRequired[str]
-
-    trace_component_order: NotRequired[str]
-
-
 def get_event_params(event: Event):
     origin = event.preferred_origin()
     magnitude = event.preferred_magnitude()
@@ -508,28 +484,6 @@ def get_event_params(event: Event):
         params["source_magnitude_uncertainty"] = magnitude.mag_errors["uncertainty"]
         params["source_magnitude_type"] = magnitude.magnitude_type
         params["source_magnitude_author"] = magnitude.creation_info.agency_id
-
-    if focal_mechanism is not None:
-        try:
-            t_axis, p_axis, n_axis = (
-                focal_mechanism.principal_axes.t_axis,
-                focal_mechanism.principal_axes.p_axis,
-                focal_mechanism.principal_axes.n_axis,
-            )
-            params["source_focal_mechanism_t_azimuth"] = t_axis.azimuth
-            params["source_focal_mechanism_t_plunge"] = t_axis.plunge
-            params["source_focal_mechanism_t_length"] = t_axis.length
-
-            params["source_focal_mechanism_p_azimuth"] = p_axis.azimuth
-            params["source_focal_mechanism_p_plunge"] = p_axis.plunge
-            params["source_focal_mechanism_p_length"] = p_axis.length
-
-            params["source_focal_mechanism_n_azimuth"] = n_axis.azimuth
-            params["source_focal_mechanism_n_plunge"] = n_axis.plunge
-            params["source_focal_mechanism_n_length"] = n_axis.length
-        except AttributeError:
-            # There seem to be a few broken xml files. In this case, just ignore the focal mechanism.
-            pass
 
     return params
 
@@ -577,35 +531,41 @@ def fixup_catalog(catalog: Catalog, inventory: Inventory) -> Catalog:
     """
     for event in catalog.events.copy():
         for pick in event.picks.copy():
+            if pick.phase_hint not in PICK_WHITELIST:
+                event.picks.remove(pick)
+                continue
+
+            waveform_id = pick.waveform_id
+
             try:
-                pick.waveform_id.channel_code = "%sH%s" % tuple(
-                    pick.waveform_id.channel_code
-                )
+                waveform_id.channel_code = "%sH%s" % tuple(waveform_id.channel_code)
             except TypeError:
                 # This happens if the channel code is already in the correct format.
                 event.picks.remove(pick)
                 continue
 
             # Fix station names to FDSN
-            pick.waveform_id.station_code = STATION_MAPPING.get(
-                pick.waveform_id.station_code,
-                pick.waveform_id.station_code,
+            waveform_id.station_code = STATION_MAPPING.get(
+                waveform_id.station_code,
+                waveform_id.station_code,
             )
 
             try:
-                pick.waveform_id.network_code = get_network_code(
-                    pick.waveform_id.station_code, inventory
+                waveform_id.network_code = get_network_code(
+                    waveform_id.station_code, inventory
                 )
             except KeyError:
-                logger.warning(
-                    "Unknown network code for station %s in event %s.",
-                    pick.waveform_id.station_code,
-                    event.resource_id,
-                )
                 event.picks.remove(pick)
                 continue
 
-            if pick.waveform_id.channel_code in REMOVE_CHANNELS:
+            if waveform_id.network_code == "WB":
+                origin_time = event.preferred_origin().time.datetime
+                if origin_time < WEBNET_SWITCH_SH_CH_CHANNEL:
+                    waveform_id.channel_code = "SH%s" % waveform_id.channel_code[-1]
+                else:
+                    waveform_id.channel_code = "CH%s" % waveform_id.channel_code[-1]
+
+            if waveform_id.channel_code in REMOVE_CHANNELS:
                 event.picks.remove(pick)
 
         if not event.picks:
@@ -621,7 +581,7 @@ def fixup_catalog(catalog: Catalog, inventory: Inventory) -> Catalog:
     return catalog
 
 
-def homogenize_sampling_rate(st: Stream, sampling_rate: float) -> float:
+async def homogenize_sampling_rate(st: Stream, sampling_rate: float) -> float:
     """
     Homogenizes the sampling rate of the stream to the given sampling rate.
     """
@@ -635,7 +595,7 @@ def homogenize_sampling_rate(st: Stream, sampling_rate: float) -> float:
                 trace.stats.sampling_rate,
                 sampling_rate,
             )
-            trace.resample(sampling_rate)
+            await asyncio.to_thread(trace.resample, sampling_rate)
     return sampling_rate
 
 
@@ -648,5 +608,17 @@ def get_network_code(station_code: str, inventory: Inventory) -> str:
             if station.code == station_code:
                 STATION_NETWORK_CACHE[station_code] = network.code
                 return network.code
-    STATION_NETWORK_CACHE[station_code] = ""
     raise KeyError(f"Unknown network code for station {station_code}.")
+
+
+def get_split(train: float = 0.8, dev: float = 0.1) -> Literal["train", "dev", "test"]:
+    """
+    Returns a random split for the dataset.
+    """
+    r = RNG.random()
+    if r < train:
+        return "train"
+    elif r < train + dev:
+        return "dev"
+    else:
+        return "test"
