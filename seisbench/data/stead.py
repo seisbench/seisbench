@@ -97,7 +97,7 @@ class STEAD(BenchmarkDataset):
 
         split_url = "https://github.com/smousavi05/EQTransformer/raw/master/ModelsAndSampleData/test.npy"
         seisbench.util.download_http(
-            split_url, path / "test.npy", desc=f"Downloading test splits"
+            split_url, path / "test.npy", desc="Downloading test splits"
         )
 
         # Copy metadata and rename columns to SeisBench format

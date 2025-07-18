@@ -4,7 +4,6 @@ from unittest.mock import patch
 import numpy as np
 import obspy
 import pytest
-import scipy.stats
 import torch
 from obspy import UTCDateTime
 from obspy.core.inventory import Channel, Inventory, Network, Station
@@ -257,7 +256,7 @@ def test_backproject_single_station(tmp_path):
                         "network": "XY",
                         "station": "E",
                         "location": "",
-                        "channel": f"model_pP",
+                        "channel": "model_pP",
                         "sampling_rate": 100,
                         "starttime": t0 - 10,
                     },
@@ -268,7 +267,7 @@ def test_backproject_single_station(tmp_path):
                         "network": "XY",
                         "station": "E",
                         "location": "",
-                        "channel": f"model_sP",
+                        "channel": "model_sP",
                         "sampling_rate": 100,
                         "starttime": t0 - 10,
                     },
@@ -298,7 +297,7 @@ def test_line_search_depth(tmp_path):
                             "network": "XY",
                             "station": station,
                             "location": "",
-                            "channel": f"model_pP",
+                            "channel": "model_pP",
                             "sampling_rate": 100,
                             "starttime": t0 - 10,
                         },
@@ -309,7 +308,7 @@ def test_line_search_depth(tmp_path):
                             "network": "XY",
                             "station": station,
                             "location": "",
-                            "channel": f"model_sP",
+                            "channel": "model_sP",
                             "sampling_rate": 100,
                             "starttime": t0 - 10,
                         },

@@ -1,7 +1,6 @@
 import itertools
 from typing import Any
 
-import numpy as np
 import obspy
 import torch
 import torch.nn as nn

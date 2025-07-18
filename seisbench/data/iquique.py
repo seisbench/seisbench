@@ -12,7 +12,6 @@ class Iquique(BenchmarkDataset):
     """
 
     def __init__(self, **kwargs):
-
         citation = (
             "Woollam, J., Rietbrock, A., Bueno, A. and De Angelis, S., 2019. "
             "Convolutional neural network for seismic phase classification, "

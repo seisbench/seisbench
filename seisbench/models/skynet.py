@@ -1,15 +1,12 @@
-import json
 from typing import Any
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from packaging import version
 
 import seisbench.util as sbu
 
-from .base import Conv1dSame, WaveformModel, _cache_migration_v0_v3
+from .base import WaveformModel
 
 
 class Skynet(WaveformModel):
@@ -156,7 +153,6 @@ class Skynet(WaveformModel):
         self.softmax = nn.Softmax(dim=1)
 
     def forward(self, X, logits=False):
-
         X1 = torch.relu(self.bn1(self.conv1(X)))
         X2 = torch.relu(self.bn2(self.conv2(X1)))
         X3 = torch.relu(self.bn3(self.conv3(X2)))

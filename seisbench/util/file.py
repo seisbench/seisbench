@@ -234,10 +234,10 @@ def callback_if_uncached(
             time.sleep(test_interval)
         else:
             raise ValueError(
-                f"Found partial instance. "
-                f"This suggests that either the download is currently in progress or a download failed. "
-                f"To redownload the file, call the dataset with force=True. "
-                f"To wait for another download to finish, use wait_for_file=True."
+                "Found partial instance. "
+                "This suggests that either the download is currently in progress or a download failed. "
+                "To redownload the file, call the dataset with force=True. "
+                "To wait for another download to finish, use wait_for_file=True."
             )
 
     if not exist() and force:

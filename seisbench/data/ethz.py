@@ -146,7 +146,7 @@ class ETHZ(BenchmarkDataset):
                 if len(waveforms) == 0:
                     seisbench.logger.debug(
                         f"Found no waveforms for {waveform_id_to_network_station_location(picks[0].waveform_id.id)}"
-                        f' in event {event_params["source_id"]}'
+                        f" in event {event_params['source_id']}"
                     )
                     continue
 
@@ -161,9 +161,9 @@ class ETHZ(BenchmarkDataset):
                     )
                     waveforms.resample(sampling_rate)
 
-                trace_params[
-                    "trace_name"
-                ] = f"{event_params['source_id']}_{waveform_id_to_network_station_location(picks[0].waveform_id.id)}"
+                trace_params["trace_name"] = (
+                    f"{event_params['source_id']}_{waveform_id_to_network_station_location(picks[0].waveform_id.id)}"
+                )
 
                 stream = waveforms.slice(t_start, t_end)
 
@@ -188,17 +188,17 @@ class ETHZ(BenchmarkDataset):
                     trace_params[f"trace_{pick.phase_hint}_arrival_sample"] = int(
                         sample
                     )
-                    trace_params[
-                        f"trace_{pick.phase_hint}_status"
-                    ] = pick.evaluation_mode
+                    trace_params[f"trace_{pick.phase_hint}_status"] = (
+                        pick.evaluation_mode
+                    )
                     if pick.polarity is None:
-                        trace_params[
-                            f"trace_{pick.phase_hint}_polarity"
-                        ] = "undecidable"
+                        trace_params[f"trace_{pick.phase_hint}_polarity"] = (
+                            "undecidable"
+                        )
                     else:
-                        trace_params[
-                            f"trace_{pick.phase_hint}_polarity"
-                        ] = pick.polarity
+                        trace_params[f"trace_{pick.phase_hint}_polarity"] = (
+                            pick.polarity
+                        )
 
                 writer.add_trace({**event_params, **trace_params}, data)
 

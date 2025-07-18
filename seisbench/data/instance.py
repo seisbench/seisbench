@@ -1,5 +1,4 @@
 import bz2
-import os
 import shutil
 from abc import ABC
 from urllib.parse import urljoin

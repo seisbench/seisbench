@@ -1,7 +1,7 @@
 import pickle
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 import numpy as np
 import obspy
@@ -467,9 +467,9 @@ class DepthFinder:
         self.phase_model = phase_model
         self.p_window = p_window
         self.p_threshold = p_threshold
-        self.cache: Optional[
-            Path
-        ] = None  # If set, cache waveforms at this path and try loading them here
+        self.cache: Optional[Path] = (
+            None  # If set, cache waveforms at this path and try loading them here
+        )
 
         self.tt_model = TauPyModel(model="iasp91")
 
@@ -611,7 +611,6 @@ class DepthFinder:
         time_before: float = 100,
         time_after: float = 300,
     ) -> obspy.Stream:
-
         bulks = {provider: [] for provider in self.networks.keys()}
         for station, pick in p_picks.items():
             net, sta, loc = station.split(".")

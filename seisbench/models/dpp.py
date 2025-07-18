@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from .base import ActivationLSTMCell, CustomLSTM, WaveformModel, WaveformPipeline
+from .base import WaveformModel, WaveformPipeline
 
 
 class DeepPhasePick(WaveformPipeline):
@@ -125,7 +125,6 @@ class DPPDetector(WaveformModel):
         self.activation3 = torch.nn.Softmax(dim=1)
 
     def forward(self, x, logits=False):
-
         x = self.bn1(self.activation1((self.conv1(x))))
         x = self.pool(x)
         x = self.dropout1(x)

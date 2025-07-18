@@ -1,7 +1,7 @@
 import copy
 import re
 from abc import ABC, abstractmethod
-from typing import Optional, Union
+from typing import Union
 
 import numpy as np
 from scipy.signal import stft
@@ -55,7 +55,7 @@ class SupervisedLabeller(ABC):
         :return: Label
         :rtype: numpy.ndarray
         """
-        return y
+        return
 
     @staticmethod
     def _swap_dimension_order(arr, current_dim, expected_dim):
@@ -76,8 +76,8 @@ class SupervisedLabeller(ABC):
             width_dim = int(not channel_dim)
         else:
             raise ValueError(
-                f"Only computes dimension order given 3 dimensions (NCW), "
-                f"or 2 dimensions (CW)."
+                "Only computes dimension order given 3 dimensions (NCW), "
+                "or 2 dimensions (CW)."
             )
 
         return sample_dim, channel_dim, width_dim
@@ -90,12 +90,12 @@ class SupervisedLabeller(ABC):
         ):
             if (y.sum(self.dim) > 1 + eps).any():
                 raise ValueError(
-                    f"More than one label provided. For multi_class problems, only one label can be provided per input."
+                    "More than one label provided. For multi_class problems, only one label can be provided per input."
                 )
 
         if self.label_type == "binary":
             if (y.sum(self.dim) > 1 + eps).any():
-                raise ValueError(f"Binary labels should lie within 0-1 range.")
+                raise ValueError("Binary labels should lie within 0-1 range.")
 
         for label in self.label_columns:
             if label not in metadata:
@@ -196,8 +196,8 @@ class PickLabeller(SupervisedLabeller, ABC):
 
         if any(not x.endswith("_sample") for x in label_columns.keys()):
             seisbench.logger.warning(
-                f"Found key in labeler that does not end in '_sample'. "
-                f"If your dataset uses automatic resampling, the label position might be wrong."
+                "Found key in labeler that does not end in '_sample'. "
+                "If your dataset uses automatic resampling, the label position might be wrong."
             )
 
         if model_labels:
@@ -298,9 +298,9 @@ class ProbabilisticLabeller(PickLabeller):
                         f"Labeller of shape {self.shape} is not implemented."
                     )
 
-                label_val[
-                    np.isnan(label_val)
-                ] = 0  # Set non-present pick probabilities to 0
+                label_val[np.isnan(label_val)] = (
+                    0  # Set non-present pick probabilities to 0
+                )
                 y[i, :] = np.maximum(y[i, :], label_val)
             else:
                 # Handle multi-window case
@@ -315,9 +315,9 @@ class ProbabilisticLabeller(PickLabeller):
                             f"Labeller of shape {self.shape} is not implemented."
                         )
 
-                    label_val[
-                        np.isnan(label_val)
-                    ] = 0  # Set non-present pick probabilities to 0
+                    label_val[np.isnan(label_val)] = (
+                        0  # Set non-present pick probabilities to 0
+                    )
                     y[j, i, :] = np.maximum(y[j, i, :], label_val)
 
         if self.noise_column:
@@ -817,7 +817,6 @@ class STFTDenoiserLabeller:
         mask_key: str = "y",
         **kwargs,
     ):
-
         self.noise_dataset = noise_dataset
         self.scale = scale
         self.scaling_type = scaling_type.lower()

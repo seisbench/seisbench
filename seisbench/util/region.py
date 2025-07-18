@@ -118,4 +118,6 @@ class Germany(Domain):
         :return: True if point is within the domain, false otherwise
         :rtype: bool
         """
+        import shapely
+
         return self.shape.contains(shapely.geometry.Point(longitude, latitude))

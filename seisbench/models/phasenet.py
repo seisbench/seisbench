@@ -641,8 +641,8 @@ class VariableLengthPhaseNet(PhaseNet):
         model_args["sampling_rate"] = self.sampling_rate
         model_args["norm"] = self.norm
         model_args["norm_axis"] = self.norm_axis
-        model_args[
-            "output_activation"
-        ] = self.output_activation.__class__.__name__.lower()
+        model_args["output_activation"] = (
+            self.output_activation.__class__.__name__.lower()
+        )
 
         return model_args

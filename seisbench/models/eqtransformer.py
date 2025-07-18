@@ -2,13 +2,11 @@ import warnings
 from typing import Any
 
 import numpy as np
-import scipy.signal
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 import seisbench.util as sbu
-import seisbench.util.arraytools
 
 from .base import ActivationLSTMCell, CustomLSTM, WaveformModel
 
@@ -117,7 +115,7 @@ class EQTransformer(WaveformModel):
         self.norm = norm
 
         # Add options for conservative and the true original - see https://github.com/seisbench/seisbench/issues/96#issuecomment-1155158224
-        if original_compatible == True:
+        if original_compatible:
             warnings.warn(
                 "Using the non-conservative 'original' model, set `original_compatible='conservative' to use the more conservative model"
             )

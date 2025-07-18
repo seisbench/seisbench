@@ -41,7 +41,7 @@ dependencies = [
 include = ["seisbench*"]
 
 [project.optional-dependencies]
-development = ["flake8", "black", "isort", "pre-commit"]
+development = ["ruff", "pre-commit"]
 tests = ["pytest"]
 
 [tool.setuptools_scm]
@@ -52,6 +52,4 @@ Documentation = "https://seisbench.readthedocs.io/en/latest/"
 Issues = "https://github.com/seisbench/seisbench/issues"
 
 [tool.pytest.ini_options]
-markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-]
+markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]

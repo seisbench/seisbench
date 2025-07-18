@@ -19,7 +19,7 @@ class LFEStacksCascadiaBostock2015(BenchmarkDataset):
             license=license,
             repository_lookup=True,
             component_order=component_order,
-            **kwargs
+            **kwargs,
         )
 
     def _download_dataset(self, writer, **kwargs):
@@ -44,7 +44,7 @@ class LFEStacksMexicoFrank2014(BenchmarkDataset):
             license=license,
             repository_lookup=True,
             component_order=component_order,
-            **kwargs
+            **kwargs,
         )
 
     def _download_dataset(self, writer, **kwargs):
@@ -69,7 +69,7 @@ class LFEStacksSanAndreasShelly2017(BenchmarkDataset):
             license=license,
             repository_lookup=True,
             component_order=component_order,
-            **kwargs
+            **kwargs,
         )
 
     def _download_dataset(self, writer, **kwargs):

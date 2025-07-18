@@ -49,9 +49,9 @@ class CWABase(BenchmarkDataset, ABC):
     src_repo_name = None
 
     def __init__(self, **kwargs):
-        assert (
-            self.src_repo_name is not None
-        ), "Subclass needs to overwrite src_repo_name"
+        assert self.src_repo_name is not None, (
+            "Subclass needs to overwrite src_repo_name"
+        )
         super().__init__(citation=self.citation, repository_lookup=True, **kwargs)
 
     def _download_dataset(self, writer, chunk, **kwargs):
