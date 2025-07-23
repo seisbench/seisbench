@@ -1,8 +1,7 @@
 import copy
-import random
 import re
 from abc import ABC, abstractmethod
-from typing import Union
+from typing import Optional, Union
 
 import numpy as np
 from scipy.signal import stft
@@ -783,7 +782,8 @@ class STFTDenoiserLabeller(SupervisedLabeller):
     by adding randomly scaled earthquake and noise waveforms.
 
     :param noise_dataset: Seisbench WaveformDataset that only contains noise waveforms for training.
-    :param scale: Tuple of minimum and maximum relative amplitude of the noise.
+    :param scale: Tuple of minimum and maximum relative amplitude of the earthquake and noise waveform.
+                  Both earthquake and noise waveforms are scaled independently by using np.random.uniform.
                   Relative amplitude is defined either by the absolute maximum or the root-mean-square of input array
                   (see scaling_type). Default value is (0, 1).
     :param scaling_type: Method how to find the relative amplitude of the input array. Either from the absolute maximum
@@ -809,11 +809,11 @@ class STFTDenoiserLabeller(SupervisedLabeller):
 
     def __init__(
         self,
-        noise_dataset: seisbench.data.base.WaveformDataset,
+        noise_dataset: seisbench.data.WaveformDataset,
         scale: tuple[float, float] = (0, 1),
         scaling_type: str = "peak",
         component: str = "ZNE",
-        sampling_rate: Union[float, None] = None,
+        sampling_rate: Optional[float] = None,
         nfft: int = 60,
         nperseg: int = 30,
         eps: float = 1e-12,
@@ -853,7 +853,7 @@ class STFTDenoiserLabeller(SupervisedLabeller):
             component_idx = metadata["trace_component_order"].index(self.component)
             metadata["trace_component_order"] = self.component
         else:
-            component_idx = random.randint(0, len(self.component) - 1)
+            component_idx = np.random.randint(0, len(self.component) - 1)
             metadata["trace_component_order"] = self.component[component_idx]
 
         # Select component from x and modify metadata
@@ -878,21 +878,21 @@ class STFTDenoiserLabeller(SupervisedLabeller):
 
         # Normalize earthquake and noise samples
         if self.scaling_type == "peak":
-            x = x / np.max(np.abs(x) + self.eps)
+            x = x / (np.max(np.abs(x)) + self.eps)
             n = n / (np.max(np.abs(n)) + self.eps)
         elif self.scaling_type == "std":
             x = x / (np.std(x) + self.eps)
             n = n / (np.std(n) + self.eps)
 
         # Cutting noise to same length as x
-        if len(n) - len(x) < 0:
+        if n.shape[-1] < x.shape[-1]:
             msg = (
                 f"The length of the data ({len(x)} samples) and the noise ({len(n)} samples) must either be the same "
                 f"or the shape of the noise must be larger than the shape of the data."
             )
             raise ValueError(msg)
 
-        if len(n) - len(x) > 0:
+        if n.shape[-1] < x.shape[-1]:
             spoint = np.random.randint(low=0, high=len(n) - len(x))
         else:
             spoint = 0
@@ -949,6 +949,8 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         )  # Target, i.e. masks for signal and noise
 
         # Normalize real and imaginary parts of STFT to range [-1, 1]
+        # TODO: I'm not sure why you normalize again after the STFT, given the input to the STFT was normalized.
+        #       I think normalizing real and imaginary part independently causes issues, because it will distort both phase and amplitude of the complex signal.
         X[0, :, :] = stft_noisy.real / (np.max(np.abs(stft_noisy.real)) + self.eps)
         X[1, :, :] = stft_noisy.imag / (np.max(np.abs(stft_noisy.imag)) + self.eps)
 
@@ -961,6 +963,9 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         y = np.nan_to_num(y)
 
         # Update state_dicts for input and target
+        # TODO: self.key[0] is the input key and should not be overwritten (unless explicitly requested by the user).
+        #  Maybe you could make the parameters to the class more specific. Something like input_key="X",
+        #  noisy_output_key="X", mask_key="y". Then it would be more explicit that the module will overwrite "X".
         state_dict[self.key[0]] = (X, metadata)
         state_dict[self.key[1]] = (y, metadata)
 
@@ -969,6 +974,8 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         Label method is passed since __call__ creates input and correct masking functions.
         Both, input and output are transformed into time-frequency domain.
         """
+        # TODO: I'm wondering if it might be an option to not subclass SupervisedLabeller. Semantically it seems
+        #  reasonable, but on the other hand I think you're not actually using any functions of the superclass.
         pass
 
     def __str__(self):

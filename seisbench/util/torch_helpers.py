@@ -33,7 +33,8 @@ def min_max_normalization(x: np.array, eps: float = 1e-10) -> np.array:
 
 def z_score_normalization(x: np.array) -> np.array:
     """
-    Normalize data by z-score
+    Normalize data by z-score.
+
     .. math::
         \frax{x - \mu}{\sigma}
 
