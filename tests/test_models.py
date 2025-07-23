@@ -3,6 +3,7 @@ import inspect
 import logging
 from collections import defaultdict
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np
@@ -574,7 +575,7 @@ def test_cut_fragments_array():
     )
     data = [np.ones((3, 10001))]
     argdict = {"overlap": 100, "sampling_rate": 100}
-    elem = (0, data[0], None)
+    elem = (UTCDateTime(), data[0], ["A", "B"])
 
     out = [x[0] for x in dummy._cut_fragments_array(elem, argdict)]
 
@@ -597,7 +598,10 @@ def test_reassemble_blocks_array():
     starts = [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200, 8100, 9000, 9001]
 
     for i in range(12):
-        elem = (np.ones((1000, 3)), (t0, starts[i], 12, trace_stats, 0))
+        elem = (
+            np.ones((1000, 3)),
+            ("key", t0, starts[i], 12, trace_stats, 0, 1000, (0, 1000)),
+        )
         out_elem = dummy._reassemble_blocks_array(elem, buffer, argdict)
         if out_elem is not None:
             out += [out_elem[0]]
@@ -624,7 +628,10 @@ def test_reassemble_blocks_array_stack_options():
         starts = [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200, 8100, 9000, 9001]
 
         for i in range(12):
-            elem = (np.ones((1000, 3)) + i, (t0, starts[i], 12, trace_stats, 0))
+            elem = (
+                np.ones((1000, 3)) + i,
+                ("key", t0, starts[i], 12, trace_stats, 0, 1000, (0, 1000)),
+            )
             out_elem = dummy._reassemble_blocks_array(elem, buffer, argdict)
             if out_elem is not None:
                 out += [out_elem[0]]
@@ -2583,3 +2590,102 @@ def test_fractional_sample_handling():
     ann = model.annotate(stream, blinding=(0, 0))
     for trace in ann:
         assert trace.stats.starttime == t0 + 1.0 / 1000.0
+
+
+def test_dynamic_samples():
+    class DynamicWaveformModel(seisbench.models.WaveformModel):
+        def __init__(self):
+            super().__init__(
+                component_order="ZNE",
+                output_type="array",
+                in_samples=1024,
+                pred_sample=(0, 1024),
+                labels="PSN",
+                sampling_rate=100,
+            )
+
+            self.shape_log = []
+
+            # Required for device function
+            self.layer = torch.nn.Linear(5, 5)
+
+        def forward(self, x):
+            return torch.ones((x.shape[0], 3, x.shape[-1]))
+
+        def _get_in_pred_samples(
+            self, block: np.ndarray
+        ) -> tuple[int, tuple[int, int]]:
+            in_samples = 2 ** int(
+                np.log2(block.shape[-1])
+            )  # The largest power of 2 below the block shape
+            in_samples = min(
+                max(in_samples, 2**10), 2**20
+            )  # Enforce upper and lower bounds
+            pred_sample = (0, in_samples)
+            self.shape_log.append((in_samples, pred_sample))
+            return in_samples, pred_sample
+
+        def annotate_batch_post(
+            self, batch: torch.Tensor, piggyback: Any, argdict: dict[str, Any]
+        ) -> torch.Tensor:
+            # Transpose predictions to correct shape
+            return torch.transpose(batch, -1, -2)
+
+    model = DynamicWaveformModel()
+
+    for n, target in zip(
+        [1000, 1024, 5000, 2**20, 2**22], [1024, 1024, 4096, 2**20, 2**20]
+    ):
+        header_base = {
+            "network": "XX",
+            "station": "YY",
+            "location": "",
+            "sampling_rate": model.sampling_rate,
+        }
+        stream = obspy.Stream(
+            [
+                obspy.Trace(
+                    np.random.randn(n), header={**header_base, "channel": f"HH{c}"}
+                )
+                for c in model.component_order
+            ]
+        )
+
+        ann = model.annotate(stream)
+        if n < 1024:  # Trace too short
+            assert len(ann) == 0
+        else:
+            assert len(ann) == 3
+
+            assert model.shape_log[-1] == (target, (0, target))
+
+    # Annotate mixed stream, i.e., mixed window sizes
+    header_base = {
+        "network": "XX",
+        "station": "YY",
+        "location": "",
+        "sampling_rate": model.sampling_rate,
+    }
+    stream1 = obspy.Stream(
+        [
+            obspy.Trace(
+                np.random.randn(2000), header={**header_base, "channel": f"HH{c}"}
+            )
+            for c in model.component_order
+        ]
+    )
+    header_base = {
+        "network": "XX",
+        "station": "ZZ",
+        "location": "",
+        "sampling_rate": model.sampling_rate,
+    }
+    stream2 = obspy.Stream(
+        [
+            obspy.Trace(
+                np.random.randn(10000), header={**header_base, "channel": f"HH{c}"}
+            )
+            for c in model.component_order
+        ]
+    )
+    assert len(model.annotate(stream1 + stream2)) == 6
