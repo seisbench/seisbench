@@ -208,16 +208,11 @@ class SeisDAE(WaveformModel):
             "https://doi.org/10.1007/s10950-022-10097-6"
         )
 
-        # TODO: When loading a model **kwargs are doubled with loaded ones from model_args
         WaveformModel.__init__(
             self,
             citation=citation,
             in_samples=in_samples,
             output_type="array",
-            # TODO: Setting this will make it impossible to pass default_args through the kwargs, so it should be removed.
-            #  It is also not necessary, because it is set before (see comment above).
-            # default_args={"overlap": in_samples // 2},
-            # labels=self.generate_label,  # XXX
             pred_sample=(0, in_samples),
             sampling_rate=sampling_rate,
             grouping="channel",
@@ -391,21 +386,9 @@ class SeisDAE(WaveformModel):
         Does preprocessing for prediction
         """
         # STFT of each batch and component
-        # TODO: I think it would be better to avoid writing to a class variable here. Just add norm_factors to the
-        #  piggyback by returning noisy_input, (noisy_stft, norm_factors) at the bottom.
-        #
-        # TODO: From what I see, you're switching between numpy/scipy and torch. I think this will break when running on GPU.
-        #  Can you replace the numpy/scipy calls with the torch equivalents? There's an example for the torch STFT in the
-        #  annotate_batch_pre function for DeepDenoiser.
-        self.norm_factors = np.empty(shape=batch.shape[0])
-        # _, _, noisy_stft = stft(
-        #     x=self._normalize_trace(batch=batch),
-        #     fs=self.sampling_rate,
-        #     nfft=self.nfft,
-        #     nperseg=self.nperseg,
-        # )
+        batch, norm_factors = self._normalize_trace(batch=batch)
         noisy_stft = torch.stft(
-            input=self._normalize_trace(batch=batch),
+            input=batch,
             n_fft=self.nfft,
             win_length=self.nperseg,
             window=torch.hann_window(self.nperseg).to(batch.device),
@@ -416,8 +399,9 @@ class SeisDAE(WaveformModel):
         )
 
         # Normalize real and imaginary input to range [-1, 1]
-        # noisy_stft_real = noisy_stft.real / np.max(np.abs(noisy_stft.real))
-        # noisy_stft_imag = noisy_stft.imag / np.max(np.abs(noisy_stft.imag))
+        # Normalizing real and imaginary part might distort amplitude and phase, however, from my experiences the
+        # denoising result is more accurate. If you train a SeisDAE model without normalization, don't forget to
+        # remove the normalization in the training (labeling.STFTDenoiserLabeller)
         noisy_stft_real = noisy_stft.real / torch.max(torch.abs(noisy_stft.real))
         noisy_stft_imag = noisy_stft.imag / torch.max(torch.abs(noisy_stft.imag))
 
@@ -430,7 +414,7 @@ class SeisDAE(WaveformModel):
         noisy_input[torch.isnan(noisy_input)] = 0
         noisy_input[torch.isinf(noisy_input)] = 0
 
-        return noisy_input, noisy_stft
+        return noisy_input, (noisy_stft, norm_factors)
 
     def _normalize_trace(self, batch: torch.Tensor):
         """
@@ -449,9 +433,9 @@ class SeisDAE(WaveformModel):
         batch = batch / (norm + self.eps)
 
         # Save normalization factors
-        self.norm_factors = norm.squeeze(1)
+        norm_factors = norm.squeeze(1)
 
-        return batch
+        return batch, norm_factors
 
     def annotate_batch_post(
         self, batch: torch.Tensor, piggyback: Any, argdict: dict[str, Any]
@@ -459,16 +443,9 @@ class SeisDAE(WaveformModel):
         """
         Does postprocessing when predicting datasets
         """
-        # Multiply piggyback (STFT of noisy signal) with batch (predicted mask) for signal
-        signal_stft = piggyback * batch.numpy()[:, 0, :]
+        # Multiply piggyback[0] (STFT of noisy signal) with batch (predicted mask) for signal
+        signal_stft = piggyback[0] * batch[:, 0, :]
 
-        # TODO: Same as above, the annotate_batch_post function should run in torch space.
-        # _, denoised_signal = istft(
-        #     Zxx=signal_stft,
-        #     fs=self.sampling_rate,
-        #     nfft=self.nfft,
-        #     nperseg=self.nperseg,
-        # )
         denoised_signal = torch.istft(
             input=signal_stft,
             n_fft=self.nfft,
@@ -488,7 +465,7 @@ class SeisDAE(WaveformModel):
             denoised_signal[:, -postnan:] = np.nan
 
         return (
-            denoised_signal * self.norm_factors[:, None]
+            denoised_signal * piggyback[1][:, None]
         )  # Convert denoised to original amplitude
 
     def get_model_args(self):

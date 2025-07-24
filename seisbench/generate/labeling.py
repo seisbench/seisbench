@@ -775,7 +775,7 @@ class StandardLabeller(PickLabeller):
         return f"StandardLabeller (label_type={self.label_type}, dim={self.dim})"
 
 
-class STFTDenoiserLabeller(SupervisedLabeller):
+class STFTDenoiserLabeller:
     """
     Create supervised labels for DeepDenoiser and SeisDAE with short-time Fourier transform (STFT).
     Noise samples from noise_dataset are randomly selected and earthquakes waveforms are deteriorated
@@ -796,11 +796,10 @@ class STFTDenoiserLabeller(SupervisedLabeller):
     :param sampling_rate: Sampling rate in Hz of earthquake waveform and noise dataset.
                           If sampling_rate = None, sampling_rate is taken from metadata
                           with key "trace_sampling_rate_hz". Default is None.
-    :param key: The keys for reading from and writing to the state dict.
-                If key is a single string, the corresponding entry in state dict is modified.
-                Otherwise, a 2-tuple is expected, with the first string indicating the key to
-                read from and the second one the key to write to.
-                Default key is ("X", "y").
+    :param input_key: Key for reading data from the state_dict. Default is "X".
+    :param noisy_output_key: Key to write noisy STFT to state_dict. Default is "X", i.e. the input data
+                             will be overwritten.
+    :param mask_key: Key for writing computed mask function to state_dict. Default is "y".
     :param nfft: Length of the FFT used, if a zero padded FFT is desired for scipy STFT.
                  If None, the FFT length is nperseg.
     :param nperseg: Length of each segment for scipy STFT. Default is 60
@@ -817,15 +816,19 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         nfft: int = 60,
         nperseg: int = 30,
         eps: float = 1e-12,
-        key: tuple[str, str] = ("X", "y"),
+        input_key: str = "X",
+        noisy_output_key: str = "X",
+        mask_key: str = "y",
         **kwargs,
     ):
-        super().__init__(label_type="binary", dim=2)
 
         self.noise_dataset = noise_dataset
         self.scale = scale
         self.scaling_type = scaling_type.lower()
-        self.key = key
+
+        self.input_key = input_key
+        self.noisy_output_key = noisy_output_key
+        self.mask_key = mask_key
         self.component = component
         self.sampling_rate = sampling_rate
         self.noise_generator = seisbench.generate.GenericGenerator(noise_dataset)
@@ -840,9 +843,9 @@ class STFTDenoiserLabeller(SupervisedLabeller):
             raise ValueError(msg)
 
     def __call__(self, state_dict):
-        x, metadata = state_dict[self.key[0]]
+        x, metadata = state_dict[self.input_key]
 
-        if self.key[0] != self.key[1]:
+        if self.input_key != self.mask_key:
             # Ensure data and metadata is not modified inplace unless input and output key are anyhow identical
             metadata = copy.deepcopy(metadata)
             x = x.copy()
@@ -949,8 +952,9 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         )  # Target, i.e. masks for signal and noise
 
         # Normalize real and imaginary parts of STFT to range [-1, 1]
-        # TODO: I'm not sure why you normalize again after the STFT, given the input to the STFT was normalized.
-        #       I think normalizing real and imaginary part independently causes issues, because it will distort both phase and amplitude of the complex signal.
+        # Normalizing real and imaginary part might distort amplitude and phase, however, from my experiences the
+        # denoising result is more accurate. If you train a SeisDAE model without normalization, don't forget to
+        # remove the normalization in the prediction (seisdae.annotate_batch_pre)
         X[0, :, :] = stft_noisy.real / (np.max(np.abs(stft_noisy.real)) + self.eps)
         X[1, :, :] = stft_noisy.imag / (np.max(np.abs(stft_noisy.imag)) + self.eps)
 
@@ -963,20 +967,8 @@ class STFTDenoiserLabeller(SupervisedLabeller):
         y = np.nan_to_num(y)
 
         # Update state_dicts for input and target
-        # TODO: self.key[0] is the input key and should not be overwritten (unless explicitly requested by the user).
-        #  Maybe you could make the parameters to the class more specific. Something like input_key="X",
-        #  noisy_output_key="X", mask_key="y". Then it would be more explicit that the module will overwrite "X".
-        state_dict[self.key[0]] = (X, metadata)
-        state_dict[self.key[1]] = (y, metadata)
-
-    def label(self, X, metadata):
-        """
-        Label method is passed since __call__ creates input and correct masking functions.
-        Both, input and output are transformed into time-frequency domain.
-        """
-        # TODO: I'm wondering if it might be an option to not subclass SupervisedLabeller. Semantically it seems
-        #  reasonable, but on the other hand I think you're not actually using any functions of the superclass.
-        pass
+        state_dict[self.noisy_output_key] = (X, metadata)
+        state_dict[self.mask_key] = (y, metadata)
 
     def __str__(self):
         return (

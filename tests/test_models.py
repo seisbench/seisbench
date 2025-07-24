@@ -1105,14 +1105,25 @@ def test_annotate_deep_denoiser():
         assert annotations[i].data.shape == (3000,)
 
 
-def test_annotate_seisdae():
-    stream = obspy.read()
+@pytest.mark.parametrize("samples", [3000, 4500, 16354])
+def test_annotate_seisdae(samples):
+    stream = obspy.Stream()
+    for i, channel in zip(range(3), ["HHZ", "HHN", "HHE"]):
+        data = np.random.random(samples)
+        trace = obspy.Trace(
+            data=data,
+            header=dict(
+                sampling_rate=100, channel=channel, network="SB", station="DAE"
+            ),
+        )
+        stream += trace
+
     model = seisbench.models.SeisDAE(in_samples=3000)
     annotations = model.annotate(stream)
 
     assert len(annotations) == 3
     for i in range(3):
-        assert annotations[i].data.shape == (3000,)
+        assert annotations[i].data.shape == (samples,)
 
 
 def test_eqtransformer_annotate_batch_post():
