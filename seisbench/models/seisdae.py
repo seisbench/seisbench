@@ -164,6 +164,7 @@ class SeisDAE(WaveformModel):
                      Default is False.
     :param norm: Type of normalization applied to traces ("peak" or "std").
                  Default is "peak"
+    :param eps: Factor to avoid division by zero. Default value is 1e-13.
     :param nfft: Length of the FFT used, if a zero padded FFT is desired for scipy STFT.
                  If None, the FFT length is nperseg.
     :param nperseg: Length of each segment for scipy STFT. Default is 60
@@ -192,6 +193,7 @@ class SeisDAE(WaveformModel):
         drop_rate: float = 0.0,
         use_bias: bool = False,
         norm: str = "peak",
+        eps: float = 1e-13,
         nfft: int = 60,
         nperseg: int = 30,
         attention: bool = False,
@@ -206,6 +208,7 @@ class SeisDAE(WaveformModel):
             "https://doi.org/10.1007/s10950-022-10097-6"
         )
 
+        # TODO: When loading a model **kwargs are doubled with loaded ones from model_args
         WaveformModel.__init__(
             self,
             citation=citation,
@@ -213,8 +216,8 @@ class SeisDAE(WaveformModel):
             output_type="array",
             # TODO: Setting this will make it impossible to pass default_args through the kwargs, so it should be removed.
             #  It is also not necessary, because it is set before (see comment above).
-            default_args={"overlap": in_samples // 2},
-            labels=self.generate_label,
+            # default_args={"overlap": in_samples // 2},
+            # labels=self.generate_label,  # XXX
             pred_sample=(0, in_samples),
             sampling_rate=sampling_rate,
             grouping="channel",
@@ -232,6 +235,7 @@ class SeisDAE(WaveformModel):
         self.drop_rate = drop_rate
         self.use_bias = use_bias
         self.norm = norm
+        self.eps = eps
         self.norm_factors = None
         self.attention = attention
 
@@ -375,10 +379,10 @@ class SeisDAE(WaveformModel):
 
         return x
 
-    @staticmethod
-    def generate_label(stations):
-        # Simply use channel as label
-        return stations[0].split(".")[-1]
+    # @staticmethod
+    # def generate_label(stations):
+    #     # Simply use channel as label
+    #     return stations[0].split(".")[-1]
 
     def annotate_batch_pre(
         self, batch: torch.Tensor, argdict: dict[str, Any]
@@ -394,16 +398,28 @@ class SeisDAE(WaveformModel):
         #  Can you replace the numpy/scipy calls with the torch equivalents? There's an example for the torch STFT in the
         #  annotate_batch_pre function for DeepDenoiser.
         self.norm_factors = np.empty(shape=batch.shape[0])
-        _, _, noisy_stft = stft(
-            x=self._normalize_trace(batch=batch),
-            fs=self.sampling_rate,
-            nfft=self.nfft,
-            nperseg=self.nperseg,
+        # _, _, noisy_stft = stft(
+        #     x=self._normalize_trace(batch=batch),
+        #     fs=self.sampling_rate,
+        #     nfft=self.nfft,
+        #     nperseg=self.nperseg,
+        # )
+        noisy_stft = torch.stft(
+            input=self._normalize_trace(batch=batch),
+            n_fft=self.nfft,
+            win_length=self.nperseg,
+            window=torch.hann_window(self.nperseg).to(batch.device),
+            hop_length=self.nperseg // 2,  # for 50% overlap like SciPy default
+            pad_mode="constant",
+            return_complex=True,
+            normalized=False,
         )
 
         # Normalize real and imaginary input to range [-1, 1]
-        noisy_stft_real = noisy_stft.real / np.max(np.abs(noisy_stft.real))
-        noisy_stft_imag = noisy_stft.imag / np.max(np.abs(noisy_stft.imag))
+        # noisy_stft_real = noisy_stft.real / np.max(np.abs(noisy_stft.real))
+        # noisy_stft_imag = noisy_stft.imag / np.max(np.abs(noisy_stft.imag))
+        noisy_stft_real = noisy_stft.real / torch.max(torch.abs(noisy_stft.real))
+        noisy_stft_imag = noisy_stft.imag / torch.max(torch.abs(noisy_stft.imag))
 
         noisy_input = torch.stack(
             tensors=[torch.Tensor(noisy_stft_real), torch.Tensor(noisy_stft_imag)],
@@ -420,17 +436,20 @@ class SeisDAE(WaveformModel):
         """
         Normalize each trace and save norm factors to scale back denoised traces.
         """
-        # TODO: This should be vectorized for performance.
-        for trace_id in range(batch.shape[0]):
-            batch[trace_id, :] -= torch.mean(input=batch[trace_id, :])  # Demean trace
-            if self.norm == "peak":
-                norm = torch.max(torch.abs(batch[trace_id, :]))
-            elif self.norm == "std":
-                norm = torch.std(batch[trace_id, :])
-            batch[trace_id, :] /= norm
+        # Demean each trace
+        batch = batch - batch.mean(dim=1, keepdim=True)
 
-            # Save normalization factors for conservation of amplitude
-            self.norm_factors[trace_id] = norm
+        # Compute norm factor
+        if self.norm == "peak":
+            norm = batch.abs().max(dim=1, keepdim=True).values
+        elif self.norm == "std":
+            norm = batch.std(dim=1, keepdim=True)
+
+        # Normalize (and avoid division by zero)
+        batch = batch / (norm + self.eps)
+
+        # Save normalization factors
+        self.norm_factors = norm.squeeze(1)
 
         return batch
 
@@ -444,11 +463,19 @@ class SeisDAE(WaveformModel):
         signal_stft = piggyback * batch.numpy()[:, 0, :]
 
         # TODO: Same as above, the annotate_batch_post function should run in torch space.
-        _, denoised_signal = istft(
-            Zxx=signal_stft,
-            fs=self.sampling_rate,
-            nfft=self.nfft,
-            nperseg=self.nperseg,
+        # _, denoised_signal = istft(
+        #     Zxx=signal_stft,
+        #     fs=self.sampling_rate,
+        #     nfft=self.nfft,
+        #     nperseg=self.nperseg,
+        # )
+        denoised_signal = torch.istft(
+            input=signal_stft,
+            n_fft=self.nfft,
+            win_length=self.nperseg,
+            hop_length=self.nperseg // 2,  # match overlap used in stft
+            window=torch.hann_window(self.nperseg).to(batch.device),
+            normalized=False,
         )
 
         # Apply blinding
@@ -466,6 +493,17 @@ class SeisDAE(WaveformModel):
 
     def get_model_args(self):
         model_args = super().get_model_args()
+        for key in [
+            "citation",
+            "in_samples",
+            "output_type",
+            "default_args",
+            "pred_sample",
+            "labels",
+            "grouping",
+        ]:
+            del model_args[key]
+
         model_args["sampling_rate"] = self.sampling_rate
         model_args["norm"] = self.norm
         model_args["in_samples"] = self.in_samples
