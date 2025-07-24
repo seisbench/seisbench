@@ -98,7 +98,7 @@ method. For a more in-depth explanation, see the :ref:`examples`.
 +--------------------------------------------------------------+-------------------------------------------+
 | :py:class:`~seisbench.models.deepdenoiser.DeepDenoiser`      | Denoising                                 |
 +--------------------------------------------------------------+-------------------------------------------+
-| :py:class:`~seisbench.models.deepdenoiser.SeisDAE`           | Denoising                                 |
+| :py:class:`~seisbench.models.seisdae.SeisDAE`                | Denoising                                 |
 +--------------------------------------------------------------+-------------------------------------------+
 | :py:class:`~seisbench.models.eqtransformer.EQTransformer`    | Earthquake Detection/Phase Picking        |
 +--------------------------------------------------------------+-------------------------------------------+

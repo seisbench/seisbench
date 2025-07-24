@@ -34,7 +34,10 @@ DeepDenoiser
     :undoc-members:
     :show-inheritance:
 
-.. autoclass:: seisbench.models.deepdenoiser.SeisDAE
+SeisDAE
+-----------------------------------
+
+.. autoclass:: seisbench.models.seisdae.SeisDAE
     :members:
     :undoc-members:
     :show-inheritance:
