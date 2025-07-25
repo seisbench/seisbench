@@ -374,11 +374,6 @@ class SeisDAE(WaveformModel):
 
         return x
 
-    # @staticmethod
-    # def generate_label(stations):
-    #     # Simply use channel as label
-    #     return stations[0].split(".")[-1]
-
     def annotate_batch_pre(
         self, batch: torch.Tensor, argdict: dict[str, Any]
     ) -> torch.Tensor:
