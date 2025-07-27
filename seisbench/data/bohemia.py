@@ -458,7 +458,6 @@ class MultiClient:
 def get_event_params(event: Event):
     origin = event.preferred_origin()
     magnitude = event.preferred_magnitude()
-    focal_mechanism = event.preferred_focal_mechanism()
 
     sb_id = str(event.resource_id).split("/")[-1]
     if sb_id == "1":
@@ -611,11 +610,12 @@ def get_network_code(station_code: str, inventory: Inventory) -> str:
     raise KeyError(f"Unknown network code for station {station_code}.")
 
 
-def get_split(train: float = 0.8, dev: float = 0.1) -> Literal["train", "dev", "test"]:
+def get_split(test: float = 0.1, dev: float = 0.1) -> Literal["train", "dev", "test"]:
     """
     Returns a random split for the dataset.
     """
     r = RNG.random()
+    train = 1.0 - test - dev
     if r < train:
         return "train"
     elif r < train + dev:

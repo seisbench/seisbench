@@ -35,6 +35,7 @@ dependencies = [
     "scipy>=1.9",
     "nest_asyncio>=1.5.3",
     "bottleneck>=1.3",
+    "typing_extensions>=4.0"
 ]
 
 [tool.setuptools.packages.find]
