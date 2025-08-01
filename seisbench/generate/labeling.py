@@ -793,9 +793,6 @@ class STFTDenoiserLabeller:
                       Otherwise, DeepDenoiser/SeisDAE is trained with all components, however, noise samples are only
                       added on same component of earthquake waveforms, i.e., on Z-component are only added noise
                       waveforms of Z-component and so on.
-    :param sampling_rate: Sampling rate in Hz of earthquake waveform and noise dataset.
-                          If sampling_rate = None, sampling_rate is taken from metadata
-                          with key "trace_sampling_rate_hz". Default is None.
     :param input_key: Key for reading data from the state_dict. Default is "X".
     :param noisy_output_key: Key to write noisy STFT to state_dict. Default is "X", i.e. the input data
                              will be overwritten.
@@ -812,7 +809,6 @@ class STFTDenoiserLabeller:
         scale: tuple[float, float] = (0, 1),
         scaling_type: str = "peak",
         component: str = "ZNE",
-        sampling_rate: Optional[float] = None,
         nfft: int = 60,
         nperseg: int = 30,
         eps: float = 1e-12,
@@ -830,7 +826,6 @@ class STFTDenoiserLabeller:
         self.noisy_output_key = noisy_output_key
         self.mask_key = mask_key
         self.component = component
-        self.sampling_rate = sampling_rate
         self.noise_generator = seisbench.generate.GenericGenerator(noise_dataset)
         self.noise_samples = len(noise_dataset)
         self.nfft = nfft
@@ -922,21 +917,21 @@ class STFTDenoiserLabeller:
         # Perform STFT of x, n, and noisy
         _, _, stft_x = stft(
             x=x,
-            fs=self.sampling_rate or metadata["trace_sampling_rate_hz"],
+            fs=metadata["trace_sampling_rate_hz"],
             nperseg=self.nperseg,
             nfft=self.nfft,
             **self.kwargs,
         )
         _, _, stft_n = stft(
             x=n,
-            fs=self.sampling_rate or metadata["trace_sampling_rate_hz"],
+            fs=metadata["trace_sampling_rate_hz"],
             nperseg=self.nperseg,
             nfft=self.nfft,
             **self.kwargs,
         )
         _, _, stft_noisy = stft(
             x=noisy,
-            fs=self.sampling_rate or metadata["trace_sampling_rate_hz"],
+            fs=metadata["trace_sampling_rate_hz"],
             nperseg=self.nperseg,
             nfft=self.nfft,
             **self.kwargs,
