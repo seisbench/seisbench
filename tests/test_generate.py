@@ -1059,12 +1059,11 @@ def test_stft_labeller(nfft, nperseg):
     np.random.seed(42)
 
     data = np.random.rand(3, 1000)
-    state_dict = {"X": (copy.copy(data), {})}
-    dataset = seisbench.data.DummyDataset(component_order="ZNE")
+    state_dict = {"X": (copy.copy(data), {"trace_sampling_rate_hz": 20})}
+    dataset = seisbench.data.DummyDataset(component_order="ZNE", sampling_rate=20)
     stft_labeller = STFTDenoiserLabeller(
         noise_dataset=dataset,
         scale=(0, 2),
-        sampling_rate=20,
         nfft=nfft,
         nperseg=nperseg,
     )
