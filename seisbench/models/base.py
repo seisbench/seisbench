@@ -874,7 +874,10 @@ class SeisBenchModel(nn.Module):
         with open(path_json, "r") as f:
             weights_metadata = json.load(f)
         # Load model weights
-        model_weights = torch.load(f"{path_pt}")
+        #MB# : double check the right device for the machine
+        _dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model_weights = torch.load(f"{path_pt}",
+                                   map_location=torch.device(_dev))
 
         model_args = weights_metadata.get("model_args", {})
         cls._check_version_requirement(weights_metadata)
