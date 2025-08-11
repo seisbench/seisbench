@@ -11,7 +11,7 @@ These files need to reside in the same folder and need to be named *metadata.csv
 
 SeisBench implements a standard reader and a standard writer for this data format.
 The standard reader is the class :py:class:`~seisbench.data.base.WaveformDataset`.
-The standard writer is the class :py:class:`~seisbench.data.base.WaveformDataWriter`.
+The standard writer is the class :py:class:`~seisbench.data.base.WaveformDataWriter`
 Please consult their documentations for details on reading and writing the format.
 Derived from the :py:class:`~seisbench.data.base.WaveformDataset`,
 SeisBench offers a range of :doc:`benchmark datasets<benchmark_datasets>` in SeisBench format.
@@ -87,7 +87,7 @@ The data format group contains the following keys:
 
 *  `unit (optional)`: The measurement unit, e.g., mps for meters per second.
    For multiple quantities measures, again the slash should be used.
-   It is highly adviced not to mix different units for the same quantity within one dataset, e.g., do not mix `mps` and `cmps`.
+   It is highly advised not to mix different units for the same quantity within one dataset, e.g., do not mix `mps` and `cmps`.
 
 *  `instrument_response (optional)`: Information if the instrument response was restituted.
    Common values are "not restituted" or "restituted".
@@ -120,7 +120,7 @@ selecting the different splits of the dataset.
 
 When defining splits, consider how the splits should be chosen to give a realistic image of the performance.
 For example, it might be advisable to put all traces belonging to a certain event into the same split,
-or even use assign events withing a certain period of time to the same split.
+or even use assign events within a certain period of time to the same split.
 As splitting will strongly depend on the dataset at hand, we recommend dataset authors to carefully consider this point.
 
 
@@ -270,9 +270,9 @@ Trace parameters
 | trace_Z_snr_db                | SNR on the Z component in decibels, similar for other components.                                                      |
 +-------------------------------+------------------------------------------------------------------------------------------------------------------------+
 | trace_completeness            | Fraction of samples in the trace, which were not filled with placeholder values (between 0 and 1).                     |
-|                               | Placeholder values occure for example in case of recording gaps or missing component traces.                           |
+|                               | Placeholder values occur for example in case of recording gaps or missing component traces.                            |
 +-------------------------------+------------------------------------------------------------------------------------------------------------------------+
-| trace_pga_perg                | PGA in precent g on the horizontal components.                                                                         |
+| trace_pga_perg                | PGA in present g on the horizontal components.                                                                         |
 +-------------------------------+------------------------------------------------------------------------------------------------------------------------+
 | trace_pga_cmps2               | PGA in cm / s ** 2 on the horizontal components.                                                                       |
 +-------------------------------+------------------------------------------------------------------------------------------------------------------------+
@@ -326,11 +326,11 @@ Source parameters
 +-----------------------------------------+----------------------------------------------------------------------------------------------+
 | source_longitude_uncertainty_deg        |  Uncertainty of source longitude coordinate in degrees.                                      |
 +-----------------------------------------+----------------------------------------------------------------------------------------------+
-| source_error_sec                        | Error association with source location. ??                                                   |
+| source_error_sec                        | Error association with source location.                                                      |
 +-----------------------------------------+----------------------------------------------------------------------------------------------+
 | source_gap_deg                          | Azimuthal gap from the source determination.                                                 |
 +-----------------------------------------+----------------------------------------------------------------------------------------------+
-| source_horizontal_uncertainty_km        | Epicentral uncertainity of source location in kilometers.                                    |
+| source_horizontal_uncertainty_km        | Epicentral uncertainty of source location in kilometers.                                     |
 +-----------------------------------------+----------------------------------------------------------------------------------------------+
 | source_depth_km                         | Source depth in kilometers.                                                                  |
 +-----------------------------------------+----------------------------------------------------------------------------------------------+
@@ -338,7 +338,7 @@ Source parameters
 +-----------------------------------------+----------------------------------------------------------------------------------------------+
 | source_magnitude                        | Magnitude value association with source.                                                     |
 +-----------------------------------------+----------------------------------------------------------------------------------------------+
-| source_magnitude_type                   | Type of magnitude caluculation used when assigning magnitude to source.                      |
+| source_magnitude_type                   | Type of magnitude calculation used when assigning magnitude to source.                       |
 +-----------------------------------------+----------------------------------------------------------------------------------------------+
 | source_magnitude_author                 | Author of magnitude calculation.                                                             |
 +-----------------------------------------+----------------------------------------------------------------------------------------------+
@@ -413,11 +413,11 @@ Path parameters
 +--------------------------------+---------------------------------------------------------------+
 | path_weight_phase_location_s   | Weight assigned to P-phase in location procedure in seconds.  |
 +--------------------------------+---------------------------------------------------------------+
-| path_azimuth_deg               | Azimuth of phase path from source to reciever in degrees.     |
+| path_azimuth_deg               | Azimuth of phase path from source to receiver in degrees.     |
 +--------------------------------+---------------------------------------------------------------+
-| path_back_azimuth_deg          | Backazimuth of phase path from source to reciever in degrees. |
+| path_back_azimuth_deg          | Backazimuth of phase path from source to receiver in degrees. |
 +--------------------------------+---------------------------------------------------------------+
-| path_ep_distance_km            | Epicentral distance of source reciever path in kilometers.    |
+| path_ep_distance_km            | Epicentral distance of source receiver path in kilometers.    |
 +--------------------------------+---------------------------------------------------------------+
-| path_hyp_distance_km           | Hypocentral distance of source reciever path in kilometers.   |
+| path_hyp_distance_km           | Hypocentral distance of source receiver path in kilometers.   |
 +--------------------------------+---------------------------------------------------------------+
