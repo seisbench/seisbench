@@ -58,9 +58,11 @@ def stream_to_array(stream, component_order):
         c_completeness = 0.0
         for trace in c_stream:
             start_sample = int((trace.stats.starttime - starttime) * sampling_rate)
-            l = min(len(trace.data), samples - start_sample)
-            data[c_idx, start_sample : start_sample + l] = trace.data[:l]
-            c_completeness += l
+            tr_length = min(len(trace.data), samples - start_sample)
+            data[c_idx, start_sample : start_sample + tr_length] = trace.data[
+                :tr_length
+            ]
+            c_completeness += tr_length
 
         completeness += min(1.0, c_completeness / samples)
 

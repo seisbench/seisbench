@@ -457,7 +457,7 @@ class SteeredWindow(FixedWindow):
         super().__call__(state_dict, p0=p0, windowlen=windowlen)
 
     def __str__(self):
-        return f"SteeredWindow"
+        return "SteeredWindow"
 
 
 class AlignGroupsOnKey:

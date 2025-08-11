@@ -37,7 +37,6 @@ class BasicPhaseAE(WaveformModel):
     def __init__(
         self, in_channels=3, classes=3, phases="NPS", sampling_rate=100, **kwargs
     ):
-
         citation = (
             "Woollam, J., Rietbrock, A., Bueno, A. and De Angelis, S., 2019. "
             "Convolutional neural network for seismic phase classification, "
@@ -86,7 +85,6 @@ class BasicPhaseAE(WaveformModel):
         self.softmax = torch.nn.Softmax(dim=1)
 
     def forward(self, x, logits=False):
-
         x_l1 = self.activation(self.conv2(self.activation(self.conv1(x))))
         x_l2 = self.drop1(self.activation(self.conv3(x_l1)))
         x_l3 = self.upsample1(self.maxpool1(self.activation(self.conv4(x_l2))))

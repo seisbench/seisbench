@@ -1680,9 +1680,9 @@ class WaveformModel(SeisBenchModel, ABC):
             stack_method = self._argdict_get_with_default(
                 argdict, "stacking"
             ).lower()  # This is a breaking change for v 0.3 - see PR#99
-            assert (
-                stack_method in self._stack_options
-            ), f"Stacking method {stack_method} unknown. Known options are: {self._stack_options}"
+            assert stack_method in self._stack_options, (
+                f"Stacking method {stack_method} unknown. Known options are: {self._stack_options}"
+            )
             preds = [(s, window) for window, (_, _, s, _, _, _, _, _) in buffer[key]]
             preds = sorted(
                 preds, key=lambda x: x[0]
@@ -1961,7 +1961,7 @@ class WaveformModel(SeisBenchModel, ABC):
         removed per side.
         """
         mask = ~np.isnan(x)
-        valid = np.nonzero(mask == True)[0]
+        valid = np.nonzero(mask)[0]
         mask[valid[0] : valid[-1]] = True
         _end = len(x)
         x = x[mask]
@@ -2702,9 +2702,9 @@ class CustomLSTM(nn.Module):
         # Backward
         state_b = state
         outputs_b = []
-        l = input.shape[0] - 1
+        n_samples = input.shape[0] - 1
         for i in range(len(input)):
-            out, state_b = self.cell_b(input[l - i], state_b)
+            out, state_b = self.cell_b(input[n_samples - i], state_b)
             outputs_b += [out]
 
         outputs_b = torch.flip(torch.stack(outputs_b), dims=[0])

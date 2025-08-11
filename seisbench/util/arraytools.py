@@ -10,12 +10,12 @@ def torch_detrend(x: torch.Tensor) -> torch.Tensor:
     :returns: Detrended array
     """
     m = x.mean(dim=-1, keepdim=True)
-    l = torch.linspace(-1, 1, x.shape[-1], device=x.device, dtype=x.dtype)
-    slope = ((x - m) * l).sum(dim=-1, keepdims=True) / (l * l).sum(
+    samples = torch.linspace(-1, 1, x.shape[-1], device=x.device, dtype=x.dtype)
+    slope = ((x - m) * samples).sum(dim=-1, keepdims=True) / (samples * samples).sum(
         dim=-1, keepdims=True
     )
 
-    return x - m - slope * l
+    return x - m - slope * samples
 
 
 def pad_packed_sequence(seq: list[np.ndarray]) -> np.ndarray:

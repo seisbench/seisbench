@@ -115,18 +115,18 @@ class NEIC(BenchmarkDataset):
         groups = [("P", "Train"), ("S", "Train"), ("P", "Test"), ("S", "Test")]
 
         total_samples = (
-            np.load(path_unpacked / f"PAzi_Train.npy").shape[0]
-            + np.load(path_unpacked / f"SAzi_Train.npy").shape[0]
-            + np.load(path_unpacked / f"PAzi_Test.npy").shape[0]
-            + np.load(path_unpacked / f"SAzi_Test.npy").shape[0]
+            np.load(path_unpacked / "PAzi_Train.npy").shape[0]
+            + np.load(path_unpacked / "SAzi_Train.npy").shape[0]
+            + np.load(path_unpacked / "PAzi_Test.npy").shape[0]
+            + np.load(path_unpacked / "SAzi_Test.npy").shape[0]
         )
 
         # Select 10 percent of the training events for development
         # As the train test split is random, but event wise, a similar strategy is employed here
         train_ids = np.concatenate(
             [
-                np.load(path_unpacked / f"PEID_Train.npy"),
-                np.load(path_unpacked / f"SEID_Train.npy"),
+                np.load(path_unpacked / "PEID_Train.npy"),
+                np.load(path_unpacked / "SEID_Train.npy"),
             ]
         )
         train_ids = np.unique(train_ids)

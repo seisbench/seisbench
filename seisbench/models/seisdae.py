@@ -199,7 +199,6 @@ class SeisDAE(WaveformModel):
         attention: bool = False,
         **kwargs,
     ):
-
         citation = (
             "Heuel, J., & Friederich, W. (2022). "
             "Suppression of wind turbine noise from seismological data using nonlinear thresholding "

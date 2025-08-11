@@ -1243,8 +1243,8 @@ def test_save_load_basicphaseae(tmp_path, caplog):
     model_load_args = get_input_args(model_orig.__class__)
 
     # Test no changes to weights
-    pred_orig = model_orig.annotate(stream, sampling_rate=400)
-    pred_load = model_load.annotate(stream, sampling_rate=400)
+    model_orig.annotate(stream, sampling_rate=400)
+    model_load.annotate(stream, sampling_rate=400)
 
     # TODO: Find out why there is a single nan value in the reconstruction.
     #     for i in range(len(pred_orig)):
@@ -1511,9 +1511,10 @@ def test_list_versions(tmp_path):
         create_versions("test", ["", "2"], "{}\n")
         assert seisbench.models.GPD.list_versions("test", remote=False) == ["1", "2"]
 
-        with patch("seisbench.util.download_http") as download, patch(
-            "seisbench.util.ls_webdav"
-        ) as ls_webdav:
+        with (
+            patch("seisbench.util.download_http") as download,
+            patch("seisbench.util.ls_webdav") as ls_webdav,
+        ):
 
             def side_effect(remote_metadata_path, metadata_path, progress_bar=False):
                 # Checks correct url and writes out dummy
@@ -1560,9 +1561,10 @@ def test_ensure_weight_files(tmp_path):
     tmp_path2 = tmp_path / "2"
     tmp_path2.mkdir()
 
-    with patch("seisbench.util.download_http") as download, patch(
-        "seisbench.util.ls_webdav"
-    ) as ls_webdav:
+    with (
+        patch("seisbench.util.download_http") as download,
+        patch("seisbench.util.ls_webdav") as ls_webdav,
+    ):
 
         def side_effect(remote_path, local_path, progress_bar=False):
             # Checks correct url and writes out dummy
@@ -1592,9 +1594,10 @@ def test_ensure_weight_files(tmp_path):
     tmp_path3 = tmp_path / "3"
     tmp_path3.mkdir()
 
-    with patch("seisbench.util.download_http") as download, patch(
-        "seisbench.util.ls_webdav"
-    ) as ls_webdav:
+    with (
+        patch("seisbench.util.download_http") as download,
+        patch("seisbench.util.ls_webdav") as ls_webdav,
+    ):
 
         def side_effect(remote_path, local_path, progress_bar=False):
             # Checks correct url and writes out dummy
@@ -1622,9 +1625,10 @@ def test_ensure_weight_files(tmp_path):
     tmp_path4 = tmp_path / "4"
     tmp_path4.mkdir()
 
-    with patch("seisbench.util.download_http") as download, patch(
-        "seisbench.util.ls_webdav"
-    ) as ls_webdav:
+    with (
+        patch("seisbench.util.download_http") as download,
+        patch("seisbench.util.ls_webdav") as ls_webdav,
+    ):
 
         def side_effect(remote_path, local_path, progress_bar=False):
             with open(local_path, "w") as f:
@@ -1647,9 +1651,10 @@ def test_ensure_weight_files(tmp_path):
     tmp_path5 = tmp_path / "5"
     tmp_path5.mkdir()
 
-    with patch("seisbench.util.download_http") as download, patch(
-        "seisbench.util.ls_webdav"
-    ) as ls_webdav:
+    with (
+        patch("seisbench.util.download_http") as download,
+        patch("seisbench.util.ls_webdav") as ls_webdav,
+    ):
 
         def side_effect(remote_path, local_path, progress_bar=False):
             # Checks correct url and writes out dummy
@@ -1753,7 +1758,7 @@ def test_list_pretrained404(tmp_path):
         model_path.return_value = tmp_path
 
         def raise404(*args, **kwargs):
-            raise ValueError(f"Invalid URL. Request returned status code 404.")
+            raise ValueError("Invalid URL. Request returned status code 404.")
 
         with patch("seisbench.util.ls_webdav") as ls_webdav:
             ls_webdav.side_effect = raise404
@@ -1763,7 +1768,7 @@ def test_list_pretrained404(tmp_path):
             )
 
         def raise505(*args, **kwargs):
-            raise ValueError(f"Invalid URL. Request returned status code 505.")
+            raise ValueError("Invalid URL. Request returned status code 505.")
 
         with patch("seisbench.util.ls_webdav") as ls_webdav:
             ls_webdav.side_effect = raise505
@@ -1793,9 +1798,10 @@ def test_get_latest_docstring(tmp_path):
 
         assert seisbench.models.GPD._get_latest_docstring("test", remote=False) == "d2"
 
-        with patch("seisbench.util.download_http") as download, patch(
-            "seisbench.util.ls_webdav"
-        ) as ls_webdav:
+        with (
+            patch("seisbench.util.download_http") as download,
+            patch("seisbench.util.ls_webdav") as ls_webdav,
+        ):
 
             def side_effect(remote_path, local_path, progress_bar=False):
                 # Checks correct url and writes out dummy
@@ -1821,15 +1827,18 @@ def test_from_pretrained(tmp_path, prefill_cache, update):
         model_path.return_value = tmp_path
 
         if prefill_cache:
-            with open(tmp_path / "test.pt.v1", "wb") as fw, open(
-                tmp_path / "test.json.v1", "w"
-            ) as f:
+            with (
+                open(tmp_path / "test.pt.v1", "wb") as fw,
+                open(tmp_path / "test.json.v1", "w") as f,
+            ):
                 torch.save({}, fw)
                 f.write("{}\n")
 
-        with patch("seisbench.util.ls_webdav") as ls_webdav, patch(
-            "seisbench.models.GPD._ensure_weight_files"
-        ) as ensure_weight_files, patch("seisbench.models.GPD.load_state_dict") as _:
+        with (
+            patch("seisbench.util.ls_webdav") as ls_webdav,
+            patch("seisbench.models.GPD._ensure_weight_files") as ensure_weight_files,
+            patch("seisbench.models.GPD.load_state_dict") as _,
+        ):
             ls_webdav.return_value = ["test.json.v2", "test.pt.v2"]
 
             def write_weights(
@@ -2531,7 +2540,7 @@ def test_overlap_mismatching_records_empty():
         "network": "XX",
         "station": "STA",
         "location": "00",
-        "channel": f"HHZ",
+        "channel": "HHZ",
         "sampling_rate": 100.0,
     }
 

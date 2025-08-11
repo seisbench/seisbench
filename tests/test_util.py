@@ -1,7 +1,6 @@
 import logging
 import os
 import pickle
-from http.cookiejar import UTC_ZONES
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

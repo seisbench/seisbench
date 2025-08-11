@@ -434,7 +434,7 @@ class WaveformDataset:
                     )
 
                 if len(chunks) == 0:
-                    raise FileNotFoundError(f"Did not find any chunks for the dataset")
+                    raise FileNotFoundError("Did not find any chunks for the dataset")
 
                 chunks = list(chunks)
 
@@ -545,7 +545,7 @@ class WaveformDataset:
                 and not len(source)
             )
         ):
-            raise ValueError(f"Component order not set for (parts of) the dataset.")
+            raise ValueError("Component order not set for (parts of) the dataset.")
 
         source = list(source)
         target = list(target)
@@ -658,7 +658,7 @@ class WaveformDataset:
                 data_format = tmp_data_format
 
             if not tmp_data_format == data_format:
-                raise ValueError(f"Found inconsistent data format groups.")
+                raise ValueError("Found inconsistent data format groups.")
 
         for key in data_format.keys():
             if isinstance(data_format[key], bytes):
@@ -750,7 +750,7 @@ class WaveformDataset:
             self._trace_name_to_idx[dict_key]
         ) != len(self.metadata):
             seisbench.logger.warning(
-                f'Traces can not uniformly be identified using {dict_key.replace("_", ", ")}. '
+                f"Traces can not uniformly be identified using {dict_key.replace('_', ', ')}. "
                 '"get_idx_from_trace_name" will return only one possible matching trace.'
             )
             self._trace_identification_warning_issued = True
@@ -2287,9 +2287,9 @@ class BenchmarkDataset(WaveformDataset, ABC):
         """
         np.random.seed(seed=random_seed)
 
-        assert (
-            len(ratios) == 3
-        ), f"Only train/dev/test ratios should be specified. Got {len(ratios)} ratios."
+        assert len(ratios) == 3, (
+            f"Only train/dev/test ratios should be specified. Got {len(ratios)} ratios."
+        )
 
         train_ratio, dev_ratio, test_ratio = ratios
 
@@ -2297,9 +2297,9 @@ class BenchmarkDataset(WaveformDataset, ABC):
         n_dev_samples = int(self.__len__() * dev_ratio)
         n_test_samples = self.__len__() - n_dev_samples - n_train_samples
 
-        assert (
-            self.__len__() == n_train_samples + n_dev_samples + n_test_samples
-        ), "`ratios` must sum to 1"
+        assert self.__len__() == n_train_samples + n_dev_samples + n_test_samples, (
+            "`ratios` must sum to 1"
+        )
 
         train_idxs, dev_and_test_idxs = self._sample_without_replacement(
             indexes=np.arange(self.__len__()), n_samples=n_train_samples
