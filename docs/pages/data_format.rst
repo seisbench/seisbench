@@ -272,7 +272,7 @@ Trace parameters
 | trace_completeness            | Fraction of samples in the trace, which were not filled with placeholder values (between 0 and 1).                     |
 |                               | Placeholder values occur for example in case of recording gaps or missing component traces.                            |
 +-------------------------------+------------------------------------------------------------------------------------------------------------------------+
-| trace_pga_perg                | PGA in present g on the horizontal components.                                                                         |
+| trace_pga_perg                | PGA in percentage g on the horizontal components.                                                                      |
 +-------------------------------+------------------------------------------------------------------------------------------------------------------------+
 | trace_pga_cmps2               | PGA in cm / s ** 2 on the horizontal components.                                                                       |
 +-------------------------------+------------------------------------------------------------------------------------------------------------------------+
