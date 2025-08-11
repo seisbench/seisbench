@@ -840,7 +840,7 @@ class STFTDenoiserLabeller:
     def __call__(self, state_dict):
         x, metadata = state_dict[self.input_key]
 
-        if self.input_key != self.mask_key:
+        if self.input_key != self.noisy_output_key:
             # Ensure data and metadata is not modified inplace unless input and output key are anyhow identical
             metadata = copy.deepcopy(metadata)
             x = x.copy()
