@@ -855,7 +855,7 @@ class SeisBenchModel(nn.Module):
         return sorted([config[prefix_len:] for config in configs])
 
     @classmethod
-    def load(cls, path, version_str=None):
+    def load(cls, path, version_str=None, **kwargs):
         """
         Load a SeisBench model from local path.
 
@@ -874,7 +874,7 @@ class SeisBenchModel(nn.Module):
         with open(path_json, "r") as f:
             weights_metadata = json.load(f)
         # Load model weights
-        model_weights = torch.load(f"{path_pt}")
+        model_weights = torch.load(f"{path_pt}", **kwargs)
 
         model_args = weights_metadata.get("model_args", {})
         cls._check_version_requirement(weights_metadata)

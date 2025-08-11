@@ -21,6 +21,7 @@ from .labeling import (
     ProbabilisticPointLabeller,
     StandardLabeller,
     StepLabeller,
+    STFTDenoiserLabeller,
     SupervisedLabeller,
 )
 from .windows import (

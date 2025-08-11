@@ -10,5 +10,6 @@ from .lfe_detect import LFEDetect
 from .obstransformer import OBSTransformer
 from .phasenet import PhaseNet, PhaseNetLight, VariableLengthPhaseNet
 from .pickblue import PickBlue
+from .seisdae import SeisDAE
 from .skynet import Skynet
 from .team import PhaseTEAM

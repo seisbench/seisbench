@@ -34,6 +34,14 @@ DeepDenoiser
     :undoc-members:
     :show-inheritance:
 
+SeisDAE
+-----------------------------------
+
+.. autoclass:: seisbench.models.seisdae.SeisDAE
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Depth phase models
 -----------------------------------
 

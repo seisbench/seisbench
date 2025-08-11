@@ -29,6 +29,7 @@ from seisbench.generate import (
     StandardLabeller,
     SteeredWindow,
     StepLabeller,
+    STFTDenoiserLabeller,
     WindowAroundSample,
 )
 
@@ -1051,6 +1052,29 @@ def test_standard_pick_labeller_pickgroups():
     with pytest.raises(ValueError):
         labeller = StandardLabeller(dim=1)
         labeller(state_dict)
+
+
+@pytest.mark.parametrize(("nfft", "nperseg"), [(60, 30), (198, 96)])
+def test_stft_labeller(nfft, nperseg):
+    np.random.seed(42)
+
+    data = np.random.rand(3, 1000)
+    state_dict = {"X": (copy.copy(data), {"trace_sampling_rate_hz": 20})}
+    dataset = seisbench.data.DummyDataset(component_order="ZNE", sampling_rate=20)
+    stft_labeller = STFTDenoiserLabeller(
+        noise_dataset=dataset,
+        scale=(0, 2),
+        nfft=nfft,
+        nperseg=nperseg,
+    )
+    stft_labeller(state_dict)
+
+    if nfft == 60 and nperseg == 30:
+        assert state_dict["X"][0].shape == (2, 31, 68)
+        assert state_dict["y"][0].shape == (2, 31, 68)
+    elif nfft == 198 and nperseg == 96:
+        assert state_dict["X"][0].shape == (2, 100, 22)
+        assert state_dict["y"][0].shape == (2, 100, 22)
 
 
 @pytest.mark.parametrize(

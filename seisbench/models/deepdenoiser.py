@@ -1,11 +1,9 @@
-from typing import Any
+from typing import Any, Union
 
 import numpy as np
-import scipy.signal
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from scipy.interpolate import interp1d
 
 from .base import WaveformModel
 
