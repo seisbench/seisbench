@@ -19,6 +19,7 @@ from .dummy import (
 )
 from .ethz import ETHZ
 from .geofon import GEOFON
+from .induced import Induced
 from .instance import (
     InstanceCounts,
     InstanceCountsCombined,
@@ -70,6 +71,7 @@ __all__ = [
     "DummyDataset",
     "ETHZ",
     "GEOFON",
+    "Induced",
     "InstanceCounts",
     "InstanceCountsCombined",
     "InstanceGM",

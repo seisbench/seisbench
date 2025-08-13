@@ -68,6 +68,14 @@ GEOFON dataset
     :show-inheritance:
     :exclude-members: LocationHelper
 
+Induced dataset
+-----------------------------------
+
+.. automodule:: seisbench.data.induced
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 INSTANCE dataset
 -----------------------------------
 

@@ -197,6 +197,47 @@ The time range covers 2009 to 2013.
     *Citation information will be added.*
 
 
+Induced
+--------
+
+.. figure::  ../_static/induced.png
+   :align:   center
+
+
+The :py:class:`~seisbench.data.induced.Induced` benchmark dataset contains induced earthquakes from the Dawson-Septimus
+area in Canada caused by hydraulic-fracturing-based fluid injection, geothermal induced earthquakes from Insheim
+(Germany), St. Gallen (Switzerland), Vendenheim (France), induced earthquakes due to coal mine flooding the in Ruhr area
+(Germany), and all available low magnitude events (M_L <= 2) from the Swiss Seismological Service (SED) between 2009 and
+2023. The dataset contains 142,001 three component earthquake waveforms.
+
+The full dataset can be loaded by using ``sbd.Induced()``. Afterwards, sub datasets can be selected using the
+``get_[region]_subset()`` functions.
+
+.. code-block:: python
+    import seisbench.data as sbd
+    dataset = sbd.Induced()
+    dawson = dataset.get_dawson_septimus_subset()   # select the data from the Dawson-Septimus area
+    insheim = dataset.get_insheim_subset()          # select the data from Insehim
+    st_gallen = dataset.get_st_gallen_subset()      # select the data from St. Gallen
+    switzerland = dataset.get_switzerland_subset()  # select the data from Switzerland
+    floodrisk = dataset.get_floodrisk_subset()      # select the data from the Ruhr area
+    vendenheim = dataset.get_vendenheim_subset()    # select the data from Vendenheim
+
+.. warning::
+
+    Dataset size:
+
+    * waveforms (counts) **~35Gb**
+
+.. admonition:: Citation
+
+    Heuel J., Maurer V., Frietsch M., Rietbrock A. (2025).
+    Picking Induced Seismicity with Deep Learning.
+    Seismica.
+
+    https://doi.org/10.13127/INSTANCE
+
+
 INSTANCE
 --------
 
