@@ -215,7 +215,9 @@ The full dataset can be loaded by using ``sbd.Induced()``. Afterwards, sub datas
 
 .. code-block:: python
     import seisbench.data as sbd
+
     dataset = sbd.Induced()
+
     dawson = dataset.get_dawson_septimus_subset()   # select the data from the Dawson-Septimus area
     insheim = dataset.get_insheim_subset()          # select the data from Insehim
     st_gallen = dataset.get_st_gallen_subset()      # select the data from St. Gallen
