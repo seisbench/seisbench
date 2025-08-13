@@ -214,6 +214,7 @@ class SeisDAE(WaveformModel):
             output_type="array",
             pred_sample=(0, in_samples),
             sampling_rate=sampling_rate,
+            labels=self.generate_label,
             grouping="channel",
             **kwargs,
         )
@@ -372,6 +373,11 @@ class SeisDAE(WaveformModel):
             x = self.output_activation(x)
 
         return x
+
+    @staticmethod
+    def generate_label(stations):
+        # Simply use channel as label
+        return stations[0].split(".")[-1]
 
     def annotate_batch_pre(
         self, batch: torch.Tensor, argdict: dict[str, Any]
