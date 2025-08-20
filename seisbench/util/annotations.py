@@ -114,6 +114,8 @@ class PickList(list):
                     "end_time": p.end_time.datetime,
                     "probability": p.peak_value,
                     "phase": p.phase,
+                    "polarity": p.polarity,
+                    "polarity_probability": p.polarity,
                 }
             )
         pick_df = pd.DataFrame(pick_df)
@@ -201,6 +203,8 @@ class Pick:
         peak_time=None,
         peak_value=None,
         phase=None,
+        polarity=None,
+        polarity_value=None,
     ):
         self.trace_id = trace_id
         self.start_time = start_time
@@ -208,6 +212,8 @@ class Pick:
         self.peak_time = peak_time
         self.peak_value = peak_value
         self.phase = phase
+        self.polarity = polarity
+        self.polarity_value = polarity_value
 
         if end_time is not None and peak_time is not None:
             if not start_time <= peak_time <= end_time:
@@ -234,6 +240,9 @@ class Pick:
 
         if self.phase is not None:
             parts.append(str(self.phase))
+
+        if self.polarity is not None:
+            parts.append(self.polarity)
 
         return "\t".join(parts)
 

@@ -8,7 +8,7 @@ from .eqtransformer import EQTransformer
 from .gpd import GPD
 from .lfe_detect import LFEDetect
 from .obstransformer import OBSTransformer
-from .phasenet import PhaseNet, PhaseNetLight, VariableLengthPhaseNet
+from .phasenet import PhaseNet, PhaseNetLight, PhaseNetPlus, VariableLengthPhaseNet
 from .pickblue import PickBlue
 from .seisdae import SeisDAE
 from .skynet import Skynet
@@ -35,6 +35,7 @@ __all__ = [
     "OBSTransformer",
     "PhaseNet",
     "PhaseNetLight",
+    "PhaseNetPlus",
     "VariableLengthPhaseNet",
     "PickBlue",
     "SeisDAE",

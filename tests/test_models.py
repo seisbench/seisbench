@@ -1015,6 +1015,24 @@ def test_annotate_phasenet(filter_factor):
     assert output.creator == model.name
 
 
+def test_annotate_phasenetplus():
+    # Tests that the annotate/classify functions run without crashes and annotate produces an output
+    model = seisbench.models.PhaseNetPlus()
+    stream = obspy.read()
+
+    annotations = model.annotate(stream)
+    assert len(annotations) > 0
+
+    output = model.classify(stream)
+    assert isinstance(output, sbu.ClassifyOutput)
+    assert isinstance(output.picks, sbu.PickList)
+    assert output.creator == model.name
+
+    output = model.classify(stream, mode="event")
+    assert isinstance(output, sbu.ClassifyOutput)
+    assert output.creator == model.name
+
+
 def test_annotate_overlap():
     # Tests that the annotate function works the same with fractional and sample overlap
     model = seisbench.models.PhaseNet(
