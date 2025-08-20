@@ -692,6 +692,20 @@ class PhaseNetPlusEvent:
 
 
 class PhaseNetPlus(WaveformModel):
+    """
+    This variant of PhaseNet extends the original phasenet architecture in several aspects:
+
+    - Variable input length (using powers of 2)
+    - Joint first-motion polarity estimation
+    - Event detection framework (using the "event" mode in classify)
+
+    .. document_args:: seisbench.models PhaseNetPlus
+
+    :param log_scale: Log-scale the inputs
+    :param add_polarity: Add first motion polarity output channel
+    :param add_event: Add the event center and event time output channels
+    """
+
     _annotate_args = WaveformModel._annotate_args.copy()
     _annotate_args["*_threshold"] = ("Detection threshold for the provided phase", 0.3)
     _annotate_args["event_threshold"] = (
@@ -707,18 +721,25 @@ class PhaseNetPlus(WaveformModel):
 
     def __init__(
         self,
-        log_scale=True,
-        add_polarity=True,
-        add_event=True,
-        sampling_rate=100,
+        log_scale: bool = True,
+        add_polarity: bool = True,
+        add_event: bool = True,
+        sampling_rate: float = 100,
         **kwargs,
     ) -> None:
+        citation = (
+            "Zhu, W., Song, J., Wang, H., & Münchmeyer, J. (2025). "
+            "Towards End-to-End Earthquake Monitoring Using a Multitask Deep Learning Model. "
+            "arXiv preprint arXiv:2506.06939."
+        )
         super().__init__(
+            citation=citation,
             in_samples=1024,
             output_type="array",
             pred_sample=(0, 1024),
             labels=["N", "P", "S", "Polarity", "Event center", "Event time"],
             sampling_rate=sampling_rate,
+            grouping="instrument",
             **kwargs,
         )
 
@@ -743,6 +764,26 @@ class PhaseNetPlus(WaveformModel):
         if self.add_event:
             self.event_detector = UNetHead(32, 1, feature_name="event")
             self.event_timer = EventHead(32, 1, feature_name="event")
+
+    def get_model_args(self):
+        model_args = super().get_model_args()
+
+        for fixed_arg in [
+            "citation",
+            "in_samples",
+            "output_type",
+            "pred_sample",
+            "labels",
+            "grouping",
+        ]:
+            del model_args[fixed_arg]
+
+        model_args["log_scale"] = self.log_scale
+        model_args["add_polarity"] = self.add_polarity
+        model_args["add_event"] = self.add_event
+        model_args["sampling_rate"] = self.sampling_rate
+
+        return model_args
 
     def forward(
         self, data: torch.Tensor, logits: bool = False

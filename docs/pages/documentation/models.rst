@@ -100,7 +100,22 @@ OBSTransformer
 PhaseNet
 -----------------------------------
 
-.. automodule:: seisbench.models.phasenet
+.. autoclass:: seisbench.models.phasenet.PhaseNet
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: seisbench.models.phasenet.PhaseNetLight
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: seisbench.models.phasenet.PhaseNetPlus
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: seisbench.models.phasenet.VariableLengthPhaseNet
     :members:
     :undoc-members:
     :show-inheritance:
