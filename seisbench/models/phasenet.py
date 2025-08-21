@@ -906,7 +906,11 @@ class PhaseNetPlus(WaveformModel):
                     continue
                 trace = trace[0]
                 sample = int((t - trace.stats.starttime) * trace.stats.sampling_rate)
-                pick.polarity_value = trace.data[sample]
+                segment = trace.data[
+                    max(0, sample - 3) : sample + 3
+                ]  # Take a small tolerance around
+                best_sample = np.argmax(np.abs(segment))
+                pick.polarity_value = segment[best_sample]
                 if abs(pick.polarity_value) > polarity_threshold:
                     pick.polarity = "U" if pick.polarity_value > 0 else "D"
 
