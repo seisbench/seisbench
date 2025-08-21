@@ -704,6 +704,7 @@ class PhaseNetPlus(WaveformModel):
     :param log_scale: Log-scale the inputs
     :param add_polarity: Add first motion polarity output channel
     :param add_event: Add the event center and event time output channels
+    :param pick_tolerance: Tolerance for picking matching in event extraction
     """
 
     _annotate_args = WaveformModel._annotate_args.copy()
@@ -725,6 +726,7 @@ class PhaseNetPlus(WaveformModel):
         add_polarity: bool = True,
         add_event: bool = True,
         sampling_rate: float = 100,
+        pick_tolerance: float = 3.0,
         **kwargs,
     ) -> None:
         citation = (
@@ -748,7 +750,9 @@ class PhaseNetPlus(WaveformModel):
         self.log_scale = log_scale
 
         self.vpvs = 1.73  # vp/vs ratio for event extraction
-        self.pick_tolerance = 3  # Tolerance for pick matching in event extraction
+        self.pick_tolerance = (
+            pick_tolerance  # Tolerance for pick matching in event extraction
+        )
 
         self.backbone = UNet(
             channels=3,
@@ -782,6 +786,7 @@ class PhaseNetPlus(WaveformModel):
         model_args["add_polarity"] = self.add_polarity
         model_args["add_event"] = self.add_event
         model_args["sampling_rate"] = self.sampling_rate
+        model_args["pick_tolerance"] = self.pick_tolerance
 
         return model_args
 
