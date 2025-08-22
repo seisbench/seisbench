@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "The seismological machine learning benchmark collection"
 readme = "README.md"
 license = { text = "GPLv3" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [
     { name = "Jack Woolam", email = "jack.woollam@kit.edu" },
     { name = "Jannes Münchmeyer", email = "munchmej@gfz-potsdam.de" },
