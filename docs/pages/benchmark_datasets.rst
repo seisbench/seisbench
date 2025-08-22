@@ -235,9 +235,9 @@ The full dataset can be loaded by using ``sbd.Induced()``. Afterwards, sub datas
 
     Heuel J., Maurer V., Frietsch M., Rietbrock A. (2025).
     Picking Induced Seismicity with Deep Learning.
-    Seismica.
+    Seismica, 4 (2).
 
-    https://doi.org/10.13127/INSTANCE
+    https://doi.org/10.26443/seismica.v4i2.1579
 
 
 INSTANCE

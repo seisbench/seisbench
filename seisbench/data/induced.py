@@ -2,14 +2,20 @@ from seisbench.data.base import BenchmarkDataset
 
 
 class Induced(BenchmarkDataset):
-    """ """
+    """
+    A dataset for induced seismicity from different regions in Canada, Switzerland,
+    Germany, and France. Induced seismic events are caused by hydraulic-fracturing
+    based fluid injection, geothermal power plants, and coal mine flooding.
+    In addition, the dataset contains all available low magnitude events (M_L <= 2)
+    from the Swiss Seismological Service (SED) between 2009 and 2023.
+    """
 
     def __init__(self, **kwargs):
         citation = (
             "Heuel, J., Maurer, V., Frietsch, M., Rietbrock, A. (2025)."
             "Picking Induced Seismicity with Deep Learning (piSDL) "
-            "Seismica. "
-            "https:"
+            "Seismica, 4 (2). "
+            "https://doi.org/10.26443/seismica.v4i2.1579"
         )
 
         super().__init__(
@@ -86,11 +92,3 @@ class Induced(BenchmarkDataset):
 
     def _download_dataset(self, writer, **kwargs):
         pass
-
-
-if __name__ == "__main__":
-    import seisbench.data as sbd
-
-    d = sbd.Induced()
-    v = d.vendenheim()
-    print(v)
