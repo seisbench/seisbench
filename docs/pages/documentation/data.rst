@@ -130,6 +130,13 @@ OBS datasets
     :undoc-members:
     :show-inheritance:
 
+PiSDL dataset
+-----------------------------------
+
+.. automodule:: seisbench.data.pisdl
+    :members:
+    :undoc-members:
+    :show-inheritance:
 
 PNW datasets
 -----------------------------------
