@@ -1,7 +1,7 @@
 from seisbench.data.base import BenchmarkDataset
 
 
-class Induced(BenchmarkDataset):
+class PiSDL(BenchmarkDataset):
     """
     A dataset for induced seismicity from different regions in Canada, Switzerland,
     Germany, and France. Induced seismic events are caused by hydraulic-fracturing

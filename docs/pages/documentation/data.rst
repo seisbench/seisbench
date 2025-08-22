@@ -68,14 +68,6 @@ GEOFON dataset
     :show-inheritance:
     :exclude-members: LocationHelper
 
-Induced dataset
------------------------------------
-
-.. automodule:: seisbench.data.induced
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
 INSTANCE dataset
 -----------------------------------
 
@@ -138,6 +130,13 @@ OBS datasets
     :undoc-members:
     :show-inheritance:
 
+PiSDL dataset
+-----------------------------------
+
+.. automodule:: seisbench.data.pisdl
+    :members:
+    :undoc-members:
+    :show-inheritance:
 
 PNW datasets
 -----------------------------------

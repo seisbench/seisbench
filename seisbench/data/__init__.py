@@ -19,7 +19,6 @@ from .dummy import (
 )
 from .ethz import ETHZ
 from .geofon import GEOFON
-from .induced import Induced
 from .instance import (
     InstanceCounts,
     InstanceCountsCombined,
@@ -37,6 +36,7 @@ from .lfe_stacks import (
 from .neic import MLAAPDE, NEIC
 from .obs import OBS
 from .obst2024 import OBST2024
+from pisdl import PiSDL
 from .pnw import (
     PNW,
     PNWAccelerometers,
@@ -71,7 +71,6 @@ __all__ = [
     "DummyDataset",
     "ETHZ",
     "GEOFON",
-    "Induced",
     "InstanceCounts",
     "InstanceCountsCombined",
     "InstanceGM",
@@ -86,6 +85,7 @@ __all__ = [
     "NEIC",
     "OBS",
     "OBST2024",
+    "PiSDL",
     "PNW",
     "PNWAccelerometers",
     "PNWExotic",
