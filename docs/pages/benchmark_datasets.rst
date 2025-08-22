@@ -414,6 +414,7 @@ The full dataset can be loaded by using ``sbd.PiSDL()``. Afterwards, sub dataset
 ``get_[region]_subset()`` functions.
 
 .. code-block:: python
+
     import seisbench.data as sbd
 
     dataset = sbd.PiSDL()
