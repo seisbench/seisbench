@@ -78,7 +78,7 @@ class BohemiaSaxony(BenchmarkDataset):
 
     _client: MultiClient
 
-    def __init__(self, **kwargs):
+    def __init__(self, eida_token: str | None = None, **kwargs):
         citation = """
 The data is compiled from data of the networks from Saxony network (SX), Webnet (WB),
 Thuringia network (TH), and Czech network (CZ) and is provided by the
@@ -95,9 +95,7 @@ Seismic Networks:
 """
         self._client = MultiClient()
         self._client.add_client(Client("BGR"))
-        self._client.add_client(
-            Client("GEOFON", eida_token="/home/marius/.ssh/eidatoken.pgp")
-        )
+        self._client.add_client(Client("GEOFON", eida_token=eida_token))
         self._client.add_client(Client("LMU"))
 
         super().__init__(
@@ -622,3 +620,24 @@ def get_split(test: float = 0.1, dev: float = 0.1) -> Literal["train", "dev", "t
         return "dev"
     else:
         return "test"
+
+
+if __name__ == "__main__":
+    from argparse import ArgumentParser
+
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--eida-token",
+        type=str,
+        default=None,
+        help="Path to EIDA token file.",
+    )
+    args = parser.parse_args()
+    logger.root.setLevel("INFO")
+    if args.eida_token is not None:
+        path = Path(args.eida_token)
+        if not path.exists():
+            parser.error(f"EIDA token file {path} does not exist.")
+        args.eida_token = str(path.expanduser().resolve())
+
+    ds = BohemiaSaxony(eida_token=args.eida_token)
