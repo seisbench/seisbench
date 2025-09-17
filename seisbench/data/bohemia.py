@@ -31,7 +31,7 @@ from seisbench.util.trace_ops import (
     trace_has_spikes,
 )
 
-CATALOG_URL = "https://opara.zih.tu-dresden.de/bitstreams/94e4ab28-ae8e-4495-b102-53d2d28fe138/download"
+CATALOG_URL = "https://opara.zih.tu-dresden.de/server/api/core/bitstreams/94e4ab28-ae8e-4495-b102-53d2d28fe138/content"
 
 REMOVE_CHANNELS = {
     "HHT",  # Stray channel or typo
@@ -105,7 +105,7 @@ Seismic Networks:
             **kwargs,
         )
 
-    def _ensure_catalog_colm(self, path: Path = Path.cwd()) -> Path:
+    def _download_catalog_colm(self, path: Path = Path.cwd()) -> Path:
         files = list((self.path / "final2").glob("cll_*.txt"))
         if files:
             logger.debug("Catalog files already exist, skipping download.")
@@ -148,7 +148,7 @@ Seismic Networks:
         return inv
 
     def get_catalog(self) -> Catalog:
-        self._ensure_catalog_colm(self.path)
+        self._download_catalog_colm(self.path)
         nordic_files = sorted((self.path / "final2").glob("cll_*.txt"))
 
         catalog = Catalog()
