@@ -158,7 +158,7 @@ Seismic Networks:
         for file in nordic_files:
             logger.info(f"Reading NORDIC file {file}")
             catalog += read_nordic(str(file))
-            # break
+            break
 
         logger.info("Loaded catalog with %d events.", len(catalog))
         return catalog
@@ -229,6 +229,12 @@ Seismic Networks:
 
         for pick in picks:
             sample = (pick.time - actual_t_start) * sampling_rate
+            if np.isnan(sample):
+                print("############ NaN sample for pick")
+                print("sample", sample)
+                print("sampling_rate", sampling_rate)
+                print("pick.time", pick.time)
+                print("actual_t_start", actual_t_start)
             trace_params[f"trace_{pick.phase_hint}_arrival_sample"] = int(sample)
             trace_params[f"trace_{pick.phase_hint}_status"] = pick.evaluation_mode
             if pick.polarity is None:
@@ -643,4 +649,4 @@ if __name__ == "__main__":
             parser.error(f"EIDA token file {path} does not exist.")
         args.eida_token = str(path.expanduser().resolve())
 
-    ds = BohemiaSaxony(eida_token=args.eida_token)
+    ds = BohemiaSaxony(eida_token=args.eida_token, output_order="ZNE")

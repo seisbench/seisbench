@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Literal, Optional, TypedDict
+from typing import Any, Literal, NamedTuple, Optional, TypedDict
 from urllib.parse import urljoin
 
 import h5py
@@ -1583,6 +1583,296 @@ class WaveformDataset:
         """
         return self.metadata.index[self.metadata["source_id"] == event_id].tolist()
 
+    def get_pyrocko_traces(self, sample_idx: int) -> list:
+        """
+        Returns the waveforms of a sample as a list of pyrocko Trace objects.
+
+        Requires pyrocko to be installed.
+
+        :param idx: Idx of sample to return traces for
+        :return: List of pyrocko Trace objects
+        """
+        from pyrocko.trace import Trace
+
+        data, metadata = self.get_sample(sample_idx)
+        traces = []
+
+        location_code = metadata.get("station_location_code")
+        location_code = "" if np.isnan(location_code) else location_code
+
+        for ichannel, trace_data in enumerate(data):
+            channel = metadata["trace_component_order"][ichannel]
+            trace = Trace(
+                ydata=trace_data,
+                tmin=datetime.fromisoformat(metadata["trace_start_time"]).timestamp(),
+                deltat=1.0 / metadata["trace_sampling_rate_hz"],
+                network=metadata["station_network_code"],
+                station=metadata["station_code"],
+                location=location_code,
+                channel=f"{metadata['trace_channel']}{channel}",
+            )
+            traces.append(trace)
+        return traces
+
+    def get_pyrocko_event(self, sample_idx: int) -> Any:
+        """
+        Returns the event of a sample as a pyrocko Event object.
+
+        Requires pyrocko to be installed.
+
+        :param idx: Idx of sample to return event for, or event source_id
+        :return: pyrocko Event object
+        """
+        from pyrocko.model import Event
+
+        metadata = self.metadata.iloc[sample_idx].to_dict()
+        return Event(
+            name=f"{metadata['index']} ({metadata['split']})",
+            time=metadata["source_origin_time"].timestamp(),
+            lat=metadata["source_latitude_deg"],
+            lon=metadata["source_longitude_deg"],
+            depth=metadata["source_depth_km"] * 1e3,
+            magnitude=metadata.get("source_magnitude", 0.0),
+            magnitude_type=metadata.get("source_magnitude_type"),
+            extras={
+                "id": metadata["source_id"],
+            },
+        )
+
+    def get_pyrocko_picks(self, sample_idx: int) -> list:
+        """
+        Returns the picks of a sample as a list of pyrocko Pick objects.
+
+        Requires pyrocko to be installed.
+
+        :param idx: Idx of sample to return picks for
+        :return: List of pyrocko Pick objects
+        """
+        from pyrocko.gui.marker import PhaseMarker
+
+        pyrocko_polarity_map = {
+            "undecideable": None,
+            "up": 1,
+            "down": -1,
+        }
+
+        metadata = self.metadata.iloc[sample_idx].to_dict()
+        sampling_rate = metadata["trace_sampling_rate_hz"]
+        phases = [
+            key.strip("trace_").strip("_arrival_sample")
+            for key in metadata.keys()
+            if key.endswith("_arrival_sample")
+        ]
+        location_code = metadata.get("station_location_code")
+        location_code = "" if np.isnan(location_code) else location_code
+        nsl = (
+            metadata["station_network_code"],
+            metadata["station_code"],
+            location_code,
+        )
+
+        trace_start = datetime.fromisoformat(metadata["trace_start_time"])
+
+        picks = []
+        for phase in phases:
+            if np.isnan(metadata[f"trace_{phase}_arrival_sample"]):
+                continue
+
+            pick_delay = metadata[f"trace_{phase}_arrival_sample"] / sampling_rate
+            pick_time = trace_start.timestamp() + pick_delay
+            automatic = metadata.get(f"trace_{phase}_status", "manual") == "automatic"
+
+            pick = PhaseMarker(
+                tmin=pick_time,
+                tmax=pick_time,
+                nslc_ids=[nsl + ("*",)],
+                automatic=automatic,
+                phasename=phase,
+                polarity=pyrocko_polarity_map.get(
+                    metadata.get(f"trace_{phase}_polarity", "Undecideable")
+                ),
+            )
+            picks.append(pick)
+        return picks
+
+    def _get_station_tuple(self, sample_idx: int) -> _StationTuple:
+        metadata = self.metadata.iloc[sample_idx].to_dict()
+        return _StationTuple.from_metadata(metadata)
+
+    def get_pyrocko_station(self, sample_idx: int) -> Any:
+        return self._get_station_tuple(sample_idx).as_pyrocko_station()
+
+    def pyrocko_snuffle_sample(self, sample_idx: int) -> Any:
+        """
+        Returns a pyrocko Snuffle object containing the traces, event and picks of a sample.
+
+        Requires pyrocko to be installed.
+
+        :param idx: Idx of sample to return Snuffle for
+        :return: pyrocko Snuffle object
+        """
+        from pyrocko.trace import snuffle
+
+        traces = self.get_pyrocko_traces(sample_idx)
+        event = self.get_pyrocko_event(sample_idx)
+        picks = self.get_pyrocko_picks(sample_idx)
+        station = self._get_station_tuple(sample_idx)
+
+        snuffle(
+            traces=traces,
+            events=[event],
+            markers=picks,
+            stations=[station.as_pyrocko_station()],
+        )
+
+    def _get_pyrocko_data(self, event: int | str) -> Any:
+        """
+        Snuffle all traces, picks and the event associated with a given event.
+
+        Requires pyrocko to be installed.
+
+        :param event: Event identifier
+        :return: pyrocko Snuffle object
+        """
+
+        if isinstance(event, int):
+            event_source_id = self.get_event_source_id(event)
+        else:
+            event_source_id = event
+
+        idx = self.get_event_sample_indices(event_source_id)
+        if not idx:
+            raise ValueError(f"No samples found for event {event_source_id}")
+        event = self.get_pyrocko_event(idx[0])
+        all_traces = []
+        all_picks = []
+        stations = set()
+
+        for i in idx:
+            all_traces += self.get_pyrocko_traces(i)
+            all_picks += self.get_pyrocko_picks(i)
+            stations.add(self._get_station_tuple(i))
+
+        return all_traces, event, all_picks, stations
+
+    def pyrocko_snuffle_event(self, event: int | str) -> Any:
+        """
+        Snuffle all traces, picks and the event associated with a given event.
+
+        Requires pyrocko to be installed.
+
+        :param event: Event identifier
+        :return: pyrocko Snuffle object
+        """
+        from pyrocko.trace import snuffle
+
+        all_traces, event, all_picks, stations = self._get_pyrocko_data(event)
+
+        snuffle(
+            traces=all_traces,
+            events=[event],
+            markers=all_picks,
+            stations=[sta.as_pyrocko_station() for sta in stations],
+        )
+
+    def dump_mseed(self, directory: Path) -> None:
+        """
+        Dumps all traces in the dataset to MiniSEED files, grouped by day.
+
+        Requires pyrocko to be installed.
+
+        :param directory: Directory to write MiniSEED files to.
+        :return: None
+        """
+        from pyrocko.gui.marker import save_markers
+        from pyrocko.io import save
+        from pyrocko.model import dump_events, dump_stations_yaml
+        from pyrocko.trace import degapper
+
+        n_events = self.n_events()
+
+        (directory / "mseed").mkdir(parents=True, exist_ok=True)
+        (directory / "picks").mkdir(parents=True, exist_ok=True)
+
+        day_groups = (
+            self.metadata.groupby("source_id", as_index=False)
+            .first()
+            .groupby(pd.Grouper(key="source_origin_time", freq="D"))
+        )
+        events = []
+        stations = set()
+
+        all_picks = []
+        with tqdm(desc="Dumping MiniSEEDs", total=n_events) as pbar:
+            for day, metadata_grouped in day_groups:
+                n_events_day = metadata_grouped.shape[0]
+                if n_events_day == 0:
+                    continue
+
+                pick_markers = []
+                traces = []
+                for event_idx in range(n_events_day):
+                    event_traces, event, event_picks, stas = self._get_pyrocko_data(
+                        metadata_grouped.iloc[event_idx]["source_id"]
+                    )
+                    traces += event_traces
+                    pick_markers += event_picks
+                    events.append(event)
+                    stations.update(stas)
+
+                filename = directory / "mseed" / f"{day.date()}.mseed"
+                filename_picks = directory / "picks" / f"{day.date()}.picks"
+
+                traces = degapper(sorted(traces, key=lambda tr: tr.full_id))
+                save(traces, str(filename), format="mseed", overwrite=True)
+
+                save_markers(pick_markers, str(filename_picks))
+                all_picks += pick_markers
+
+                seisbench.logger.info("Wrote %d events to %s", n_events_day, filename)
+                pbar.update(n_events_day)
+
+        seisbench.logger.info("Dumping events, picks and stations")
+        dump_events(events, str(directory / "events.yaml"), format="yaml")
+        save_markers(all_picks, str(directory / "all_picks.picks"))
+        dump_stations_yaml(
+            [sta.as_pyrocko_station() for sta in stations],
+            str(directory / "stations.yaml"),
+        )
+        readme = directory / "README.md"
+        readme.write_text(
+            f"""
+# SeisBench MiniSEED dump of dataset {self.name}
+
+This directory contains a MiniSEED dump of the SeisBench dataset '{self.name}'.
+The dataset contains {len(self)} earthquake records associated with {n_events} events.
+
+The data is organized as follows:
+- `mseed/`: Contains MiniSEED files, one file per day.
+- `picks/`: Contains pick files in pyrocko .picks format, one file per day.
+- `events.yaml`: Contains all events in pyrocko .yaml format.
+- `stations.yaml`: Contains all stations in pyrocko .yaml format.
+- `all_picks.picks`: Contains all picks in pyrocko .picks format
+
+## Open Pyrocko Snuffler
+
+You can open the data in pyrocko's snuffler using the following command:
+```bash
+squirrel snuffler -a mseed/*.mseed -e events.yaml -s stations.yaml
+```
+
+Use `N` to navigate between events.
+
+## Dataset Citation
+{getattr(self, "_citation") if getattr(self, "_citation") else "No citation provided."}
+
+## Dataset License
+{getattr(self, "_license") if getattr(self, "_license") else "No license provided."}
+
+Created with SeisBench {seisbench.__version__}
+"""
+        )
+
 
 class MultiWaveformDataset:
     """
@@ -2842,3 +3132,36 @@ class TraceParameters(TypedDict):
     trace_start_time: NotRequired[str]
 
     trace_component_order: NotRequired[str]
+
+
+class _StationTuple(NamedTuple):
+    network: str
+    station: str
+    location: str
+    lat: float
+    lon: float
+    elevation: float
+
+    @classmethod
+    def from_metadata(cls, metadata: TraceParameters):
+        location_code = metadata.get("station_location_code")
+        return cls(
+            metadata["station_network_code"],
+            metadata["station_code"],
+            "" if np.isnan(location_code) else location_code,
+            metadata["station_latitude_deg"],
+            metadata["station_longitude_deg"],
+            metadata["station_elevation_m"],
+        )
+
+    def as_pyrocko_station(self):
+        from pyrocko import model
+
+        return model.Station(
+            network=self.network,
+            location=self.location,
+            station=self.station,
+            lat=self.lat,
+            lon=self.lon,
+            elevation=self.elevation,
+        )
