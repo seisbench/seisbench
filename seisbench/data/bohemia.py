@@ -80,18 +80,21 @@ class BohemiaSaxony(BenchmarkDataset):
 
     def __init__(self, eida_token: str | None = None, **kwargs):
         citation = """
-The data is compiled from data of the networks from Saxony network (SX), Webnet (WB),
-Thuringia network (TH), and Czech network (CZ) and is provided by the
-BGR (Bundesanstalt für Geowissenschaften und Rohstoffe) and Geofon.
+The data is compiled from data of the networks from Saxony Seismic Network (SX),
+West Bohemia Local Seismic Network (WEBNET; WB), Thuringia Seismological Network (TH),
+and Czech Regional Seismic Network (CZ) and is provided by the BGR (Bundesanstalt für
+Geowissenschaften und Rohstoffe) and GFZ GEOFON.
 
 Catalog and Picks:
-* https://opara.zih.tu-dresden.de/items/5387886f-25f2-4faf-8dca-33981d898ab9
+* Earthquakes in Saxony (Germany) and surroundings
+  from 2006 up to 2023 -- onsets and locations,
+  https://opara.zih.tu-dresden.de/items/5387886f-25f2-4faf-8dca-33981d898ab9
 
 Seismic Networks:
-* https://doi.org/10.7914/SN/SX
-* https://doi.org/10.7914/SN/WB
-* https://doi.org/10.7914/SN/TH
-* https://doi.org/10.7914/SN/CZ
+* SXNET Saxon Seismic Network, https://doi.org/10.7914/SN/SX
+* West Bohemia Local Seismic Network (WEBNET), https://doi.org/10.7914/SN/WB
+* Thüringer Seismologisches Netz, https://doi.org/10.7914/SN/TH
+* Czech Regional Seismic Network, https://doi.org/10.7914/SN/CZ
 """
         self._client = MultiClient()
         self._client.add_client(Client("BGR"))
