@@ -21,6 +21,7 @@ from .dummy import (
 )
 from .ethz import ETHZ
 from .geofon import GEOFON
+from .inspection import DatasetInspection
 from .instance import (
     InstanceCounts,
     InstanceCountsCombined,
@@ -102,4 +103,5 @@ __all__ = [
     "STEAD",
     "TXED",
     "VCSEIS",
+    "DatasetInspection",
 ]
