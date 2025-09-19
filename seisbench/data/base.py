@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Literal, NamedTuple, Optional, TypedDict
+from typing import Any, Literal, Optional, TypedDict
 from urllib.parse import urljoin
 
 import h5py
@@ -2842,36 +2842,3 @@ class TraceParameters(TypedDict):
     trace_start_time: NotRequired[str]
 
     trace_component_order: NotRequired[str]
-
-
-class _StationTuple(NamedTuple):
-    network: str
-    station: str
-    location: str
-    lat: float
-    lon: float
-    elevation: float
-
-    @classmethod
-    def from_metadata(cls, metadata: TraceParameters):
-        location_code = metadata.get("station_location_code")
-        return cls(
-            metadata["station_network_code"],
-            metadata["station_code"],
-            "" if np.isnan(location_code) else location_code,
-            metadata["station_latitude_deg"],
-            metadata["station_longitude_deg"],
-            metadata["station_elevation_m"],
-        )
-
-    def as_pyrocko_station(self):
-        from pyrocko import model
-
-        return model.Station(
-            network=self.network,
-            location=self.location,
-            station=self.station,
-            lat=self.lat,
-            lon=self.lon,
-            elevation=self.elevation,
-        )
