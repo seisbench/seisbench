@@ -96,10 +96,7 @@ Seismic Networks:
 * Thüringer Seismologisches Netz, https://doi.org/10.7914/SN/TH
 * Czech Regional Seismic Network, https://doi.org/10.7914/SN/CZ
 """
-        self._client = MultiClient()
-        self._client.add_client(Client("BGR"))
-        self._client.add_client(Client("GEOFON", eida_token=eida_token))
-        self._client.add_client(Client("LMU"))
+        self._eida_token = eida_token
 
         super().__init__(
             citation=citation,
@@ -107,6 +104,12 @@ Seismic Networks:
             repository_lookup=False,
             **kwargs,
         )
+
+    def _init_client(self):
+        self._client = MultiClient()
+        self._client.add_client(Client("BGR"))
+        self._client.add_client(Client("GEOFON", eida_token=self._eida_token))
+        self._client.add_client(Client("LMU"))
 
     def _download_catalog_colm(self, path: Path = Path.cwd()) -> Path:
         files = list((self.path / "final2").glob("cll_*.txt"))
@@ -255,6 +258,7 @@ Seismic Networks:
             "No pre-downloaded dataset available, downloading from BGR and Geofon. "
             "This may take a while.",
         )
+        self._init_client()
         writer.data_format = {
             "dimension_order": "CW",
             "component_order": COMPONENT_ORDER,
