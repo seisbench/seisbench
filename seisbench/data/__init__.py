@@ -12,6 +12,7 @@ from .base import (
     WaveformDataset,
     WaveformDataWriter,
 )
+from .bohemia import BohemiaSaxony
 from .ceed import CEED
 from .crew import CREW
 from .cwa import CWA, CWANoise
@@ -107,5 +108,5 @@ __all__ = [
     "STEAD",
     "TXED",
     "VCSEIS",
-    "DatasetInspection",
+    "BohemiaSaxony",
 ]
