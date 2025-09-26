@@ -31,7 +31,7 @@ from seisbench.util.trace_ops import (
     trace_has_spikes,
 )
 
-CATALOG_URL = "https://opara.zih.tu-dresden.de/server/api/core/bitstreams/94e4ab28-ae8e-4495-b102-53d2d28fe138/content"
+CATALOG_URL = "https://data.pyrocko.org/material/colm-catalog.zip"
 
 REMOVE_CHANNELS = {
     "HHT",  # Stray channel or typo
@@ -161,7 +161,6 @@ Seismic Networks:
         for file in nordic_files:
             logger.info(f"Reading NORDIC file {file}")
             catalog += read_nordic(str(file))
-            break
 
         logger.info("Loaded catalog with %d events.", len(catalog))
         return catalog
