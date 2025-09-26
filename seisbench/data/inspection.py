@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 import pandas as pd
+from pyrocko.model.station import Station
 from tqdm import tqdm
 
 import seisbench
@@ -14,7 +15,7 @@ from seisbench.data.base import WaveformDataset
 try:
     from pyrocko.gui.marker import PhaseMarker, save_markers
     from pyrocko.io import save
-    from pyrocko.model import Event, dump_events, dump_stations_yaml
+    from pyrocko.model import Event, Station, dump_events, dump_stations_yaml
     from pyrocko.trace import Trace, degapper, snuffle
 except ImportError as e:
     raise ImportError("pyrocko is required for dataset inspection") from e
@@ -23,15 +24,22 @@ if TYPE_CHECKING:
     from seisbench.data.base import TraceParameters
 
 
+_PYROCKO_POLARITY_MAP = {
+    "undecideable": None,
+    "up": 1,
+    "down": -1,
+}
+
+
 class DatasetInspection:
     _dataset: WaveformDataset
     _metadata: pd.DataFrame
 
-    def __init__(self, dataset: WaveformDataset):
+    def __init__(self, dataset: WaveformDataset) -> None:
         self._dataset = dataset
         self._metadata = dataset.metadata
 
-    def get_pyrocko_traces(self, sample_idx: int) -> list:
+    def get_pyrocko_traces(self, sample_idx: int) -> list[Trace]:
         """
         Returns the waveforms of a sample as a list of pyrocko Trace objects.
 
@@ -63,7 +71,7 @@ class DatasetInspection:
             traces.append(trace)
         return traces
 
-    def get_pyrocko_event(self, sample_idx: int) -> Any:
+    def get_pyrocko_event(self, sample_idx: int) -> Event:
         """
         Returns the event of a sample as a pyrocko Event object.
 
@@ -90,7 +98,7 @@ class DatasetInspection:
             },
         )
 
-    def get_pyrocko_picks(self, sample_idx: int) -> list:
+    def get_pyrocko_picks(self, sample_idx: int) -> list[PhaseMarker]:
         """
         Returns the picks of a sample as a list of pyrocko Pick objects.
 
@@ -100,12 +108,6 @@ class DatasetInspection:
         :return: List of pyrocko Pick objects
         """
         metadata = self._metadata
-
-        pyrocko_polarity_map = {
-            "undecideable": None,
-            "up": 1,
-            "down": -1,
-        }
 
         metadata = metadata.iloc[sample_idx].to_dict()
         sampling_rate = metadata["trace_sampling_rate_hz"]
@@ -139,7 +141,7 @@ class DatasetInspection:
                 nslc_ids=[nsl + ("*",)],
                 automatic=automatic,
                 phasename=phase,
-                polarity=pyrocko_polarity_map.get(
+                polarity=_PYROCKO_POLARITY_MAP.get(
                     metadata.get(f"trace_{phase}_polarity", "Undecideable")
                 ),
             )
@@ -150,10 +152,10 @@ class DatasetInspection:
         metadata = self._metadata.iloc[sample_idx].to_dict()
         return _StationTuple.from_metadata(metadata)
 
-    def get_pyrocko_station(self, sample_idx: int) -> Any:
+    def get_pyrocko_station(self, sample_idx: int) -> Station:
         return self._get_station_tuple(sample_idx).as_pyrocko_station()
 
-    def pyrocko_snuffle_sample(self, sample_idx: int) -> Any:
+    def pyrocko_snuffle_sample(self, sample_idx: int) -> None:
         """
         Returns a pyrocko Snuffle object containing the traces, event and picks of a sample.
 
@@ -175,7 +177,9 @@ class DatasetInspection:
             stations=[station.as_pyrocko_station()],
         )
 
-    def _get_pyrocko_data(self, event: int | str) -> Any:
+    def _get_pyrocko_data(
+        self, event: int | str
+    ) -> tuple[list[Trace], Event, list[PhaseMarker], set[_StationTuple]]:
         """
         Snuffle all traces, picks and the event associated with a given event.
 
@@ -207,7 +211,7 @@ class DatasetInspection:
 
         return all_traces, event, all_picks, stations
 
-    def pyrocko_snuffle_event(self, event: int | str) -> Any:
+    def pyrocko_snuffle_event(self, event: int | str) -> None:
         """
         Snuffle all traces, picks and the event associated with a given event.
 
@@ -241,6 +245,7 @@ class DatasetInspection:
 
         (directory / "mseed").mkdir(parents=True, exist_ok=True)
         (directory / "picks").mkdir(parents=True, exist_ok=True)
+        (directory / "csv").mkdir(parents=True, exist_ok=True)
 
         day_groups = (
             metadata.groupby("source_id", as_index=False)
@@ -286,6 +291,10 @@ class DatasetInspection:
         dump_events(events, str(directory / "events.yaml"), format="yaml")
         save_markers(all_picks, str(directory / "all_picks.picks"))
         dump_stations_yaml(pyrocko_stations, str(directory / "stations.yaml"))
+
+        dump_events_csv(events, directory / "csv" / "events.csv")
+        dump_stations_csv(list(stations), directory / "csv" / "stations.csv")
+
         readme = directory / "README.md"
         readme.write_text(
             f"""
@@ -341,10 +350,8 @@ class _StationTuple(NamedTuple):
             metadata["station_elevation_m"],
         )
 
-    def as_pyrocko_station(self):
-        from pyrocko import model
-
-        return model.Station(
+    def as_pyrocko_station(self) -> Station:
+        return Station(
             network=self.network,
             location=self.location,
             station=self.station,
@@ -357,5 +364,38 @@ class _StationTuple(NamedTuple):
         return (
             f"{self.network},{self.station},{self.location},"
             f"{self.lat},{self.lon},{self.elevation},"
-            f"POINT_Z({self.lon} {self.lat} {self.elevation})"
+            f"POINT Z({self.lon} {self.lat} {self.elevation})"
         )
+
+
+def dump_stations_csv(stations: list[_StationTuple], filename: Path) -> None:
+    """
+    Dumps a list of stations to a CSV file.
+
+    :param stations: List of stations to dump
+    :param filename: Filename to write CSV to
+    :return: None
+    """
+    header = "network,station,location,latitude,longitude,elevation,WKT_geom"
+    lines = [sta.as_csv() for sta in stations]
+    filename.write_text("\n".join([header] + lines) + "\n")
+
+
+def dump_events_csv(events: list[Event], filename: Path) -> None:
+    """
+    Dumps a list of events to a CSV file.
+
+    :param events: List of events to dump
+    :param filename: Filename to write CSV to
+    :return: None
+    """
+    header = "time,latitude,longitude,depth_m,magnitude,magnitude_type,name,id,WKT_geom"
+    lines = [
+        (
+            f"{ev.time},{ev.lat},{ev.lon},{ev.depth},{ev.magnitude},"
+            f"{ev.magnitude_type},{ev.name},{ev.extras.get('id', '')}"
+            f",POINT Z({ev.lon} {ev.lat} {-ev.depth})"
+        )
+        for ev in events
+    ]
+    filename.write_text("\n".join([header] + lines) + "\n")
