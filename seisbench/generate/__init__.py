@@ -70,4 +70,6 @@ __all__ = [
     "SteeredWindow",
     "UTCOffsets",
     "WindowAroundSample",
+    "PolarityPlusLabeller",
+    "PolarityLabeller",
 ]
