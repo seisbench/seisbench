@@ -15,6 +15,8 @@ from .augmentation import (
 )
 from .generator import GenericGenerator, GroupGenerator, SteeredGenerator
 from .labeling import (
+    PolarityPlusLabeller,
+    PolarityLabeller,
     DetectionLabeller,
     PickLabeller,
     ProbabilisticLabeller,
