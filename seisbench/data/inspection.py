@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -16,7 +16,7 @@ try:
     from pyrocko.gui.marker import PhaseMarker, save_markers
     from pyrocko.io import save
     from pyrocko.model import Event, Station, dump_events, dump_stations_yaml
-    from pyrocko.trace import Trace, degapper, snuffle
+    from pyrocko.trace import NoData, Trace, degapper, snuffle
 except ImportError as e:
     raise ImportError("pyrocko is required for dataset inspection") from e
 
@@ -29,6 +29,8 @@ _PYROCKO_POLARITY_MAP = {
     "up": 1,
     "down": -1,
 }
+
+logger = seisbench.logger
 
 
 class DatasetInspection:
@@ -276,7 +278,11 @@ class DatasetInspection:
                 filename = directory / "mseed" / f"{day.date()}.mseed"
                 filename_picks = directory / "picks" / f"{day.date()}.picks"
 
-                traces = degapper(sorted(traces, key=lambda tr: tr.full_id))
+                try:
+                    traces = degapper(sorted(traces, key=lambda tr: tr.full_id))
+                except NoData:
+                    logger.error("Skipping day %s due to degapper NoData error", day)
+                    continue
                 save(traces, str(filename), format="mseed", overwrite=True)
 
                 save_markers(pick_markers, str(filename_picks))
@@ -379,6 +385,7 @@ def dump_stations_csv(stations: list[_StationTuple], filename: Path) -> None:
     header = "network,station,location,latitude,longitude,elevation,WKT_geom"
     lines = [sta.as_csv() for sta in stations]
     filename.write_text("\n".join([header] + lines) + "\n")
+    logger.info("Wrote %d stations to %s", len(stations), filename)
 
 
 def dump_events_csv(events: list[Event], filename: Path) -> None:
@@ -392,10 +399,12 @@ def dump_events_csv(events: list[Event], filename: Path) -> None:
     header = "time,latitude,longitude,depth_m,magnitude,magnitude_type,name,id,WKT_geom"
     lines = [
         (
-            f"{ev.time},{ev.lat},{ev.lon},{ev.depth},{ev.magnitude},"
+            f"{datetime.fromtimestamp(ev.time, tz=timezone.utc)},{ev.lat},{ev.lon},"
+            f"{ev.depth},{ev.magnitude},"
             f"{ev.magnitude_type},{ev.name},{ev.extras.get('id', '')}"
             f",POINT Z({ev.lon} {ev.lat} {-ev.depth})"
         )
         for ev in events
     ]
     filename.write_text("\n".join([header] + lines) + "\n")
+    logger.info("Wrote %d events to %s", len(events), filename)
