@@ -173,6 +173,28 @@ class DetectionList(PickList):
 
         return detection_df
 
+class PolarityList(PickList):
+    """
+    A list of Polarity objects with convenience functions for selecting and printing
+    """
+
+    def __str__(self) -> str:
+        return f"PolarityList with {len(self)} entries:\n\n" + self._rep_entries()
+
+    def select(self, trace_id: str = None, min_confidence: float = None):
+        """
+        Select specific polarities. Only arguments provided will be used to filter.
+
+        :param trace_id: A regular expression to match against the trace id.
+                         The string is directly passed to the `re` module in Python, i.e.,
+                         characters like dots need to be escapes and wildcards are represented
+                         using `.*`.
+        :param min_confidence: The minimum confidence values.
+                               Detections without confidence value are discarded.
+        """
+        return PolarityList(
+            super().select(trace_id=trace_id, min_confidence=min_confidence)
+        )
 
 class Pick:
     """
@@ -191,6 +213,10 @@ class Pick:
     :type peak_value: float
     :param phase: Phase hint
     :type phase: str
+    :param polarity: Polarity hint
+    :type polarity: str
+    :param pol_value: Polarity value of the characteristic function for the pick
+    :type pol_value: float
     """
 
     def __init__(
@@ -201,6 +227,8 @@ class Pick:
         peak_time=None,
         peak_value=None,
         phase=None,
+        polarity=None,
+        pol_value=None,
     ):
         self.trace_id = trace_id
         self.start_time = start_time
@@ -208,10 +236,16 @@ class Pick:
         self.peak_time = peak_time
         self.peak_value = peak_value
         self.phase = phase
+        self.polarity = polarity
+        self.pol_value = pol_value
 
         if end_time is not None and peak_time is not None:
             if not start_time <= peak_time <= end_time:
                 raise ValueError("peak_time must be between start_time and end_time.")
+
+    def add_polarity(self, polarity=None, pol_value=None):
+        self.polarity = polarity
+        self.pol_value = pol_value
 
     def __lt__(self, other):
         """
@@ -234,6 +268,13 @@ class Pick:
 
         if self.phase is not None:
             parts.append(str(self.phase))
+
+        if self.polarity is not None:
+            parts.append(str(self.polarity))
+
+        if self.pol_value is not None:
+            parts.append(str(self.pol_value))
+
 
         return "\t".join(parts)
 
@@ -273,5 +314,28 @@ class Detection:
 
     def __str__(self):
         parts = [self.trace_id, str(self.start_time), str(self.end_time)]
+
+        return "\t".join(parts)
+
+class Polarity:
+
+    def __init__(self, trace_id, polarity, value, p_time):
+        self.trace_id = trace_id
+        self.polarity = polarity
+        self.value = value
+        self.p_time = p_time
+
+    def __lt__(self, other):
+        """
+        Compares start time, end time and trace id in this order.
+        """
+        if self.p_time < other.p_time:
+            return True
+        if self.trace_id < other.trace_id:
+            return True
+        return False
+
+    def __str__(self):
+        parts = [self.trace_id, self.polarity, str(self.value), str(self.p_time)]
 
         return "\t".join(parts)
