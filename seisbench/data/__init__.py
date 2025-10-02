@@ -54,8 +54,6 @@ from .stead import STEAD
 from .txed import TXED
 from .vcseis import VCSEIS
 
-from .ncedc import NCEDC
-
 __all__ = [
     "BenchmarkDataset",
     "Bucketer",
@@ -100,5 +98,4 @@ __all__ = [
     "STEAD",
     "TXED",
     "VCSEIS",
-    "NCEDC",
 ]
