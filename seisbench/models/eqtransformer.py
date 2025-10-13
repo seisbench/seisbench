@@ -115,7 +115,7 @@ class EQTransformer(WaveformModel):
         self.norm = norm
 
         # Add options for conservative and the true original - see https://github.com/seisbench/seisbench/issues/96#issuecomment-1155158224
-        if original_compatible:
+        if isinstance(original_compatible, bool) and original_compatible:
             warnings.warn(
                 "Using the non-conservative 'original' model, set `original_compatible='conservative' to use the more conservative model"
             )
