@@ -1,4 +1,4 @@
-from .annotations import ClassifyOutput, Detection, DetectionList, Pick, PickList, Polarity, PolarityList
+from .annotations import ClassifyOutput, Detection, DetectionList, Pick, PickList
 from .arraytools import pad_packed_sequence, torch_detrend
 from .auxiliary import in_notebook
 from .decorators import log_lifecycle
@@ -26,8 +26,6 @@ __all__ = [
     "DetectionList",
     "Pick",
     "PickList",
-    "Polarity",
-    "PolarityList",
     "pad_packed_sequence",
     "torch_detrend",
     "in_notebook",

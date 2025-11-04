@@ -1,7 +1,7 @@
-import warnings
 from typing import Any
 
 import numpy as np
+import obspy
 import torch
 import torch.nn as nn
 
@@ -22,7 +22,7 @@ class EQTP(EQTransformer):
 
     Implementation is adapted from the EQTransformer with SeisBench GitHub repository (https://github.com/seisbench/seisbench).
 
-    the EQTP model can be instantiated via the `from_pretrained("NCEDC")` method.
+    The EQTP model can be instantiated via the `from_pretrained("ncedc")` method.
 
     .. document_args:: seisbench.models EQTP
 
@@ -30,28 +30,22 @@ class EQTP(EQTransformer):
 
     _annotate_args = EQTransformer._annotate_args.copy()
     _annotate_args["polarity_threshold"] = ("Polarity threshold", 0.3)
-    _annotate_args["polarity_dict"] = ("The position of the polarity vector represents the polarity", {
-        2: "N",
-        0: "U",
-        1: "D"
-    })
 
     def __init__(
-            self,
-            in_channels=3,
-            in_samples=12000,
-            classes=2,
-            phases="PS",
-            cnn_blocks=5,
-            res_cnn_blocks=5,
-            lstm_blocks=3,
-            drop_rate=0.3,
-            original_compatible=False,
-            sampling_rate=100,
-            norm="std",
-            **kwargs,
+        self,
+        in_channels=3,
+        in_samples=12000,
+        classes=2,
+        phases="PS",
+        cnn_blocks=5,
+        res_cnn_blocks=5,
+        lstm_blocks=3,
+        drop_rate=0.3,
+        original_compatible=False,
+        sampling_rate=100,
+        norm="std",
+        **kwargs,
     ):
-
         self.cnn_blocks = cnn_blocks
         self.res_cnn_blocks = res_cnn_blocks
 
@@ -73,7 +67,7 @@ class EQTP(EQTransformer):
             original_compatible=original_compatible,
             sampling_rate=sampling_rate,
             norm=norm,
-            **kwargs
+            **kwargs,
         )
 
         # Override citation and labels for EQTP
@@ -121,6 +115,7 @@ class EQTP(EQTransformer):
 
     def _create_transformer(self, input_size, drop_rate, eps):
         from .eqtransformer import Transformer
+
         return Transformer(input_size=input_size, drop_rate=drop_rate, eps=eps)
 
     def _add_polarity_branches(self, original_compatible, eps):
@@ -214,7 +209,7 @@ class EQTP(EQTransformer):
 
         # Polarity part
         for lstm, attention, decoder, conv in zip(
-                self.pol_lstms, self.pol_attentions, self.pol_decoders, self.pol_convs
+            self.pol_lstms, self.pol_attentions, self.pol_decoders, self.pol_convs
         ):
             polx = x.permute(2, 0, 1)
             polx = lstm(polx)[0]
@@ -231,7 +226,7 @@ class EQTP(EQTransformer):
 
         # Pick parts
         for lstm, attention, decoder, conv in zip(
-                self.pick_lstms, self.pick_attentions, self.pick_decoders, self.pick_convs
+            self.pick_lstms, self.pick_attentions, self.pick_decoders, self.pick_convs
         ):
             px = x.permute(2, 0, 1)
             px = lstm(px)[0]
@@ -271,33 +266,52 @@ class EQTP(EQTransformer):
             )
         picks = sbu.PickList(sorted(picks))
 
-        # Add polarity determination
-        self.polarity_from_annotations(
-            annotations.select(channel=f"{self.__class__.__name__}_Polarity_U"),
-            annotations.select(channel=f"{self.__class__.__name__}_Polarity_D"),
-            picks,
-            argdict.get(
-                f"polarity_threshold", self._annotate_args.get("polarity_threshold")[1]
-            ),
-        )
+        self._extract_polarities(annotations, picks, argdict)
 
         return sbu.ClassifyOutput(self.name, picks=picks)
 
-    def polarity_from_annotations(self, annotations_U, annotations_D, picks, polarity_threshold):
-        polarity_dict = self._annotate_args.get("polarity_dict")[1]
-        for trace_u, trace_d in zip(annotations_U, annotations_D):
-            for pick in picks:
-                if pick.phase == 'P':
-                    pick_time = pick.peak_time - trace_u.stats.starttime
-                    ind = int(pick_time / trace_u.stats.delta)
-                    u_value = trace_u.data[ind]
-                    d_value = trace_d.data[ind]
-                    if u_value < polarity_threshold and d_value < polarity_threshold:
-                        pick.add_polarity(polarity=polarity_dict[2], pol_value=1 - u_value - d_value)
-                    elif u_value > d_value:
-                        pick.add_polarity(polarity=polarity_dict[0], pol_value=u_value)
-                    else:
-                        pick.add_polarity(polarity=polarity_dict[1], pol_value=d_value)
+    def _extract_polarities(
+        self, annotations: obspy.Stream, picks: sbu.PickList, argdict: dict[str, Any]
+    ):
+        polarity_threshold = (
+            argdict.get(
+                "polarity_threshold", self._annotate_args.get("*_threshold")[1]
+            ),
+        )
+        for pick in picks:
+            if pick.phase == "P":
+                t = pick.peak_time
+
+                scores = {}
+                for pol in "UD":
+                    trace = annotations.select(
+                        id=f"{pick.trace_id}.{self.__class__.__name__}_Polarity_{pol}"
+                    ).slice(t - 5 / self.sampling_rate, t + 5 * self.sampling_rate)
+                    if len(trace) != 1:
+                        continue
+                    trace = trace[0]
+                    sample = int(
+                        (t - trace.stats.starttime) * trace.stats.sampling_rate
+                    )
+
+                    segment = trace.data[
+                        max(0, sample - 3) : sample + 3
+                    ]  # Take a small tolerance around
+
+                    scores[pol] = np.max(segment)
+
+                if len(scores) != 2:
+                    continue
+
+                polarity = max(scores, key=scores.get)
+                if scores[polarity] > polarity_threshold:
+                    pick.polarity = polarity
+                    pick.polarity_value = scores[polarity]
+                else:
+                    pick.polarity = "N"
+                    pick.polarity_value = 1 - scores["U"] - scores["D"]
+
+        return picks
 
     def get_model_args(self):
         model_args = super().get_model_args()
