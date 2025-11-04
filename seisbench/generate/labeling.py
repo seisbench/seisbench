@@ -579,7 +579,7 @@ class PolarityPlusLabeller(PickLabeller):
         return y
 
     def __str__(self):
-        return f"ProbabilisticLabeller (label_type={self.label_type}, dim={self.dim})"
+        return f"PolarityPlusLabeller (label_type={self.label_type}, dim={self.dim})"
 
 class DetectionLabeller(SupervisedLabeller):
     """
@@ -723,52 +723,6 @@ class DetectionLabeller(SupervisedLabeller):
 
     def __str__(self):
         return f"DetectionLabeller (label_type={self.label_type}, dim={self.dim})"
-
-class PolarityLabeller(SupervisedLabeller):
-    """
-    Create polarity labels
-
-    :param trace_polarity: Metadata column containing the trace polarity
-    :type trace_polarity: str
-    """
-
-    def __init__(
-            self, trace_polarity, delete_n, **kwargs
-    ):
-        self.label_method = "probabilistic"
-        self.label_columns = "polarity"
-
-        self.trace_polarity = trace_polarity
-        self.delete_n = delete_n
-
-        kwargs["dim"] = kwargs.get("dim", -2)
-        super().__init__(label_type="multi_class", **kwargs)
-
-    def label(self, X, metadata):
-        polarity = metadata[self.trace_polarity]
-        if self.delete_n:
-            y = np.zeros((1, 2))
-            if polarity == "D":
-                y[0, 1] = 1
-            elif polarity == "U":
-                y[0, 0] = 1
-            else:
-                raise ValueError(f"Unknown polarity {polarity}")
-        else:
-            y = np.zeros((1, 3))
-        if polarity == "N":
-            y[0, 2] = 1
-        elif polarity == "U":
-            y[0, 0] = 1
-        elif polarity == "D":
-            y[0, 1] = 1
-        else:
-            raise ValueError(f"Unknown polarity {polarity}")
-
-        return y
-
-    def __str__(self):
-        return f"PolarityLabeller (label_type={self.label_type}, dim={self.dim})"
 
 class StandardLabeller(PickLabeller):
     """
