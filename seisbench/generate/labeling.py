@@ -454,7 +454,7 @@ class ProbabilisticPointLabeller(ProbabilisticLabeller):
             f"ProbabilisticPointLabeller (label_type={self.label_type}, dim={self.dim})"
         )
 
-class PolarityPlusLabeller(PickLabeller):
+class PolarityLabeller(PickLabeller):
     r"""
     - Creates probabilistic supervised labels from seismic polarity information, extending the PickLabeller base class
     - Supports both single-window (2D) and multi-window (3D) input data
@@ -579,7 +579,7 @@ class PolarityPlusLabeller(PickLabeller):
         return y
 
     def __str__(self):
-        return f"PolarityPlusLabeller (label_type={self.label_type}, dim={self.dim})"
+        return f"PolarityLabeller (label_type={self.label_type}, dim={self.dim})"
 
 class DetectionLabeller(SupervisedLabeller):
     """
