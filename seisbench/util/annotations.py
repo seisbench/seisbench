@@ -115,7 +115,7 @@ class PickList(list):
                     "probability": p.peak_value,
                     "phase": p.phase,
                     "polarity": p.polarity,
-                    "polarity_probability": p.polarity,
+                    "polarity_probability": p.polarity_value,
                 }
             )
         pick_df = pd.DataFrame(pick_df)
