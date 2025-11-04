@@ -33,7 +33,6 @@ class EQTP(EQTransformer):
 
     def __init__(
         self,
-        # in_samples=12000,
         cnn_blocks=5,
         res_cnn_blocks=5,
         **kwargs,
@@ -49,9 +48,7 @@ class EQTP(EQTransformer):
         )
 
         # Initialize parent class
-        super().__init__(
-            **kwargs,
-        )
+        super().__init__(**kwargs)
 
         # Override citation and labels for EQTP
         self._citation = citation
