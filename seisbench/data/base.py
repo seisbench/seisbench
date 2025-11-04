@@ -2086,18 +2086,21 @@ class BenchmarkDataset(WaveformDataset, ABC):
                               repository, for direct download.
     :param download_kwargs: Dict of arguments passed to the download_dataset function,
                             in case the dataset is loaded from scratch.
+    :param compile_from_source: If true, allows to compile the dataset from source. However, if a precompiled version
+                                is found either in the local cache or in the remote repository, it will be used instead.
     :param kwargs: Keyword arguments passed to WaveformDataset
     """
 
     def __init__(
         self,
-        chunks=None,
-        citation=None,
-        license=None,
-        force=False,
-        wait_for_file=False,
-        repository_lookup=False,
-        download_kwargs=None,
+        chunks: Optional[list[str]] = None,
+        citation: Optional[str] = None,
+        license: Optional[str] = None,
+        force: bool = False,
+        wait_for_file: bool = False,
+        repository_lookup: bool = False,
+        download_kwargs: dict[str, Any] = None,
+        compile_from_source: bool = False,
         **kwargs,
     ):
         self._name = self._name_internal()
@@ -2131,7 +2134,7 @@ class BenchmarkDataset(WaveformDataset, ABC):
                     except ValueError:
                         pass
 
-                if not successful_repository_download:
+                if not successful_repository_download and compile_from_source:
                     seisbench.logger.warning(
                         f"{chunk_str}Dataset {self.name} not in SeisBench repository. "
                         f"Starting download and conversion from source."
