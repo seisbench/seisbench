@@ -12,7 +12,7 @@ from obspy.geodetics import gps2dist_azimuth
 from tqdm import tqdm
 
 import seisbench
-from seisbench.data.base import BenchmarkDataset
+from seisbench.data.base import WaveformBenchmarkDataset
 from seisbench.util.trace_ops import (
     rotate_stream_to_zne,
     stream_to_array,
@@ -21,7 +21,7 @@ from seisbench.util.trace_ops import (
 )
 
 
-class ETHZ(BenchmarkDataset):
+class ETHZ(WaveformBenchmarkDataset):
     """
     Regional benchmark dataset of publicly available waveform data & corresponding
     metadata in Swiss Seismological Service (SED) archive. Contains data from

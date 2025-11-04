@@ -7,10 +7,10 @@ import numpy as np
 import seisbench
 import seisbench.util
 
-from .base import BenchmarkDataset
+from .base import WaveformBenchmarkDataset
 
 
-class SCEDC(BenchmarkDataset):
+class SCEDC(WaveformBenchmarkDataset):
     """
     SCEDC waveform archive (2000-2020).
 
@@ -38,7 +38,7 @@ class SCEDC(BenchmarkDataset):
 
 # TODO: Check with Zach Ross if this dataset really only differs from Ross2018JGRPick through the class rebalancing.
 #       If so, it this should be stated in the SeisBench documentation and probably also be reflected in the naming.
-class Ross2018JGRFM(BenchmarkDataset):
+class Ross2018JGRFM(WaveformBenchmarkDataset):
     """
     First motion polarity dataset belonging to the publication:
     Ross, Z. E., Meier, M.‐A., & Hauksson, E. (2018). P wave arrival picking and first‐motion polarity determination
@@ -194,7 +194,7 @@ class Ross2018JGRFM(BenchmarkDataset):
             shutil.rmtree(path_original)
 
 
-class Ross2018JGRPick(BenchmarkDataset):
+class Ross2018JGRPick(WaveformBenchmarkDataset):
     """
     Pick dataset belonging to the publication:
     Ross, Z. E., Meier, M.‐A., & Hauksson, E. (2018). P wave arrival picking and first‐motion polarity determination
@@ -350,7 +350,7 @@ class Ross2018JGRPick(BenchmarkDataset):
             shutil.rmtree(path_original)
 
 
-class Ross2018GPD(BenchmarkDataset):
+class Ross2018GPD(WaveformBenchmarkDataset):
     """
     Pick dataset belonging to the publication:
     Zachary E. Ross, Men‐Andrin Meier, Egill Hauksson, Thomas H. Heaton;
@@ -456,7 +456,7 @@ class Ross2018GPD(BenchmarkDataset):
 
 
 # TODO: Write Men-Andrin Meier regarding zero metadata columns, time format, split format
-class Meier2019JGR(BenchmarkDataset):
+class Meier2019JGR(WaveformBenchmarkDataset):
     """
     Southern californian part of the dataset from Meier et al. (2019)
     Note that due to the missing Japanese data,

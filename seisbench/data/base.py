@@ -91,7 +91,7 @@ class WaveformDataset:
 
     def __init__(
         self,
-        path,
+        path=None,
         name=None,
         dimension_order=None,
         component_order=None,
@@ -109,6 +109,10 @@ class WaveformDataset:
 
         self.cache = cache
         self._path = path
+        # This structure allows overwriting the path attribute in subclasses. This is done, for example,
+        # in BenchmarkDataset.
+        if self.path is None:
+            raise ValueError("Path can not be None")
         self._chunks = chunks
         if chunks is not None:
             self._chunks = sorted(chunks)
@@ -168,10 +172,11 @@ class WaveformDataset:
         self.grouping = None
 
     def _validate_chunks(self, path, chunks):
-        available_chunks = self.available_chunks(path)
-        for chunk in chunks:
-            if chunk not in available_chunks:
-                raise ValueError(f"Dataset does not contain the chunk '{chunk}'.")
+        if any(chunk not in self.available_chunks(path) for chunk in chunks):
+            raise ValueError(
+                f"The dataset does not contain the following chunks: "
+                f"{[chunk for chunk in chunks if chunk not in self.available_chunks(path)]}"
+            )
 
     def __str__(self):
         return f"{self._name} - {len(self)} traces"
@@ -2067,13 +2072,19 @@ class LoadingContext:
         return self.file_pointers[chunk]
 
 
-class BenchmarkDataset(WaveformDataset, ABC):
+class AbstractBenchmarkDataset(ABC):
     """
-    This class is the base class for benchmark waveform datasets.
+    This class is the base class for all benchmark datasets.
     It adds functionality to automatically download the dataset to the SeisBench cache.
-    Downloads can either be from the SeisBench repository, if the dataset is available there and in the right format,
+    Downloads can either be from the SeisBench repository if the dataset is available there and in the right format,
     or from another source, which will usually require some form of conversion.
     Furthermore, it adds annotations for citation and license.
+
+    This is an abstract class for any type of benchmark dataset. To implement a specific type, like a dataset for
+    waveforms, this class will be subclassed. See :py:class:`BenchmarkDataset` for an example. In the subclass, it's
+    enough to set the ``_files`` parameter telling the downloader which files constitute the dataset. Each file
+    can use the placeholder ``$CHUNK`` to be replaced with the chunk name. Each file needs to be present for each
+    chunk.
 
     :param chunks: List of chunks to download
     :param citation: Citation for the dataset. Should be set in the inheriting class.
@@ -2084,12 +2095,18 @@ class BenchmarkDataset(WaveformDataset, ABC):
                               the download function. Should be set in the inheriting class. Only needs to be
                               set to true if the dataset is available in a repository, e.g., the SeisBench
                               repository, for direct download.
-    :param download_kwargs: Dict of arguments passed to the download_dataset function,
-                            in case the dataset is loaded from scratch.
     :param compile_from_source: If true, allows to compile the dataset from source. However, if a precompiled version
                                 is found either in the local cache or in the remote repository, it will be used instead.
+    :param download_kwargs: Dict of arguments passed to the download_dataset function,
+                            in case the dataset is loaded from scratch.
     :param kwargs: Keyword arguments passed to WaveformDataset
     """
+
+    # This is the list of files that are required for each chunk.
+    # This value will usually be overwritten in the inheriting class.
+    # Use $CHUNK as a placeholder for the chunk name.
+    # For an example usage, see BenchmarkDataset.
+    _files: list[str] = []
 
     def __init__(
         self,
@@ -2099,8 +2116,8 @@ class BenchmarkDataset(WaveformDataset, ABC):
         force: bool = False,
         wait_for_file: bool = False,
         repository_lookup: bool = False,
-        download_kwargs: dict[str, Any] = None,
         compile_from_source: bool = False,
+        download_kwargs: dict[str, Any] = None,
         **kwargs,
     ):
         self._name = self._name_internal()
@@ -2113,8 +2130,13 @@ class BenchmarkDataset(WaveformDataset, ABC):
 
         if chunks is None:
             chunks = self.available_chunks(force=force, wait_for_file=wait_for_file)
+            print("Chunks: ", chunks)
         else:
-            self._validate_chunks(self.path, chunks)
+            if any(chunk not in self.available_chunks() for chunk in chunks):
+                raise ValueError(
+                    f"The dataset does not contain the following chunks: "
+                    f"{[chunk for chunk in chunks if chunk not in self.available_chunks()]}"
+                )
 
         for chunk in chunks:
 
@@ -2129,7 +2151,7 @@ class BenchmarkDataset(WaveformDataset, ABC):
                         "Trying to download preprocessed version from SeisBench repository."
                     )
                     try:
-                        self._download_preprocessed(*files, chunk=chunk)
+                        self._download_preprocessed(files, chunk=chunk)
                         successful_repository_download = True
                     except ValueError:
                         pass
@@ -2140,32 +2162,17 @@ class BenchmarkDataset(WaveformDataset, ABC):
                         f"Starting download and conversion from source."
                     )
 
-                    download_dataset_parameters = inspect.signature(
-                        self._download_dataset
-                    ).parameters
-                    if "chunk" not in download_dataset_parameters and chunk != "":
-                        raise ValueError(
-                            "Data set seems not to support chunking, but chunk provided."
-                        )
+                    self._download_dataset_wrapper(
+                        files, chunk=chunk, **download_kwargs
+                    )
 
-                    # Pass chunk parameter to _download_dataset through download_kwargs
-                    tmp_download_args = copy.copy(download_kwargs)
-                    if "chunk" in download_dataset_parameters:
-                        tmp_download_args["chunk"] = chunk
-
-                    with WaveformDataWriter(*files) as writer:
-                        self._download_dataset(writer, **tmp_download_args)
-
-            files = [
-                self.path / f"metadata{chunk}.csv",
-                self.path / f"waveforms{chunk}.hdf5",
-            ]
+            files = [self.path / file.replace("$CHUNK", chunk) for file in self._files]
 
             seisbench.util.callback_if_uncached(
                 files, download_callback, force=force, wait_for_file=wait_for_file
             )
 
-        super().__init__(path=None, name=self._name_internal(), chunks=chunks, **kwargs)
+        super().__init__(chunks=chunks, **kwargs)
 
     @property
     def citation(self):
@@ -2177,7 +2184,7 @@ class BenchmarkDataset(WaveformDataset, ABC):
     @property
     def license(self):
         """
-        The licence attached to this dataset
+        The license attached to this dataset
         """
         return self._license
 
@@ -2218,13 +2225,13 @@ class BenchmarkDataset(WaveformDataset, ABC):
         return urljoin(seisbench.remote_data_root, cls._name_internal().lower())
 
     @classmethod
-    def available_chunks(cls, force=False, wait_for_file=False):
+    def available_chunks(cls, force: bool = False, wait_for_file: bool = False):
         """
         Returns a list of available chunks. Queries both the local cache and the remote root.
         """
-        if (cls._path_internal() / "metadata.csv").is_file() and (
-            cls._path_internal() / "waveforms.hdf5"
-        ).is_file():
+        test_file = cls._files[0]
+
+        if (cls._path_internal() / test_file.replace("$CHUNK", "")).is_file():
             # If the data set is not chunked, do not search for a chunk file.
             chunks = [""]
         else:
@@ -2257,6 +2264,94 @@ class BenchmarkDataset(WaveformDataset, ABC):
                 chunks = [""]
 
         return chunks
+
+    def _download_preprocessed(self, output_files: list[Path], chunk: str):
+        """
+        Downloads the dataset in the correct format, usually from the remote root.
+        """
+        self.path.mkdir(parents=True, exist_ok=True)
+
+        remote_base = self._remote_path()
+        for file_name, output_file in zip(self._files, output_files):
+            file_name = file_name.replace("$CHUNK", chunk)
+            remote_file_path = os.path.join(remote_base, file_name)
+
+            seisbench.util.download_http(
+                remote_file_path, output_file, desc=f"Downloading {file_name}"
+            )
+
+    def _download_dataset_wrapper(self, files: list[Path], chunk: str, **kwargs):
+        """
+        Function only exists for downward compatibility, allowing flexibility in two cases:
+
+        - Datasets without a ``chunk`` argument in ``download_dataset``.
+        - Datasets with a different signature for ``download_dataset``, such as the ``WaveformDataWriter`` passed to
+          ``BenchmarkDataset``.
+
+        """
+        tmp_download_args = self.add_chunk_to_download_args(chunk, kwargs)
+
+        self._download_dataset(files, **tmp_download_args)
+
+    def add_chunk_to_download_args(self, chunk, kwargs):
+        download_dataset_parameters = inspect.signature(
+            self._download_dataset
+        ).parameters
+        if "chunk" not in download_dataset_parameters and chunk != "":
+            raise ValueError(
+                "Data set seems not to support chunking, but chunk provided."
+            )
+        # Pass chunk parameter to _download_dataset through download_kwargs
+        tmp_download_args = copy.copy(kwargs)
+        if "chunk" in download_dataset_parameters:
+            tmp_download_args["chunk"] = chunk
+        return tmp_download_args
+
+    def _download_dataset(self, files: list[Path], chunk: str, **kwargs):
+        """
+        Download and convert the dataset to the standard SeisBench format.
+
+        :param files: List of file paths for the output files. Uses the same order as the ``_files`` list in the class.
+        :param chunk: The chunk to be downloaded. Can be ignored if an unchunked data set is created.
+        :param kwargs:
+        :return: None
+        """
+        raise NotImplementedError(
+            "This dataset does not implement a conversion from source."
+        )
+
+
+class WaveformBenchmarkDataset(AbstractBenchmarkDataset, WaveformDataset, ABC):
+    """
+    This class is the base class for benchmark waveform datasets. For the functionality, see the superclasses.
+    """
+
+    _files = ["waveforms$CHUNK.hdf5", "metadata$CHUNK.csv"]
+
+    def _download_dataset_wrapper(self, files, chunk, **kwargs):
+        tmp_download_args = self.add_chunk_to_download_args(chunk, kwargs)
+
+        # Turn the ``files`` argument into the ``writer`` argument. Necessary for backwards compatibility.
+        with WaveformDataWriter(*files) as writer:
+            self._download_dataset(writer, **tmp_download_args)
+
+    @abstractmethod
+    def _download_dataset(self, writer, chunk, **kwargs):
+        """
+        Function included to overwrite the signature.
+
+        Download and convert the dataset to the standard SeisBench format.
+        The metadata must contain at least the column 'trace_name'.
+        Please see the SeisBench documentation for more details on the data format.
+
+        :param writer: A WaveformDataWriter instance
+        :param chunk: The chunk to be downloaded. Can be ignored if unchunked data set is created.
+        :param kwargs:
+        :return: None
+        """
+        raise NotImplementedError(
+            "This dataset does not implement a conversion from source."
+        )
 
     @staticmethod
     def _sample_without_replacement(indexes, n_samples):
@@ -2315,36 +2410,18 @@ class BenchmarkDataset(WaveformDataset, ABC):
         self.metadata.loc[dev_idxs, "split"] = "dev"
         self.metadata.loc[test_idxs, "split"] = "test"
 
-    def _download_preprocessed(self, metadata_path, waveforms_path, chunk):
-        """
-        Downloads the dataset in the correct format, usually from the remote root.
-        """
-        self.path.mkdir(parents=True, exist_ok=True)
 
-        remote_path = self._remote_path()
-        remote_metadata_path = os.path.join(remote_path, f"metadata{chunk}.csv")
-        remote_waveforms_path = os.path.join(remote_path, f"waveforms{chunk}.hdf5")
+class BenchmarkDataset(WaveformBenchmarkDataset):
+    """
+    This class is only kept as an alias to ensure downward compatibility.
+    Use :py:class:`WaveformBenchmarkDataset` instead.
+    """
 
-        seisbench.util.download_http(
-            remote_metadata_path, metadata_path, desc="Downloading metadata"
+    def __init__(self, *args, **kwargs):
+        seisbench.logger.warning(
+            "The class BenchmarkDataset is deprecated. Use WaveformBenchmarkDataset instead."
         )
-        seisbench.util.download_http(
-            remote_waveforms_path, waveforms_path, desc="Downloading waveforms"
-        )
-
-    @abstractmethod
-    def _download_dataset(self, writer, chunk, **kwargs):
-        """
-        Download and convert the dataset to the standard SeisBench format.
-        The metadata must contain at least the column 'trace_name'.
-        Please see the SeisBench documentation for more details on the data format.
-
-        :param writer: A WaveformDataWriter instance
-        :param chunk: The chunk to be downloaded. Can be ignored if unchunked data set is created.
-        :param kwargs:
-        :return: None
-        """
-        pass
+        super().__init__(*args, **kwargs)
 
 
 class Bucketer(ABC):

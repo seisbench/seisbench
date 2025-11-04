@@ -8,10 +8,10 @@ import pandas as pd
 import seisbench
 import seisbench.util
 
-from .base import BenchmarkDataset, MultiWaveformDataset
+from .base import WaveformBenchmarkDataset, MultiWaveformDataset
 
 
-class InstanceTypeDataset(BenchmarkDataset, ABC):
+class InstanceTypeDataset(WaveformBenchmarkDataset, ABC):
     """
     Abstract class for all datasets in the INSTANCE structure.
     Provides a helper function for downloading the datasets to avoid code duplication.

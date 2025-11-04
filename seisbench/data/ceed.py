@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 import seisbench
 
-from .base import BenchmarkDataset, WaveformDataWriter
+from .base import WaveformBenchmarkDataset, WaveformDataWriter
 
 try:
     from huggingface_hub import hf_hub_download
@@ -15,7 +15,7 @@ except ModuleNotFoundError:
     hf_hub_download = None
 
 
-class CEED(BenchmarkDataset):
+class CEED(WaveformBenchmarkDataset):
     """
     The CEED dataset for California from Zhu et al. (2025)
     """

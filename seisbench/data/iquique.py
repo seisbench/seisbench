@@ -1,9 +1,9 @@
 import seisbench
 
-from .base import BenchmarkDataset
+from .base import WaveformBenchmarkDataset
 
 
-class Iquique(BenchmarkDataset):
+class Iquique(WaveformBenchmarkDataset):
     """
     Iquique Benchmark Dataset of local events used for training in Woollam (2019)
     study (see citation).

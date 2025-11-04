@@ -1,7 +1,7 @@
-from seisbench.data.base import BenchmarkDataset
+from seisbench.data.base import WaveformBenchmarkDataset
 
 
-class PiSDL(BenchmarkDataset):
+class PiSDL(WaveformBenchmarkDataset):
     """
     A dataset for induced seismicity from different regions in Canada, Switzerland,
     Germany, and France. Induced seismic events are caused by hydraulic-fracturing

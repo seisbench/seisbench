@@ -8,13 +8,13 @@ import numpy as np
 import seisbench
 import seisbench.util
 
-from .base import BenchmarkDataset
+from .base import WaveformBenchmarkDataset
 
 # Conversion from earth radius
 DEG2KM = 2 * np.pi * 6371 / 360
 
 
-class NEIC(BenchmarkDataset):
+class NEIC(WaveformBenchmarkDataset):
     """
     NEIC dataset from Yeck and Patton
     """
@@ -212,7 +212,7 @@ class NEIC(BenchmarkDataset):
             shutil.rmtree(path_original)
 
 
-class MLAAPDE(BenchmarkDataset):
+class MLAAPDE(WaveformBenchmarkDataset):
     """
     MLAAPDE dataset from Cole et al. (2023)
 

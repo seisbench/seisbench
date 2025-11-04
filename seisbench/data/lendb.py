@@ -6,10 +6,10 @@ from obspy import UTCDateTime
 import seisbench
 import seisbench.util
 
-from .base import BenchmarkDataset
+from .base import WaveformBenchmarkDataset
 
 
-class LenDB(BenchmarkDataset):
+class LenDB(WaveformBenchmarkDataset):
     """
     Len-DB dataset from Magrini et al.
     """

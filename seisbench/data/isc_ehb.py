@@ -1,7 +1,7 @@
-from .base import BenchmarkDataset
+from .base import WaveformBenchmarkDataset
 
 
-class ISC_EHB_DepthPhases(BenchmarkDataset):
+class ISC_EHB_DepthPhases(WaveformBenchmarkDataset):
     """
     Dataset of depth phase picks from the
     `ISC-EHB bulletin <http://www.isc.ac.uk/isc-ehb/>`_.

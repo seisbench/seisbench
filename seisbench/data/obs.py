@@ -1,8 +1,8 @@
 import seisbench.util
-from seisbench.data.base import BenchmarkDataset
+from seisbench.data.base import WaveformBenchmarkDataset
 
 
-class OBS(BenchmarkDataset):
+class OBS(WaveformBenchmarkDataset):
     """
     OBS Benchmark Dataset of local events
 
