@@ -347,12 +347,12 @@ def test_download_dataset_chunk_arg(tmp_path):
 
         # Note: This would raise a TypeError when called with the chunk parameter
         with pytest.raises(ValueError) as e:
-            MockDataset()
+            MockDataset(compile_from_source=True)
         assert "Called without chunks" in str(e)
 
         # Note: This would raise a TypeError when called without the chunk parameter
         with pytest.raises(ValueError) as e:
-            ChunkedMockDataset()
+            ChunkedMockDataset(compile_from_source=True)
         assert "Called with chunks" in str(e)
 
 
