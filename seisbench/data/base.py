@@ -2130,7 +2130,6 @@ class AbstractBenchmarkDataset(ABC):
 
         if chunks is None:
             chunks = self.available_chunks(force=force, wait_for_file=wait_for_file)
-            print("Chunks: ", chunks)
         else:
             if any(chunk not in self.available_chunks() for chunk in chunks):
                 raise ValueError(
