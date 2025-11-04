@@ -1,7 +1,7 @@
-from seisbench.data.base import BenchmarkDataset
+from seisbench.data.base import WaveformBenchmarkDataset
 
 
-class AQ2009Counts(BenchmarkDataset):
+class AQ2009Counts(WaveformBenchmarkDataset):
     """
     AQ2009 aftershocks digital units dataset from Bagagli et al. (2023)
 
@@ -26,7 +26,7 @@ class AQ2009Counts(BenchmarkDataset):
         pass
 
 
-class AQ2009GM(BenchmarkDataset):
+class AQ2009GM(WaveformBenchmarkDataset):
     """
     AQ2009 aftershocks ground motion dataset from Bagagli et al. (2023)
 

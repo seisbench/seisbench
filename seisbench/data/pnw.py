@@ -1,7 +1,7 @@
-from seisbench.data.base import BenchmarkDataset
+from seisbench.data.base import WaveformBenchmarkDataset
 
 
-class PNW(BenchmarkDataset):
+class PNW(WaveformBenchmarkDataset):
     """
     PNW ComCat dataset from Ni et al. (2023)
 
@@ -24,7 +24,7 @@ class PNW(BenchmarkDataset):
         pass
 
 
-class PNWExotic(BenchmarkDataset):
+class PNWExotic(WaveformBenchmarkDataset):
     """
     PNW Exotic dataset from Ni et al. (2023)
 
@@ -47,7 +47,7 @@ class PNWExotic(BenchmarkDataset):
         pass
 
 
-class PNWAccelerometers(BenchmarkDataset):
+class PNWAccelerometers(WaveformBenchmarkDataset):
     """
     PNW Accelerometers dataset from Ni et al. (2023)
 
@@ -70,7 +70,7 @@ class PNWAccelerometers(BenchmarkDataset):
         pass
 
 
-class PNWNoise(BenchmarkDataset):
+class PNWNoise(WaveformBenchmarkDataset):
     """
     PNW Noise dataset from Ni et al. (2023)
 

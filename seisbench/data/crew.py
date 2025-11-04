@@ -1,7 +1,7 @@
-from seisbench.data.base import BenchmarkDataset
+from seisbench.data.base import WaveformBenchmarkDataset
 
 
-class CREW(BenchmarkDataset):
+class CREW(WaveformBenchmarkDataset):
     """
     Curated Regional Earthquake Waveforms (CREW dataset)
 

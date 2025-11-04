@@ -1,7 +1,7 @@
-from seisbench.data.base import BenchmarkDataset
+from seisbench.data.base import WaveformBenchmarkDataset
 
 
-class VCSEIS(BenchmarkDataset):
+class VCSEIS(WaveformBenchmarkDataset):
     """
     A data set of seismic waveforms from various volcanic regions: Alaska, Hawaii, Northern California, Cascade volcanoes.
 

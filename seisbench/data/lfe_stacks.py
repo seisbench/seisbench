@@ -1,7 +1,7 @@
-from .base import BenchmarkDataset
+from .base import WaveformBenchmarkDataset
 
 
-class LFEStacksCascadiaBostock2015(BenchmarkDataset):
+class LFEStacksCascadiaBostock2015(WaveformBenchmarkDataset):
     """
     Low-frequency earthquake stacks underneath Vancouver Island, Cascadia, Canada/USA based on the catalog by
     Bostock et al (2015). Compiled to SeisBench format by Münchmeyer et al (2024).
@@ -26,7 +26,7 @@ class LFEStacksCascadiaBostock2015(BenchmarkDataset):
         pass
 
 
-class LFEStacksMexicoFrank2014(BenchmarkDataset):
+class LFEStacksMexicoFrank2014(WaveformBenchmarkDataset):
     """
     Low-frequency earthquake stacks underneath Guerrero, Mexico based on the catalog by
     Frank et al (2014). Compiled to SeisBench format by Münchmeyer et al (2024).
@@ -51,7 +51,7 @@ class LFEStacksMexicoFrank2014(BenchmarkDataset):
         pass
 
 
-class LFEStacksSanAndreasShelly2017(BenchmarkDataset):
+class LFEStacksSanAndreasShelly2017(WaveformBenchmarkDataset):
     """
     Low-frequency earthquake stacks on the San Andreas Fault, California, USA based on the catalog by
     Shelly (2014). Compiled to SeisBench format by Münchmeyer et al (2024).

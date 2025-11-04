@@ -7,7 +7,7 @@ import pandas as pd
 import seisbench
 import seisbench.util
 
-from .base import BenchmarkDataset
+from .base import WaveformBenchmarkDataset
 
 try:
     from huggingface_hub import hf_hub_download
@@ -15,7 +15,7 @@ except ModuleNotFoundError:
     hf_hub_download = None
 
 
-class CWABase(BenchmarkDataset, ABC):
+class CWABase(WaveformBenchmarkDataset, ABC):
     """
     An abstract class for downloading datasets.
     The CWA dataset comprises data from two seismographic networks: CWASN and TSMIP.

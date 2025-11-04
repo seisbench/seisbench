@@ -7,10 +7,10 @@ import pandas as pd
 import seisbench
 import seisbench.util
 
-from .base import BenchmarkDataset, WaveformDataWriter
+from .base import WaveformBenchmarkDataset, WaveformDataWriter
 
 
-class STEAD(BenchmarkDataset):
+class STEAD(WaveformBenchmarkDataset):
     """
     STEAD dataset from Mousavi et al.
 

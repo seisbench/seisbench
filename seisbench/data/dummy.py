@@ -6,10 +6,10 @@ from obspy.clients.fdsn import Client
 import seisbench
 import seisbench.util
 
-from .base import BenchmarkDataset
+from .base import WaveformBenchmarkDataset
 
 
-class DummyDataset(BenchmarkDataset):
+class DummyDataset(WaveformBenchmarkDataset):
     """
     A dummy dataset visualizing the implementation of custom datasets
     """
@@ -101,7 +101,7 @@ class DummyDataset(BenchmarkDataset):
             writer.add_trace(row, waveform)
 
 
-class ChunkedDummyDataset(BenchmarkDataset):
+class ChunkedDummyDataset(WaveformBenchmarkDataset):
     """
     A chunked dummy dataset visualizing the implementation of custom datasets with chunking
     """

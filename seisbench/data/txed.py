@@ -5,10 +5,10 @@ import h5py
 
 import seisbench
 
-from .base import BenchmarkDataset, WaveformDataWriter
+from .base import WaveformBenchmarkDataset, WaveformDataWriter
 
 
-class TXED(BenchmarkDataset):
+class TXED(WaveformBenchmarkDataset):
     """
     TEXD dataset from Chen et al.
 

@@ -3,6 +3,8 @@ from .aq2009 import (
     AQ2009Counts,
 )
 from .base import (
+    AbstractBenchmarkDataset,
+    WaveformBenchmarkDataset,
     BenchmarkDataset,
     Bucketer,
     GeometricBucketer,
@@ -55,7 +57,9 @@ from .txed import TXED
 from .vcseis import VCSEIS
 
 __all__ = [
+    "AbstractBenchmarkDataset",
     "BenchmarkDataset",
+    "WaveformBenchmarkDataset",
     "Bucketer",
     "GeometricBucketer",
     "MultiWaveformDataset",

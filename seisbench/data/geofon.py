@@ -15,10 +15,10 @@ from seisbench.util.trace_ops import (
     trace_has_spikes,
 )
 
-from .base import BenchmarkDataset
+from .base import WaveformBenchmarkDataset
 
 
-class GEOFON(BenchmarkDataset):
+class GEOFON(WaveformBenchmarkDataset):
     """
     GEOFON dataset consisting of both regional and teleseismic picks. Mostly contains P arrivals,
     but a few S arrivals are annotated as well. Contains data from 2010-2013. The dataset will be

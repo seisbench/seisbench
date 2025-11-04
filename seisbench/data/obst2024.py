@@ -1,7 +1,7 @@
-from .base import BenchmarkDataset
+from .base import WaveformBenchmarkDataset
 
 
-class OBST2024(BenchmarkDataset):
+class OBST2024(WaveformBenchmarkDataset):
     """
     The OBS dataset from Niksejel & Zhang (2024)
     """
