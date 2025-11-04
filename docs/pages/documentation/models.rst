@@ -73,6 +73,14 @@ EQTransformer
     :undoc-members:
     :show-inheritance:
 
+EQTP
+-----------------------------------
+
+.. autoclass:: seisbench.models.eqtp.EQTP
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 GPD
 -----------------------------------
 
