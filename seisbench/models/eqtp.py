@@ -33,17 +33,9 @@ class EQTP(EQTransformer):
 
     def __init__(
         self,
-        in_channels=3,
-        in_samples=12000,
-        classes=2,
-        phases="PS",
+        # in_samples=12000,
         cnn_blocks=5,
         res_cnn_blocks=5,
-        lstm_blocks=3,
-        drop_rate=0.3,
-        original_compatible=False,
-        sampling_rate=100,
-        norm="std",
         **kwargs,
     ):
         self.cnn_blocks = cnn_blocks
@@ -58,21 +50,12 @@ class EQTP(EQTransformer):
 
         # Initialize parent class
         super().__init__(
-            in_channels=in_channels,
-            in_samples=in_samples,
-            classes=classes,
-            phases=phases,
-            lstm_blocks=lstm_blocks,
-            drop_rate=drop_rate,
-            original_compatible=original_compatible,
-            sampling_rate=sampling_rate,
-            norm=norm,
             **kwargs,
         )
 
         # Override citation and labels for EQTP
         self._citation = citation
-        self.labels = ["Polarity_U", "Polarity_D"] + list(phases)
+        self.labels = ["Polarity_U", "Polarity_D"] + list(self.phases)
 
         # Override EQTP specific filter configurations
         self.filters = [8, 16, 16, 32, 64]
@@ -87,15 +70,15 @@ class EQTP(EQTransformer):
         del self.conv_d
 
         # Override transformer input size to 64 for EQTP
-        eps = 1e-7 if original_compatible else 1e-5
-        self.transformer_d0 = self._create_transformer(64, drop_rate, eps)
-        self.transformer_d = self._create_transformer(64, drop_rate, eps)
+        eps = 1e-7 if self.original_compatible else 1e-5
+        self.transformer_d0 = self._create_transformer(64, self.drop_rate, eps)
+        self.transformer_d = self._create_transformer(64, self.drop_rate, eps)
 
         # Add polarity branches
-        self._add_polarity_branches(original_compatible, eps)
+        self._add_polarity_branches(self.original_compatible, eps)
 
         # Rebuild picking branches with 64 input size
-        self._rebuild_picking_branches(original_compatible, eps)
+        self._rebuild_picking_branches(self.original_compatible, eps)
 
     def _rebuild_eqtp_components(self):
 
