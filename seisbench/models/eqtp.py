@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 
 import seisbench.util as sbu
-from .eqtransformer import EQTransformer, SeqSelfAttention, Decoder
+from .eqtransformer import EQTransformer, SeqSelfAttention, Decoder, Encoder, ResCNNStack, Transformer, ActivationLSTMCell, CustomLSTM
 
 
 class EQTP(EQTransformer):
@@ -98,7 +98,6 @@ class EQTP(EQTransformer):
         self._rebuild_picking_branches(original_compatible, eps)
 
     def _rebuild_eqtp_components(self):
-        from .eqtransformer import Encoder, ResCNNStack
 
         self.encoder = Encoder(
             input_channels=self.in_channels,
@@ -114,12 +113,9 @@ class EQTP(EQTransformer):
         )
 
     def _create_transformer(self, input_size, drop_rate, eps):
-        from .eqtransformer import Transformer
-
         return Transformer(input_size=input_size, drop_rate=drop_rate, eps=eps)
 
     def _add_polarity_branches(self, original_compatible, eps):
-        from .base import ActivationLSTMCell, CustomLSTM
 
         self.pol_lstms = []
         self.pol_attentions = []
@@ -156,8 +152,6 @@ class EQTP(EQTransformer):
         self.pol_convs = nn.ModuleList(self.pol_convs)
 
     def _rebuild_picking_branches(self, original_compatible, eps):
-        """Rebuild picking branches with 64 input size for EQTP"""
-        from .base import ActivationLSTMCell, CustomLSTM
 
         # Clear existing picking branches
         self.pick_lstms = nn.ModuleList()
