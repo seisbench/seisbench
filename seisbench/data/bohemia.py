@@ -72,7 +72,7 @@ ASCII_SET = string.ascii_lowercase + string.digits
 class BohemiaSaxony(BenchmarkDataset):
     """
     Regional benchmark dataset of waveform data and metadata
-    for the Bohemia and Saxony region in Germany/Czech Republic.
+    for the North-West Bohemia and Saxony region in Germany/Czech Republic.
 
     """
 
@@ -87,7 +87,7 @@ Geowissenschaften und Rohstoffe) and GFZ GEOFON.
 
 Catalog and Picks:
 * Earthquakes in Saxony (Germany) and surroundings
-  from 2006 up to 2023 -- onsets and locations,
+  from 2006 to 2024 -- onsets and locations,
   https://opara.zih.tu-dresden.de/items/5387886f-25f2-4faf-8dca-33981d898ab9
 
 Seismic Networks:
