@@ -55,6 +55,26 @@ Depending on user needs and case study, the dataset can be accessed using the fo
 
     https://doi.org/10.13127/AI/AQUILA2009
 
+
+Bohemia
+--------
+
+.. figure::  ../_static/bohemia_dataset.webp
+   :align:   center
+
+The ``BohemiaSaxony`` dataset provides 24,821 local earthquake recordings from the NW Bohemia/Vogtland region (Germany / Czech Republic). The seismicity in the region is characterized by intense earthquake swarms of small magnitudes. The signal quality is crisp due to low noise in the region and competent Variscian rock with small sediment overlay. The data was collected from 72 seismic stations between September 2009 and December 2024.
+
+Dataset Details
+^^^^^^^^^^^^^^^^
+
+    * Stations: 72, three-component stations; broadband and short-period sensors.
+    * Sampling Rate 100 Hz.
+    * Events: 24,821 local earthquakes, magnitude range from Ml -1.3 to Ml 3.8.
+    * Quality: The dataset is characterized by a high pick quality and a low magnitude of completeness (Mc ~0.8).
+    * Time Period: September 2009 - December 2024
+    * Manually picked P and S arrivals. Analyzed by a single operator (Dr. S. Wendt) at the Geophysical Observatory of University of Leipzig Collm, ensuring high consistency and quality.
+    * Default Split: The dataset is randomly divided into training (80%), validation (10%), and test (10%) sets.
+
 CEED
 -----
 
