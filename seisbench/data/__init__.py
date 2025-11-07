@@ -4,11 +4,11 @@ from .aq2009 import (
 )
 from .base import (
     AbstractBenchmarkDataset,
-    WaveformBenchmarkDataset,
     BenchmarkDataset,
     Bucketer,
     GeometricBucketer,
     MultiWaveformDataset,
+    WaveformBenchmarkDataset,
     WaveformDataset,
     WaveformDataWriter,
 )
@@ -109,4 +109,5 @@ __all__ = [
     "TXED",
     "VCSEIS",
     "BohemiaSaxony",
+    "DatasetInspection",
 ]
