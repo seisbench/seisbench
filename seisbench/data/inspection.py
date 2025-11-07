@@ -24,6 +24,8 @@ if TYPE_CHECKING:
     from seisbench.data.base import TraceParameters
 
 
+PathStr = str | Path
+
 _PYROCKO_POLARITY_MAP = {
     "undecideable": None,
     "up": 1,
@@ -56,8 +58,8 @@ class DatasetInspection:
         data, metadata = ds.get_sample(sample_idx)
         traces = []
 
-        location_code = metadata.get("station_location_code")
-        location_code = "" if np.isnan(location_code) else location_code
+        location_code = str(metadata.get("station_location_code"))
+        location_code = "" if location_code == "nan" else location_code
 
         for ichannel, trace_data in enumerate(data):
             channel = metadata["trace_component_order"][ichannel]
@@ -232,7 +234,7 @@ class DatasetInspection:
             stations=[sta.as_pyrocko_station() for sta in stations],
         )
 
-    def export_mseed(self, directory: Path) -> None:
+    def export(self, directory: PathStr) -> None:
         """
         Exports all traces in the dataset to MiniSEED files, grouped by day.
 
@@ -241,6 +243,7 @@ class DatasetInspection:
         :param directory: Directory to write MiniSEED files to.
         :return: None
         """
+        directory = Path(directory)
         ds = self._dataset
         metadata = self._metadata
         n_events = self._dataset.n_events()
@@ -320,7 +323,7 @@ The data is organized as follows:
 
 You can open the data in pyrocko's snuffler using the following command:
 ```bash
-squirrel snuffler -a mseed/*.mseed -e events.yaml -s stations.yaml
+squirrel snuffler -a mseed/
 ```
 
 Use `N` to navigate between events.
@@ -345,12 +348,13 @@ class _StationTuple(NamedTuple):
     elevation: float
 
     @classmethod
-    def from_metadata(cls, metadata: TraceParameters):
-        location_code = metadata.get("station_location_code")
+    def from_metadata(cls, metadata: TraceParameters) -> _StationTuple:
+        location_code = str(metadata.get("station_location_code"))
+        location_code = "" if location_code == "nan" else location_code
         return cls(
             metadata["station_network_code"],
             metadata["station_code"],
-            "" if np.isnan(location_code) else location_code,
+            location_code,
             metadata["station_latitude_deg"],
             metadata["station_longitude_deg"],
             metadata["station_elevation_m"],
@@ -374,7 +378,7 @@ class _StationTuple(NamedTuple):
         )
 
 
-def dump_stations_csv(stations: list[_StationTuple], filename: Path) -> None:
+def dump_stations_csv(stations: list[_StationTuple], filename: PathStr) -> None:
     """
     Dumps a list of stations to a CSV file.
 
@@ -384,11 +388,12 @@ def dump_stations_csv(stations: list[_StationTuple], filename: Path) -> None:
     """
     header = "network,station,location,latitude,longitude,elevation,WKT_geom"
     lines = [sta.as_csv() for sta in stations]
+    filename = Path(filename)
     filename.write_text("\n".join([header] + lines) + "\n")
     logger.info("Wrote %d stations to %s", len(stations), filename)
 
 
-def dump_events_csv(events: list[Event], filename: Path) -> None:
+def dump_events_csv(events: list[Event], filename: PathStr) -> None:
     """
     Dumps a list of events to a CSV file.
 
@@ -406,5 +411,9 @@ def dump_events_csv(events: list[Event], filename: Path) -> None:
         )
         for ev in events
     ]
+    filename = Path(filename)
     filename.write_text("\n".join([header] + lines) + "\n")
     logger.info("Wrote %d events to %s", len(events), filename)
+
+
+__all__ = ["DatasetInspection"]

@@ -21,7 +21,6 @@ from .dummy import (
 )
 from .ethz import ETHZ
 from .geofon import GEOFON
-from .inspection import DatasetInspection
 from .instance import (
     InstanceCounts,
     InstanceCountsCombined,
@@ -56,6 +55,11 @@ from .scedc import (
 from .stead import STEAD
 from .txed import TXED
 from .vcseis import VCSEIS
+
+try:
+    from .inspection import DatasetInspection
+except ImportError:
+    pass
 
 __all__ = [
     "AbstractBenchmarkDataset",

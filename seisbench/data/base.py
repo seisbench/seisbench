@@ -151,9 +151,10 @@ class WaveformDataset:
                     },
                 )
             tmp_metadata["trace_chunk"] = chunk
-            tmp_metadata.source_origin_time = pd.to_datetime(
-                tmp_metadata.source_origin_time
-            )
+            if tmp_metadata.get("source_origin_time") is not None:
+                tmp_metadata.source_origin_time = pd.to_datetime(
+                    tmp_metadata.source_origin_time
+                )
             metadatas.append(tmp_metadata)
         self._metadata = pd.concat(metadatas)
         self._metadata.reset_index(
@@ -1562,6 +1563,14 @@ class WaveformDataset:
         return len(self.metadata["source_id"].unique())
 
     def get_event_source_id(self, idx: int) -> str:
+        """Gets the source_id of an event.
+
+        Args:
+            idx (int): Index of the event.
+
+        Returns:
+            str: Source ID of the event.
+        """
         source_ids = self.metadata["source_id"].unique()
         return source_ids[idx]
 
@@ -2789,9 +2798,9 @@ class WaveformDataWriter:
 
 class EventParameters(TypedDict):
     index: NotRequired[int]
-    split: Literal["train", "dev", "test"]
+    split: NotRequired[Literal["train", "dev", "test"]]
 
-    source_id: str
+    source_id: NotRequired[str]
     source_origin_time: str
     source_origin_uncertainty_sec: float
     source_latitude_deg: float
@@ -2818,9 +2827,9 @@ class EventParameters(TypedDict):
 
 
 class TraceParameters(TypedDict):
-    trace_name: str
+    trace_name: NotRequired[str]
 
-    path_back_azimuth_deg: float
+    path_back_azimuth_deg: NotRequired[float]
     station_network_code: str
     station_code: str
     trace_channel: str
