@@ -15,11 +15,7 @@ try:
     from pyrocko.gui.marker import PhaseMarker, save_markers
     from pyrocko.io import save
     from pyrocko.model import Event, Station, dump_events, dump_stations_yaml
-<<<<<<< HEAD
     from pyrocko.trace import NoData, Trace, degapper, snuffle
-=======
-    from pyrocko.trace import Trace, degapper, snuffle
->>>>>>> cee2a9d (update)
 except ImportError as e:
     raise ImportError("pyrocko is required for dataset inspection") from e
 
@@ -27,22 +23,16 @@ if TYPE_CHECKING:
     from seisbench.data.base import TraceParameters
 
 
-<<<<<<< HEAD
 PathStr = str | Path
 
-=======
->>>>>>> cee2a9d (update)
 _PYROCKO_POLARITY_MAP = {
     "undecideable": None,
     "up": 1,
     "down": -1,
 }
 
-<<<<<<< HEAD
 logger = seisbench.logger
 
-=======
->>>>>>> cee2a9d (update)
 
 class DatasetInspection:
     _dataset: WaveformDataset
@@ -387,11 +377,7 @@ class _StationTuple(NamedTuple):
         )
 
 
-<<<<<<< HEAD
 def dump_stations_csv(stations: list[_StationTuple], filename: PathStr) -> None:
-=======
-def dump_stations_csv(stations: list[_StationTuple], filename: Path) -> None:
->>>>>>> cee2a9d (update)
     """
     Dumps a list of stations to a CSV file.
 
@@ -401,19 +387,12 @@ def dump_stations_csv(stations: list[_StationTuple], filename: Path) -> None:
     """
     header = "network,station,location,latitude,longitude,elevation,WKT_geom"
     lines = [sta.as_csv() for sta in stations]
-<<<<<<< HEAD
     filename = Path(filename)
     filename.write_text("\n".join([header] + lines) + "\n")
     logger.info("Wrote %d stations to %s", len(stations), filename)
 
 
 def dump_events_csv(events: list[Event], filename: PathStr) -> None:
-=======
-    filename.write_text("\n".join([header] + lines) + "\n")
-
-
-def dump_events_csv(events: list[Event], filename: Path) -> None:
->>>>>>> cee2a9d (update)
     """
     Dumps a list of events to a CSV file.
 
@@ -424,24 +403,16 @@ def dump_events_csv(events: list[Event], filename: Path) -> None:
     header = "time,latitude,longitude,depth_m,magnitude,magnitude_type,name,id,WKT_geom"
     lines = [
         (
-<<<<<<< HEAD
             f"{datetime.fromtimestamp(ev.time, tz=timezone.utc)},{ev.lat},{ev.lon},"
             f"{ev.depth},{ev.magnitude},"
-=======
-            f"{ev.time},{ev.lat},{ev.lon},{ev.depth},{ev.magnitude},"
->>>>>>> cee2a9d (update)
             f"{ev.magnitude_type},{ev.name},{ev.extras.get('id', '')}"
             f",POINT Z({ev.lon} {ev.lat} {-ev.depth})"
         )
         for ev in events
     ]
-<<<<<<< HEAD
     filename = Path(filename)
     filename.write_text("\n".join([header] + lines) + "\n")
     logger.info("Wrote %d events to %s", len(events), filename)
 
 
 __all__ = ["DatasetInspection"]
-=======
-    filename.write_text("\n".join([header] + lines) + "\n")
->>>>>>> cee2a9d (update)
