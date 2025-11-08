@@ -239,7 +239,7 @@ class StreamPickLabeller(PickLabeller):
         kwargs["dim"] = kwargs.get("dim", 1)
         super().__init__(label_type="multi_class", **kwargs)
 
-    def _get_label_config(self):
+    def _get_label_config(self, metadata):
         """
         Get label configuration based on labeller type.
         To be overridden by subclasses if needed.
@@ -299,7 +299,7 @@ class StreamPickLabeller(PickLabeller):
 
     def label(self, X, metadata):
         # Get label configuration
-        labels, label_ids = self._get_label_config()
+        labels, label_ids = self._get_label_config(metadata)
 
         sample_dim, channel_dim, width_dim = self._get_dimension_order_from_config(
             config, self.ndim
