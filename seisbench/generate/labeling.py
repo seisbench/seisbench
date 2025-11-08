@@ -220,30 +220,17 @@ class PickLabeller(SupervisedLabeller, ABC):
 
         return label_columns, labels, label_ids
 
-
-class ProbabilisticLabeller(PickLabeller):
-    r"""
-    Create supervised labels from picks. The picks in example are represented
-    probabilistically with shapes of:
-
-    .. figure::  ../../_static/label_width.png
-        :align:   center
-
-    Note that the parameter sigma has a different meaning depending on the chosen shape.
-    In particular, the total probability mass of the picks will not be constant.
-
-    All picks with NaN sample are treated as not present.
-    The noise class is automatically created as :math:`\max \left(0, 1 - \sum_{n=1}^{c} y_{j} \right)`.
-
-    :param shape: Shape of the label. One of `gaussian`, `triangle`, or `box`.
-    :param sigma: Variance of Gaussian (gaussian), half-width of triangle (triangle)
-                or box function (box) label representation in samples, defaults to 10.
+class StreamPickLabeller(PickLabeller):
+    """
+    Base class for stream-based pick labellers that share common probability distribution logic.
+    Handles the common functionality of creating probability distributions at pick locations.
     """
 
-    def __init__(self, shape: str = "gaussian", sigma: int = 10, **kwargs):
+    def __init__(self, shape: str = "gaussian", sigma: int = 10, labeller_type: str = "probabilistic", **kwargs):
         self.label_method = "probabilistic"
         self.sigma = sigma
         self.shape = shape
+        self.labeller_type = labeller_type  # "probabilistic" or "polarity"
         self._labelshape_fn_mapper = {
             "gaussian": gaussian_pick,
             "triangle": triangle_pick,
@@ -252,38 +239,91 @@ class ProbabilisticLabeller(PickLabeller):
         kwargs["dim"] = kwargs.get("dim", 1)
         super().__init__(label_type="multi_class", **kwargs)
 
+    def _get_label_config(self):
+        """
+        Get label configuration based on labeller type.
+        To be overridden by subclasses if needed.
+        """
+        if self.labeller_type == "polarity":
+            return ["Up", "Down", "Noise"], {"Up": 0, "Down": 1, "Noise": 2}
+        else:
+            # Default probabilistic behavior
+            if not self.label_columns:
+                label_columns = self._auto_identify_picklabels(metadata)
+                (
+                    self.label_columns,
+                    self.labels,
+                    self.label_ids,
+                ) = self._columns_to_dict_and_labels(
+                    label_columns, self.noise_column, self.model_labels
+                )
+            return self.labels, self.label_ids
+
+    def _fill_y_value(self, y, label_column, label, label_val, metadata, i, j=None):
+        """
+        Fill y value based on labeller type.
+
+        Args:
+            y: Output array
+            label_column: Column name
+            label: Label name
+            label_val: Label value array
+            metadata: Metadata dict
+            i: Label index
+            j: Sample index (for multi-window case)
+        """
+        if self.labeller_type == "polarity":
+            # Polarity-specific logic
+            if label == 'S':  # Skip S phases for polarity
+                return
+
+            polarity_column = getattr(self, 'polarity_column', 'trace_polarity')
+            if polarity_column in metadata:
+                if metadata[polarity_column] == 'U':
+                    target_idx = 0  # Up
+                elif metadata[polarity_column] == 'D':
+                    target_idx = 1  # Down
+                else:
+                    return
+
+                if j is None:
+                    y[target_idx, :] = np.maximum(y[target_idx, :], label_val)
+                else:
+                    y[j, target_idx, :] = np.maximum(y[j, target_idx, :], label_val)
+        else:
+            # Probabilistic logic
+            if j is None:
+                y[i, :] = np.maximum(y[i, :], label_val)
+            else:
+                y[j, i, :] = np.maximum(y[j, i, :], label_val)
+
     def label(self, X, metadata):
-        if not self.label_columns:
-            label_columns = self._auto_identify_picklabels(metadata)
-            (
-                self.label_columns,
-                self.labels,
-                self.label_ids,
-            ) = self._columns_to_dict_and_labels(
-                label_columns, self.noise_column, self.model_labels
-            )
+        # Get label configuration
+        labels, label_ids = self._get_label_config()
 
         sample_dim, channel_dim, width_dim = self._get_dimension_order_from_config(
             config, self.ndim
         )
 
+        # Initialize y array
         if self.ndim == 2:
-            y = np.zeros(shape=(len(self.labels), X.shape[width_dim]))
+            y = np.zeros(shape=(len(labels), X.shape[width_dim]))
         elif self.ndim == 3:
             y = np.zeros(
                 shape=(
                     X.shape[sample_dim],
-                    len(self.labels),
+                    len(labels),
                     X.shape[width_dim],
                 )
             )
 
         # Construct pick labels
         for label_column, label in self.label_columns.items():
-            i = self.label_ids[label]
+            i = label_ids.get(label, None)
+            if i is None:
+                continue
 
             if label_column not in metadata:
-                # Unknown pick
                 continue
 
             if isinstance(metadata[label_column], (int, np.integer, float)):
@@ -298,10 +338,8 @@ class ProbabilisticLabeller(PickLabeller):
                         f"Labeller of shape {self.shape} is not implemented."
                     )
 
-                label_val[np.isnan(label_val)] = (
-                    0  # Set non-present pick probabilities to 0
-                )
-                y[i, :] = np.maximum(y[i, :], label_val)
+                label_val[np.isnan(label_val)] = 0
+                self._fill_y_value(y, label_column, label, label_val, metadata, i)
             else:
                 # Handle multi-window case
                 for j in range(X.shape[sample_dim]):
@@ -315,22 +353,23 @@ class ProbabilisticLabeller(PickLabeller):
                             f"Labeller of shape {self.shape} is not implemented."
                         )
 
-                    label_val[np.isnan(label_val)] = (
-                        0  # Set non-present pick probabilities to 0
-                    )
-                    y[j, i, :] = np.maximum(y[j, i, :], label_val)
+                    label_val[np.isnan(label_val)] = 0
+                    self._fill_y_value(y, label_column, label, label_val, metadata, i, j)
 
-        if self.noise_column:
+        # Handle noise normalization
+        if self.noise_column or self.labeller_type == "polarity":
             y /= np.maximum(
                 1, np.nansum(y, axis=channel_dim, keepdims=True)
-            )  # Ensure total probability mass is at most 1
-            # Construct noise label
-            if self.ndim == 2:
-                y[self.label_ids["Noise"], :] = 1 - np.nansum(y, axis=channel_dim)
-            elif self.ndim == 3:
-                y[:, self.label_ids["Noise"], :] = 1 - np.nansum(y, axis=channel_dim)
+            )
 
-        # Construct noise label
+            # Construct noise label
+            noise_idx = label_ids.get("Noise", len(labels) - 1)
+            if self.ndim == 2:
+                y[noise_idx, :] = 1 - np.nansum(y, axis=channel_dim)
+            elif self.ndim == 3:
+                y[:, noise_idx, :] = 1 - np.nansum(y, axis=channel_dim)
+
+        # Swap dimensions
         if self.ndim == 2:
             y = self._swap_dimension_order(
                 y,
@@ -344,9 +383,31 @@ class ProbabilisticLabeller(PickLabeller):
 
         return y
 
+
+class ProbabilisticLabeller(StreamPickLabeller):
+    """
+    Create supervised labels from picks with probabilistic representation.
+    """
+
+    def __init__(self, shape: str = "gaussian", sigma: int = 10, **kwargs):
+        super().__init__(shape=shape, sigma=sigma, labeller_type="probabilistic", **kwargs)
+
     def __str__(self):
         return f"ProbabilisticLabeller (label_type={self.label_type}, dim={self.dim})"
 
+
+class PolarityLabeller(StreamPickLabeller):
+    """
+    Create probabilistic supervised labels from seismic polarity information.
+    """
+
+    def __init__(self, polarity_column: str = "trace_polarity", shape: str = "gaussian", sigma: int = 10, **kwargs):
+        self.polarity_column = polarity_column
+        super().__init__(shape=shape, sigma=sigma, labeller_type="polarity", **kwargs)
+
+
+    def __str__(self):
+        return f"PolarityLabeller (label_type={self.label_type}, dim={self.dim})"
 
 class StepLabeller(PickLabeller):
     """
@@ -453,133 +514,6 @@ class ProbabilisticPointLabeller(ProbabilisticLabeller):
         return (
             f"ProbabilisticPointLabeller (label_type={self.label_type}, dim={self.dim})"
         )
-
-class PolarityLabeller(PickLabeller):
-    r"""
-    - Creates probabilistic supervised labels from seismic polarity information, extending the PickLabeller base class
-    - Supports both single-window (2D) and multi-window (3D) input data
-    - Labels include three classes: Up, Down, and Noise
-
-    Label Generation:
-    - Generates probability distributions at specified onset positions based on polarity information ('U' for Up, 'D' for Down)
-    - Noise class is automatically calculated as the remaining probability: noise = max(0, 1 - (up + down))
-    - Supports three probability distribution shapes: Gaussian, triangle, and box
-
-    Shape Parameters:
-    - Gaussian: sigma represents the standard deviation (in samples)
-    - Triangle: sigma represents the half-width (in samples)
-    - Box: sigma represents the half-width (in samples)
-
-    Input/Output Dimensions:
-    - 2D input (samples×channels): outputs (3×samples)
-    - 3D input (windows×samples×channels): outputs (windows×3×samples)
-
-    Note: The parameter sigma has different interpretations depending on the chosen shape. Picks with NaN sample values are treated as not present.
-    """
-
-    def __init__(self, polarity_column: str = "trace_polarity", shape: str = "gaussian", sigma: int = 10, **kwargs):
-        self.polarity_column = polarity_column
-        self.label_method = "probabilistic"
-        self.sigma = sigma
-        self.shape = shape
-        self._labelshape_fn_mapper = {
-            "gaussian": gaussian_pick,
-            "triangle": triangle_pick,
-            "box": box_pick,
-        }
-        kwargs["dim"] = kwargs.get("dim", 1)
-        super().__init__(label_type="multi_class", **kwargs)
-
-    def label(self, X, metadata):
-
-        sample_dim, channel_dim, width_dim = self._get_dimension_order_from_config(
-            config, self.ndim
-        )
-
-        if self.ndim == 2:
-            y = np.zeros(shape=(3, X.shape[width_dim]))
-        elif self.ndim == 3:
-            y = np.zeros(
-                shape=(
-                    X.shape[sample_dim],
-                    3,
-                    X.shape[width_dim],
-                )
-            )
-
-        # Construct pick labels
-        for label_column, label in self.label_columns.items():
-
-            if label_column not in metadata or label == 'S':
-                # Unknown pick
-                continue
-
-            if isinstance(metadata[label_column], (int, np.integer, float)):
-                # Handle single window case
-                onset = metadata[label_column]
-                if self.shape in self._labelshape_fn_mapper.keys():
-                    label_val = self._labelshape_fn_mapper[self.shape](
-                        onset=onset, length=X.shape[width_dim], sigma=self.sigma
-                    )
-                else:
-                    raise ValueError(
-                        f"Labeller of shape {self.shape} is not implemented."
-                    )
-
-                label_val[
-                    np.isnan(label_val)
-                ] = 0
-                # Set non-present pick probabilities to 0
-                if metadata[self.polarity_column] == 'U':
-                    y[0, :] = np.maximum(y[0, :], label_val)
-                elif metadata[self.polarity_column] == 'D':
-                    y[1, :] = np.maximum(y[1, :], label_val)
-            else:
-                # Handle multi-window case
-                for j in range(X.shape[sample_dim]):
-                    onset = metadata[label_column][j]
-                    if self.shape in self._labelshape_fn_mapper.keys():
-                        label_val = self._labelshape_fn_mapper[self.shape](
-                            onset=onset, length=X.shape[width_dim], sigma=self.sigma
-                        )
-                    else:
-                        raise ValueError(
-                            f"Labeller of shape {self.shape} is not implemented."
-                        )
-
-                    label_val[
-                        np.isnan(label_val)
-                    ] = 0  # Set non-present pick probabilities to 0
-                    if metadata[self.polarity_column] == 'U':
-                        y[j, 0, :] = np.maximum(y[j, 0, :], label_val)
-                    elif metadata[self.polarity_column] == 'D':
-                        y[j, 1, :] = np.maximum(y[j, 1, :], label_val)
-
-        y /= np.maximum(
-            1, np.nansum(y, axis=channel_dim, keepdims=True)
-        )  # Ensure total probability mass is at most 1
-        # Construct noise label
-        if self.ndim == 2:
-            y[2, :] = 1 - np.nansum(y, axis=channel_dim)
-        elif self.ndim == 3:
-            y[:, 2, :] = 1 - np.nansum(y, axis=channel_dim)
-
-        # Construct noise label
-        if self.ndim == 2:
-            y = self._swap_dimension_order(
-                y,
-                current_dim="CW",
-                expected_dim=config["dimension_order"].replace("N", ""),
-            )
-        elif self.ndim == 3:
-            y = self._swap_dimension_order(
-                y, current_dim="NCW", expected_dim=config["dimension_order"]
-            )
-
-        return y
-
-    def __str__(self):
-        return f"PolarityLabeller (label_type={self.label_type}, dim={self.dim})"
 
 class DetectionLabeller(SupervisedLabeller):
     """
