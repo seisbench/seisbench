@@ -239,33 +239,12 @@ class StreamPickLabeller(PickLabeller):
         kwargs["dim"] = kwargs.get("dim", 1)
         super().__init__(label_type="multi_class", **kwargs)
 
-    def _get_label_config(self, metadata):
-        """
-        Get label configuration based on labeller type.
-        To be overridden by subclasses if needed.
-        """
-        if self.labeller_type == "polarity":
-            return ["Up", "Down", "Noise"], {"Up": 0, "Down": 1, "Noise": 2}
-        else:
-            # Default probabilistic behavior
-            if not self.label_columns:
-                label_columns = self._auto_identify_picklabels(metadata)
-                (
-                    self.label_columns,
-                    self.labels,
-                    self.label_ids,
-                ) = self._columns_to_dict_and_labels(
-                    label_columns, self.noise_column, self.model_labels
-                )
-            return self.labels, self.label_ids
-
-    def _fill_y_value(self, y, label_column, label, label_val, metadata, i, j=None):
+    def _fill_y_value(self, y, label, label_val, metadata, i, j=None):
         """
         Fill y value based on labeller type.
 
         Args:
             y: Output array
-            label_column: Column name
             label: Label name
             label_val: Label value array
             metadata: Metadata dict
@@ -274,22 +253,18 @@ class StreamPickLabeller(PickLabeller):
         """
         if self.labeller_type == "polarity":
             # Polarity-specific logic
-            if label == 'S':  # Skip S phases for polarity
-                return
+            if label == 'P':
+                polarity_column = getattr(self, 'polarity_column', 'trace_polarity')
+                if polarity_column in metadata:
+                    polarity = metadata[polarity_column]
+                    if polarity not in ['U', 'D']:
+                        return
+                    target_idx = self.label_ids.get(polarity)
 
-            polarity_column = getattr(self, 'polarity_column', 'trace_polarity')
-            if polarity_column in metadata:
-                if metadata[polarity_column] == 'U':
-                    target_idx = 0  # Up
-                elif metadata[polarity_column] == 'D':
-                    target_idx = 1  # Down
-                else:
-                    return
-
-                if j is None:
-                    y[target_idx, :] = np.maximum(y[target_idx, :], label_val)
-                else:
-                    y[j, target_idx, :] = np.maximum(y[j, target_idx, :], label_val)
+                    if j is None:
+                        y[target_idx, :] = np.maximum(y[target_idx, :], label_val)
+                    else:
+                        y[j, target_idx, :] = np.maximum(y[j, target_idx, :], label_val)
         else:
             # Probabilistic logic
             if j is None:
@@ -299,7 +274,18 @@ class StreamPickLabeller(PickLabeller):
 
     def label(self, X, metadata):
         # Get label configuration
-        labels, label_ids = self._get_label_config(metadata)
+        if not self.label_columns:
+            label_columns = self._auto_identify_picklabels(metadata)
+            (
+                self.label_columns,
+                self.labels,
+                self.label_ids,
+            ) = self._columns_to_dict_and_labels(
+                label_columns, self.noise_column, self.model_labels
+            )
+        if self.labeller_type == "polarity":
+                self.labels = ["U", "D", "N"]
+                self.label_ids = {"U": 0, "D": 1, "N": 2}
 
         sample_dim, channel_dim, width_dim = self._get_dimension_order_from_config(
             config, self.ndim
@@ -307,21 +293,19 @@ class StreamPickLabeller(PickLabeller):
 
         # Initialize y array
         if self.ndim == 2:
-            y = np.zeros(shape=(len(labels), X.shape[width_dim]))
+            y = np.zeros(shape=(len(self.labels), X.shape[width_dim]))
         elif self.ndim == 3:
             y = np.zeros(
                 shape=(
                     X.shape[sample_dim],
-                    len(labels),
+                    len(self.labels),
                     X.shape[width_dim],
                 )
             )
 
         # Construct pick labels
         for label_column, label in self.label_columns.items():
-            i = label_ids.get(label, None)
-            if i is None:
-                continue
+            i = self.label_ids.get(label, None)
 
             if label_column not in metadata:
                 continue
@@ -339,7 +323,7 @@ class StreamPickLabeller(PickLabeller):
                     )
 
                 label_val[np.isnan(label_val)] = 0
-                self._fill_y_value(y, label_column, label, label_val, metadata, i)
+                self._fill_y_value(y, label, label_val, metadata, i)
             else:
                 # Handle multi-window case
                 for j in range(X.shape[sample_dim]):
@@ -354,7 +338,7 @@ class StreamPickLabeller(PickLabeller):
                         )
 
                     label_val[np.isnan(label_val)] = 0
-                    self._fill_y_value(y, label_column, label, label_val, metadata, i, j)
+                    self._fill_y_value(y, label, label_val, metadata, i, j)
 
         # Handle noise normalization
         if self.noise_column or self.labeller_type == "polarity":
@@ -363,7 +347,10 @@ class StreamPickLabeller(PickLabeller):
             )
 
             # Construct noise label
-            noise_idx = label_ids.get("Noise", len(labels) - 1)
+            if self.labeller_type == "polarity":
+                noise_idx = self.label_ids.get("N", len(self.labels) - 1)
+            else:
+                noise_idx = self.label_ids.get("Noise", len(self.labels) - 1)
             if self.ndim == 2:
                 y[noise_idx, :] = 1 - np.nansum(y, axis=channel_dim)
             elif self.ndim == 3:
