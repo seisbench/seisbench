@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional, TypedDict
 from urllib.parse import urljoin
 
 import h5py
@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import scipy.signal
 from tqdm import tqdm
+from typing_extensions import NotRequired
 
 import seisbench
 import seisbench.util
@@ -150,6 +151,10 @@ class WaveformDataset:
                     },
                 )
             tmp_metadata["trace_chunk"] = chunk
+            if tmp_metadata.get("source_origin_time") is not None:
+                tmp_metadata.source_origin_time = pd.to_datetime(
+                    tmp_metadata.source_origin_time
+                )
             metadatas.append(tmp_metadata)
         self._metadata = pd.concat(metadatas)
         self._metadata.reset_index(
@@ -1547,6 +1552,37 @@ class WaveformDataset:
 
         return fig
 
+    def n_events(self) -> int:
+        """
+        Returns the number of unique events in the dataset.
+        Requires that source_id is part of the metadata.
+
+        :return: Number of unique events
+        :rtype: int
+        """
+        return len(self.metadata["source_id"].unique())
+
+    def get_event_source_id(self, idx: int) -> str:
+        """Gets the source_id of an event. Note that the ``idx`` refers to the integer index of the event in order of
+        appearance in the metadata after removing duplicates.
+
+        :param idx: Event index
+        :return: Source ID of the event
+        """
+        source_ids = self.metadata["source_id"].unique()
+        return source_ids[idx]
+
+    def get_event_sample_indices(self, event_id: str):
+        """
+        Returns the indices of all samples associated with a given event.
+        Requires that source_id is part of the metadata.
+
+        :param event: Event identifier
+        :return: List of indices associated with the event
+        :rtype: list[int]
+        """
+        return self.metadata.index[self.metadata["source_id"] == event_id].tolist()
+
 
 class MultiWaveformDataset:
     """
@@ -2756,3 +2792,53 @@ class WaveformDataWriter:
         for bucket in buckets:
             self._write_bucket(self._cache[bucket])
             del self._cache[bucket]
+
+
+class EventParameters(TypedDict):
+    index: NotRequired[int]
+    split: NotRequired[Literal["train", "dev", "test"]]
+
+    source_id: NotRequired[str]
+    source_origin_time: NotRequired[str]
+    source_origin_uncertainty_sec: NotRequired[float]
+    source_latitude_deg: NotRequired[float]
+    source_latitude_uncertainty_km: NotRequired[float]
+    source_longitude_deg: NotRequired[float]
+    source_longitude_uncertainty_km: NotRequired[float]
+    source_depth_km: NotRequired[float]
+    source_depth_uncertainty_km: NotRequired[float]
+
+    source_magnitude: NotRequired[float]
+    source_magnitude_uncertainty: NotRequired[float]
+    source_magnitude_type: NotRequired[str]
+    source_magnitude_author: NotRequired[str]
+
+    source_focal_mechanism_t_azimuth: NotRequired[float]
+    source_focal_mechanism_t_plunge: NotRequired[float]
+    source_focal_mechanism_t_length: NotRequired[float]
+    source_focal_mechanism_p_azimuth: NotRequired[float]
+    source_focal_mechanism_p_plunge: NotRequired[float]
+    source_focal_mechanism_p_length: NotRequired[float]
+    source_focal_mechanism_n_azimuth: NotRequired[float]
+    source_focal_mechanism_n_plunge: NotRequired[float]
+    source_focal_mechanism_n_length: NotRequired[float]
+
+
+class TraceParameters(TypedDict):
+    trace_name: NotRequired[str]
+
+    path_back_azimuth_deg: NotRequired[float]
+    station_network_code: NotRequired[str]
+    station_code: NotRequired[str]
+    trace_channel: NotRequired[str]
+    station_location_code: NotRequired[str]
+    station_latitude_deg: NotRequired[float]
+    station_longitude_deg: NotRequired[float]
+    station_elevation_m: NotRequired[float]
+
+    trace_sampling_rate_hz: NotRequired[float]
+    trace_completeness: NotRequired[float]
+    trace_has_spikes: NotRequired[np.bool]
+    trace_start_time: NotRequired[str]
+
+    trace_component_order: NotRequired[str]

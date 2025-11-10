@@ -1,6 +1,6 @@
 .. _installation_and_usage:
 
-Installation and configuration
+Installation and Configuration
 ==============================
 
 Installing via pip

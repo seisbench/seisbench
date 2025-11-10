@@ -1,4 +1,4 @@
-The SeisBench data format
+The SeisBench Data Format
 =========================
 
 Overview

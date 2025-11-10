@@ -177,3 +177,12 @@ VCSEIS dataset
     :members:
     :undoc-members:
     :show-inheritance:
+
+
+Dataset inspection utilities
+-----------------------------------
+
+.. automodule:: seisbench.data.inspection
+    :members:
+    :undoc-members:
+    :show-inheritance:

@@ -2,7 +2,7 @@
 
 
 Benchmark Datasets
-=====================
+==================
 
 SeisBench facilitates the downloading of a suite of publicly available seismic waveform datasets
 for training of machine learning algorithms. An overview of the contents of each dataset is below,
@@ -49,7 +49,7 @@ Depending on user needs and case study, the dataset can be accessed using the fo
 
     Bagagli, M., Valoroso, L., Michelini, A., Cianetti, S.,
     Gaviano, S., Giunchi, C., Jozinović, D., & Lauciani, V. (2023).
-    AQ2009 – The 2009 Aquila Mw 6.1 earthquake aftershocks seismic
+    AQ2009 - The 2009 Aquila Mw 6.1 earthquake aftershocks seismic
     dataset for machine learning application.
     Istituto Nazionale di Geofisica e Vulcanologia (INGV).
 
@@ -121,7 +121,7 @@ The :py:class:`~seisbench.data.cwa.CWA` dataset includes a large number of seism
 It is a comprehensive set of events collected by the Central Weather Bureau in Taiwan.
 There are two seismographic network: CWASN and TSMIP in the dataset.
 The dataset version in SeisBench combines both seismic networks.
-The CWA benchmark features over 40 attributes and ∼500,000 seismograms,
+The CWA benchmark features over 40 attributes and ~500,000 seismograms,
 providing valuable data labels for various seismology-related tasks.
 In the future, updated versions of this dataset are planned to ensure its relevance and utility.
 For more information see: https://scweb.cwa.gov.tw/en-US
@@ -137,7 +137,7 @@ For more information see: https://scweb.cwa.gov.tw/en-US
 
 .. admonition:: Citation
 
-    Kuan‐Wei Tang, Kuan‐Yu Chen, Da‐Yi Chen, Tai‐Lin Chin, Ting‐Yu Hsu.
+    Kuan-Wei Tang, Kuan-Yu Chen, Da-Yi Chen, Tai-Lin Chin, Ting-Yu Hsu.
     The CWA Benchmark: A Seismic Dataset from Taiwan for Seismic Research.
     Seismological Research Letters 2024.
     doi: https://doi.org/10.1785/0220230393
@@ -359,7 +359,7 @@ it is stored in the SeisBench format, but without this normally required informa
 
 
 OBS
-----
+---
 
 .. figure::  ../_static/obs_mapplot.png
    :align:   center
@@ -419,12 +419,18 @@ The full dataset can be loaded by using ``sbd.PiSDL()``. Afterwards, sub dataset
 
     dataset = sbd.PiSDL()
 
-    dawson = dataset.get_dawson_septimus_subset()   # select the data from the Dawson-Septimus area
-    insheim = dataset.get_insheim_subset()          # select the data from Insehim
-    st_gallen = dataset.get_st_gallen_subset()      # select the data from St. Gallen
-    switzerland = dataset.get_switzerland_subset()  # select the data from Switzerland
-    floodrisk = dataset.get_floodrisk_subset()      # select the data from the Ruhr area
-    vendenheim = dataset.get_vendenheim_subset()    # select the data from Vendenheim
+    # Data from the Dawson-Septimus area
+    dawson = dataset.get_dawson_septimus_subset()
+    # Data from Insehim
+    insheim = dataset.get_insheim_subset()
+    # Data from St. Gallen
+    st_gallen = dataset.get_st_gallen_subset()
+    # Data from Switzerland
+    switzerland = dataset.get_switzerland_subset()
+    # Data from the Ruhr area
+    floodrisk = dataset.get_floodrisk_subset()
+    # Data from Vendenheim
+    vendenheim = dataset.get_vendenheim_subset()
 
 .. warning::
 
@@ -549,19 +555,26 @@ The data set can be loaded using ``sbd.VCSEIS()``. Afterwards, data from differe
 
     dataset = sbd.VCSEIS()
 
-    alaska = dataset.get_alaska_subset()  # select the data from Alaska
+    # Data from Alaska
+    alaska = dataset.get_alaska_subset()
 
-    hawaii = dataset.get_hawaii_subset()  # select the data from Hawaii
+    # Data from Hawaii
+    hawaii = dataset.get_hawaii_subset()
 
-    nca = dataset.get_northern_california_subset() # select the data from Northern California
+    # Data from Northern California
+    nca = dataset.get_northern_california_subset()
 
-    cascade = dataset.get_cascade_subset()  # select the data from Cascade
+    # Data from Cascade
+    cascade = dataset.get_cascade_subset()
 
-    lp_eq = dataset.get_long_period_earthquakes() # select long-period earthquakes
+    # Long-period earthquakes
+    lp_eq = dataset.get_long_period_earthquakes()
 
-    regular_eq = dataset.get_regular_earthquakes() # select regular/vt earthquakes
+    # Regular volcano-tectonic earthquakes
+    regular_eq = dataset.get_regular_earthquakes()
 
-    noise = dataset.get_noise_traces() # select noise traces
+    # Noise traces
+    noise = dataset.get_noise_traces()
 
 
 .. warning::

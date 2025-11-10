@@ -50,6 +50,7 @@ be based of community feedback.
    pages/installation_and_usage.rst
    pages/data_format.rst
    pages/benchmark_datasets.rst
+   pages/dataset_inspection.rst
    pages/models.rst
    pages/examples.rst
    pages/contributing.rst

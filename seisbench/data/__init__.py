@@ -56,6 +56,11 @@ from .stead import STEAD
 from .txed import TXED
 from .vcseis import VCSEIS
 
+try:
+    from .inspection import DatasetInspection
+except ImportError:
+    pass
+
 __all__ = [
     "AbstractBenchmarkDataset",
     "BenchmarkDataset",
@@ -102,4 +107,5 @@ __all__ = [
     "STEAD",
     "TXED",
     "VCSEIS",
+    "DatasetInspection",
 ]

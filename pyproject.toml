@@ -41,7 +41,10 @@ dependencies = [
 include = ["seisbench*"]
 
 [project.optional-dependencies]
-development = ["ruff", "pre-commit"]
+dev = [
+    "ruff",
+    "pre-commit",
+]
 tests = ["pytest"]
 
 [tool.setuptools_scm]
