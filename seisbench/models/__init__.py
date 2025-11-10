@@ -13,6 +13,7 @@ from .pickblue import PickBlue
 from .seisdae import SeisDAE
 from .skynet import Skynet
 from .team import PhaseTEAM
+from .eqtp import EQTP
 
 __all__ = [
     "BasicPhaseAE",
@@ -40,4 +41,5 @@ __all__ = [
     "SeisDAE",
     "Skynet",
     "PhaseTEAM",
+    "EQTP",
 ]

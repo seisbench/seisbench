@@ -15,6 +15,7 @@ from .augmentation import (
 )
 from .generator import GenericGenerator, GroupGenerator, SteeredGenerator
 from .labeling import (
+    PolarityLabeller,
     DetectionLabeller,
     PickLabeller,
     ProbabilisticLabeller,
@@ -68,4 +69,5 @@ __all__ = [
     "SteeredWindow",
     "UTCOffsets",
     "WindowAroundSample",
+    "PolarityLabeller",
 ]
