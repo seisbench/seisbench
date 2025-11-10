@@ -27,6 +27,14 @@ AQ2009 dataset
     :undoc-members:
     :show-inheritance:
 
+Bohemia dataset
+-----------------------------------
+
+.. autoclass:: seisbench.data.bohemia.BohemiaSaxony
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 CEED dataset
 -----------------------------------
 

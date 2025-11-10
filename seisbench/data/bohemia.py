@@ -10,6 +10,7 @@ from itertools import groupby
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Iterable, Literal, cast
+from urllib.parse import urljoin
 from zipfile import ZipFile
 
 import numpy as np
@@ -22,6 +23,7 @@ from obspy.core.event.origin import Pick
 from obspy.geodetics import gps2dist_azimuth
 from obspy.io.nordic.core import read_nordic
 
+import seisbench
 from seisbench import logger
 from seisbench.data.base import BenchmarkDataset, EventParameters, TraceParameters
 from seisbench.util import download_http
@@ -30,8 +32,6 @@ from seisbench.util.trace_ops import (
     stream_to_array,
     trace_has_spikes,
 )
-
-CATALOG_URL = "https://data.pyrocko.org/material/colm-catalog.zip"
 
 REMOVE_CHANNELS = {
     "HHT",  # Stray channel or typo
@@ -74,6 +74,12 @@ class BohemiaSaxony(BenchmarkDataset):
     Regional benchmark dataset of waveform data and metadata
     for the North-West Bohemia and Saxony region in Germany/Czech Republic.
 
+    .. warning ::
+
+        This dataset contains restricted data from the West Bohemia Local Seismic Network (WEBNET).
+        To compile the full dataset, you will need to provide an EIDA token.
+        Please see the `WEBNET site <https://doi.org/10.7914/SN/WB>`_ for more information.
+
     """
 
     _client: MultiClient
@@ -101,11 +107,6 @@ Seismic Networks:
 * Czech Regional Seismic Network, https://doi.org/10.7914/SN/CZ
 """
         self._eida_token = eida_token
-        if not self._eida_token:
-            logger.warning(
-                "No EIDA token provided. "
-                "Restricted WB network data will not be accessible.",
-            )
 
         super().__init__(
             citation=citation,
@@ -127,8 +128,9 @@ Seismic Networks:
             return path
         logger.info("Downloading Bohemia Saxony catalog files.")
         with NamedTemporaryFile(suffix=".zip", delete=False, dir=path) as temp_file:
+            catalog_url = urljoin(seisbench.remote_root, "auxiliary/collm-catalog.zip")
             download_http(
-                CATALOG_URL,
+                catalog_url,
                 temp_file.name,
                 desc="Downloading Bohemia Saxony catalog",
             )
@@ -266,6 +268,11 @@ Seismic Networks:
             "No pre-downloaded dataset available, downloading from BGR and Geofon. "
             "This may take a while.",
         )
+        if not self._eida_token:
+            logger.warning(
+                "No EIDA token provided. "
+                "Restricted WB network data will not be accessible.",
+            )
         self._init_client()
         writer.data_format = {
             "dimension_order": "CW",
