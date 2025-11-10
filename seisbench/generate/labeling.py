@@ -220,17 +220,26 @@ class PickLabeller(SupervisedLabeller, ABC):
 
         return label_columns, labels, label_ids
 
+
 class StreamPickLabeller(PickLabeller):
     """
     Base class for stream-based pick labellers that share common probability distribution logic.
     Handles the common functionality of creating probability distributions at pick locations.
     """
 
-    def __init__(self, shape: str = "gaussian", sigma: int = 10, labeller_type: str = "probabilistic", **kwargs):
+    def __init__(
+        self,
+        shape: str = "gaussian",
+        sigma: int = 10,
+        labeller_type: str = "probabilistic",
+        polarity_column: str = "trace_polarity",
+        **kwargs,
+    ):
         self.label_method = "probabilistic"
         self.sigma = sigma
         self.shape = shape
         self.labeller_type = labeller_type  # "probabilistic" or "polarity"
+        self.polarity_column = polarity_column
         self._labelshape_fn_mapper = {
             "gaussian": gaussian_pick,
             "triangle": triangle_pick,
@@ -253,11 +262,10 @@ class StreamPickLabeller(PickLabeller):
         """
         if self.labeller_type == "polarity":
             # Polarity-specific logic
-            if label == 'P':
-                polarity_column = getattr(self, 'polarity_column', 'trace_polarity')
-                if polarity_column in metadata:
-                    polarity = metadata[polarity_column]
-                    if polarity not in ['U', 'D']:
+            if label == "P":
+                if self.polarity_column in metadata:
+                    polarity = metadata[self.polarity_column]
+                    if polarity not in ["U", "D"]:
                         return
                     target_idx = self.label_ids.get(polarity)
 
@@ -284,8 +292,8 @@ class StreamPickLabeller(PickLabeller):
                 label_columns, self.noise_column, self.model_labels
             )
         if self.labeller_type == "polarity":
-                self.labels = ["U", "D", "N"]
-                self.label_ids = {"U": 0, "D": 1, "N": 2}
+            self.labels = ["U", "D", "N"]
+            self.label_ids = {"U": 0, "D": 1, "N": 2}
 
         sample_dim, channel_dim, width_dim = self._get_dimension_order_from_config(
             config, self.ndim
@@ -302,13 +310,16 @@ class StreamPickLabeller(PickLabeller):
                     X.shape[width_dim],
                 )
             )
+        else:
+            raise ValueError(f"ndim must be either 2 or 3, not {self.ndim}")
 
         # Construct pick labels
         for label_column, label in self.label_columns.items():
-            i = self.label_ids.get(label, None)
-
             if label_column not in metadata:
+                # Unknown pick
                 continue
+
+            i = self.label_ids[label]
 
             if isinstance(metadata[label_column], (int, np.integer, float)):
                 # Handle single window case
@@ -322,7 +333,9 @@ class StreamPickLabeller(PickLabeller):
                         f"Labeller of shape {self.shape} is not implemented."
                     )
 
-                label_val[np.isnan(label_val)] = 0
+                label_val[np.isnan(label_val)] = (
+                    0  # Set non-present pick probabilities to 0
+                )
                 self._fill_y_value(y, label, label_val, metadata, i)
             else:
                 # Handle multi-window case
@@ -342,9 +355,7 @@ class StreamPickLabeller(PickLabeller):
 
         # Handle noise normalization
         if self.noise_column or self.labeller_type == "polarity":
-            y /= np.maximum(
-                1, np.nansum(y, axis=channel_dim, keepdims=True)
-            )
+            y /= np.maximum(1, np.nansum(y, axis=channel_dim, keepdims=True))
 
             # Construct noise label
             if self.labeller_type == "polarity":
@@ -377,7 +388,9 @@ class ProbabilisticLabeller(StreamPickLabeller):
     """
 
     def __init__(self, shape: str = "gaussian", sigma: int = 10, **kwargs):
-        super().__init__(shape=shape, sigma=sigma, labeller_type="probabilistic", **kwargs)
+        super().__init__(
+            shape=shape, sigma=sigma, labeller_type="probabilistic", **kwargs
+        )
 
     def __str__(self):
         return f"ProbabilisticLabeller (label_type={self.label_type}, dim={self.dim})"
@@ -388,13 +401,19 @@ class PolarityLabeller(StreamPickLabeller):
     Create probabilistic supervised labels from seismic polarity information.
     """
 
-    def __init__(self, polarity_column: str = "trace_polarity", shape: str = "gaussian", sigma: int = 10, **kwargs):
+    def __init__(
+        self,
+        polarity_column: str = "trace_polarity",
+        shape: str = "gaussian",
+        sigma: int = 10,
+        **kwargs,
+    ):
         self.polarity_column = polarity_column
         super().__init__(shape=shape, sigma=sigma, labeller_type="polarity", **kwargs)
 
-
     def __str__(self):
         return f"PolarityLabeller (label_type={self.label_type}, dim={self.dim})"
+
 
 class StepLabeller(PickLabeller):
     """
@@ -501,6 +520,7 @@ class ProbabilisticPointLabeller(ProbabilisticLabeller):
         return (
             f"ProbabilisticPointLabeller (label_type={self.label_type}, dim={self.dim})"
         )
+
 
 class DetectionLabeller(SupervisedLabeller):
     """
@@ -644,6 +664,7 @@ class DetectionLabeller(SupervisedLabeller):
 
     def __str__(self):
         return f"DetectionLabeller (label_type={self.label_type}, dim={self.dim})"
+
 
 class StandardLabeller(PickLabeller):
     """
