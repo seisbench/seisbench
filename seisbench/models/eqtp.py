@@ -6,7 +6,16 @@ import torch
 import torch.nn as nn
 
 import seisbench.util as sbu
-from .eqtransformer import EQTransformer, SeqSelfAttention, Decoder, Encoder, ResCNNStack, Transformer, ActivationLSTMCell, CustomLSTM
+from .eqtransformer import (
+    EQTransformer,
+    SeqSelfAttention,
+    Decoder,
+    Encoder,
+    ResCNNStack,
+    Transformer,
+    ActivationLSTMCell,
+    CustomLSTM,
+)
 
 
 class EQTP(EQTransformer):
@@ -34,13 +43,8 @@ class EQTP(EQTransformer):
     def __init__(
         self,
         in_samples=12000,
-        cnn_blocks=5,
-        res_cnn_blocks=5,
         **kwargs,
     ):
-        self.cnn_blocks = cnn_blocks
-        self.res_cnn_blocks = res_cnn_blocks
-
         # Update citation for EQTP
         citation = (
             "Peng L, Li L, Zeng X. "
@@ -49,7 +53,7 @@ class EQTP(EQTransformer):
         )
 
         # Initialize parent class
-        super().__init__(in_samples = in_samples, **kwargs)
+        super().__init__(in_samples=in_samples, **kwargs)
 
         # Override citation and labels for EQTP
         self._citation = citation
@@ -79,7 +83,6 @@ class EQTP(EQTransformer):
         self._rebuild_picking_branches(self.original_compatible, eps)
 
     def _rebuild_eqtp_components(self):
-
         self.encoder = Encoder(
             input_channels=self.in_channels,
             filters=self.filters,
@@ -97,7 +100,6 @@ class EQTP(EQTransformer):
         return Transformer(input_size=input_size, drop_rate=drop_rate, eps=eps)
 
     def _add_polarity_branches(self, original_compatible, eps):
-
         self.pol_lstms = []
         self.pol_attentions = []
         self.pol_decoders = []
@@ -133,7 +135,6 @@ class EQTP(EQTransformer):
         self.pol_convs = nn.ModuleList(self.pol_convs)
 
     def _rebuild_picking_branches(self, original_compatible, eps):
-
         # Clear existing picking branches
         self.pick_lstms = nn.ModuleList()
         self.pick_attentions = nn.ModuleList()
@@ -287,9 +288,3 @@ class EQTP(EQTransformer):
                     pick.polarity_value = 1 - scores["U"] - scores["D"]
 
         return picks
-
-    def get_model_args(self):
-        model_args = super().get_model_args()
-        model_args["cnn_blocks"] = self.cnn_blocks
-        model_args["res_cnn_blocks"] = self.res_cnn_blocks
-        return model_args

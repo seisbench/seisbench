@@ -29,7 +29,6 @@ class EQTransformer(WaveformModel):
                        The model expects input shape (in_channels, in_samples)
     :param classes: Number of output classes, by default 2. The detection channel is not counted.
     :param phases: Phase hints for the classes, by default "PS". Can be None.
-    :param res_cnn_blocks: Number of residual convolutional blocks
     :param lstm_blocks: Number of LSTM blocks
     :param drop_rate: Dropout rate
     :param original_compatible: If True, uses a few custom layers for binary compatibility with original model
