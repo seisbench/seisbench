@@ -44,9 +44,6 @@ include = ["seisbench*"]
 dev = [
     "ruff",
     "pre-commit",
-    "sphinx",
-    "sphinx-rtd-theme",
-    "sphinx-autodoc-typehints",
 ]
 tests = ["pytest"]
 

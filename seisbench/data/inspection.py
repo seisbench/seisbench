@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 import pandas as pd
-from pyrocko.model.station import Station
 from tqdm import tqdm
 
 import seisbench

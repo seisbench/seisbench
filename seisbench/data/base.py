@@ -1563,13 +1563,11 @@ class WaveformDataset:
         return len(self.metadata["source_id"].unique())
 
     def get_event_source_id(self, idx: int) -> str:
-        """Gets the source_id of an event.
+        """Gets the source_id of an event. Note that the ``idx`` refers to the integer index of the event in order of
+        appearance in the metadata after removing duplicates.
 
-        Args:
-            idx (int): Index of the event.
-
-        Returns:
-            str: Source ID of the event.
+        :param idx: Event index
+        :return: Source ID of the event
         """
         source_ids = self.metadata["source_id"].unique()
         return source_ids[idx]
@@ -2801,14 +2799,14 @@ class EventParameters(TypedDict):
     split: NotRequired[Literal["train", "dev", "test"]]
 
     source_id: NotRequired[str]
-    source_origin_time: str
-    source_origin_uncertainty_sec: float
-    source_latitude_deg: float
-    source_latitude_uncertainty_km: float
-    source_longitude_deg: float
-    source_longitude_uncertainty_km: float
-    source_depth_km: float
-    source_depth_uncertainty_km: float
+    source_origin_time: NotRequired[str]
+    source_origin_uncertainty_sec: NotRequired[float]
+    source_latitude_deg: NotRequired[float]
+    source_latitude_uncertainty_km: NotRequired[float]
+    source_longitude_deg: NotRequired[float]
+    source_longitude_uncertainty_km: NotRequired[float]
+    source_depth_km: NotRequired[float]
+    source_depth_uncertainty_km: NotRequired[float]
 
     source_magnitude: NotRequired[float]
     source_magnitude_uncertainty: NotRequired[float]
@@ -2830,13 +2828,13 @@ class TraceParameters(TypedDict):
     trace_name: NotRequired[str]
 
     path_back_azimuth_deg: NotRequired[float]
-    station_network_code: str
-    station_code: str
-    trace_channel: str
-    station_location_code: str
-    station_latitude_deg: float
-    station_longitude_deg: float
-    station_elevation_m: float
+    station_network_code: NotRequired[str]
+    station_code: NotRequired[str]
+    trace_channel: NotRequired[str]
+    station_location_code: NotRequired[str]
+    station_latitude_deg: NotRequired[float]
+    station_longitude_deg: NotRequired[float]
+    station_elevation_m: NotRequired[float]
 
     trace_sampling_rate_hz: NotRequired[float]
     trace_completeness: NotRequired[float]
