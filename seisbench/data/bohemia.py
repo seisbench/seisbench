@@ -85,6 +85,10 @@ West Bohemia Local Seismic Network (WEBNET; WB), Thuringia Seismological Network
 and Czech Regional Seismic Network (CZ) and is provided by the BGR (Bundesanstalt für
 Geowissenschaften und Rohstoffe) and GFZ GEOFON.
 
+The dataset includes restricted data from the WB network, which requires an EIDA token
+for access. Please provide the path to your EIDA token file when initializing the
+dataset via the `eida_token` argument.
+
 Catalog and Picks:
 * Earthquakes in Saxony (Germany) and surroundings
   from 2006 to 2024 -- onsets and locations,
@@ -97,6 +101,11 @@ Seismic Networks:
 * Czech Regional Seismic Network, https://doi.org/10.7914/SN/CZ
 """
         self._eida_token = eida_token
+        if not self._eida_token:
+            logger.warning(
+                "No EIDA token provided. "
+                "Restricted WB network data will not be accessible.",
+            )
 
         super().__init__(
             citation=citation,

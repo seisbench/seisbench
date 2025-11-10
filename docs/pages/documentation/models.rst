@@ -18,13 +18,6 @@ BasicPhaseAE
     :undoc-members:
     :show-inheritance:
 
-Bohemia
------------------------------------
-.. autoclass:: seisbench.models.bohemia.BohemiaSaxony
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
 CRED
 -----------------------------------
 
