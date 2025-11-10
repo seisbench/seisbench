@@ -4,14 +4,15 @@ from .aq2009 import (
 )
 from .base import (
     AbstractBenchmarkDataset,
-    WaveformBenchmarkDataset,
     BenchmarkDataset,
     Bucketer,
     GeometricBucketer,
     MultiWaveformDataset,
+    WaveformBenchmarkDataset,
     WaveformDataset,
     WaveformDataWriter,
 )
+from .bohemia import BohemiaSaxony
 from .ceed import CEED
 from .crew import CREW
 from .cwa import CWA, CWANoise
@@ -107,5 +108,6 @@ __all__ = [
     "STEAD",
     "TXED",
     "VCSEIS",
+    "BohemiaSaxony",
     "DatasetInspection",
 ]
