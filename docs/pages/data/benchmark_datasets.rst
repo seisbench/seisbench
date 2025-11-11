@@ -11,7 +11,7 @@ along with the corresponding citation.
 AQ2009
 ------
 
-.. figure::  ../_static/aq2009_combined.png
+.. figure::  _static/aq2009_combined.png
    :align:   center
 
 The :py:class:`~seisbench.data.aq2009.AQ2009` dataset contains
@@ -59,7 +59,7 @@ Depending on user needs and case study, the dataset can be accessed using the fo
 Bohemia
 --------
 
-.. figure::  ../_static/bohemia_dataset.webp
+.. figure::  _static/bohemia_dataset.webp
    :align:   center
 
 The :py:class:`~seisbench.data.bohemia.BohemiaSaxony` dataset provides 24,821 local earthquake recordings from the NW Bohemia/Vogtland region (Germany / Czech Republic). The seismicity in the region is characterized by intense earthquake swarms of small magnitudes. The signal quality is crisp due to low noise in the region and competent Variscian rock with small sediment overlay. The data was collected from 72 seismic stations between September 2009 and December 2024.
@@ -99,7 +99,7 @@ Dataset details:
 CEED
 -----
 
-.. figure::  ../_static/ceed_overview.png
+.. figure::  _static/ceed_overview.png
    :align:   center
 
 The California Earthquake Event Dataset (:py:class:`~seisbench.data.ceed.CEED`),
@@ -127,7 +127,7 @@ site: https://huggingface.co/datasets/AI4EPS/CEED.
 CREW
 -----
 
-.. figure::  ../_static/crew_mapplot.png
+.. figure::  _static/crew_mapplot.png
    :align:   center
 
 The :py:class:`~seisbench.data.crew.CREW` dataset, the Curated Regional Earthquake Waveforms Dataset,
@@ -152,10 +152,10 @@ models for the analysis of earthquakes recorded at regional distances.
 CWA
 -----
 
-.. figure::  ../_static/cwa_stations.png
+.. figure::  _static/cwa_stations.png
    :align:   center
 
-.. figure::  ../_static/cwa_events.png
+.. figure::  _static/cwa_events.png
    :align:   center
 
 The :py:class:`~seisbench.data.cwa.CWA` dataset includes a large number of seismic events, especially high-magnitude.
@@ -186,7 +186,7 @@ For more information see: https://scweb.cwa.gov.tw/en-US
 ETHZ
 -----
 
-.. figure::  ../_static/ethz_mapplot.png
+.. figure::  _static/ethz_mapplot.png
    :align:   center
 
 The :py:class:`~seisbench.data.ethz.ETHZ` benchmark dataset contains regional recorded seismicity on publicly available networks
@@ -213,7 +213,7 @@ Dataset contains 36,743 waveform examples.
 GEOFON
 ------
 
-.. figure::  ../_static/geofon_mapplot.png
+.. figure::  _static/geofon_mapplot.png
    :align:   center
 
 As part of its effort to measure and characterize relevant seismicity world-wide in real time, the GEOFON earthquake monitoring serivce acquires and analyses waveform data of over 800, globally distributed seismic stations.
@@ -241,7 +241,7 @@ The time range covers 2009 to 2013.
 INSTANCE
 --------
 
-.. figure::  ../_static/instance_mapplot.png
+.. figure::  _static/instance_mapplot.png
    :align:   center
 
 
@@ -272,7 +272,7 @@ and waveform examples as counts is also available :py:class:`~seisbench.data.ins
 Iquique
 -------
 
-.. figure::  ../_static/iquique_mapplot.png
+.. figure::  _static/iquique_mapplot.png
    :align:   center
 
 
@@ -295,7 +295,7 @@ are 100Hz, 3-component stations. The waveforms contain examples of earthquakes o
 ISC-EHB Depth Phases
 --------------------
 
-.. figure::  ../_static/isc_ehb_mapplot.png
+.. figure::  _static/isc_ehb_mapplot.png
    :align:   center
 
 
@@ -314,7 +314,7 @@ Additional picks have been annotated on the traces, if they were contained in th
 LENDB
 -----
 
-.. figure::  ../_static/lendb_mapplot.png
+.. figure::  _static/lendb_mapplot.png
    :align:   center
 
 The :py:class:`~seisbench.data.lendb.LENDB` dataset is a published benchmark dataset (see citation below) of local
@@ -339,7 +339,7 @@ below.
 LFE stack datasets
 ------------------
 
-.. figure::  ../_static/lfe_stacks_mapplot.png
+.. figure::  _static/lfe_stacks_mapplot.png
    :align:   center
 
 SeisBench contains three datasets with stacked waveforms of low-frequency earthquakes datasets:
@@ -360,7 +360,7 @@ in the `trace_*_predicted_arrival_sample` column.
 MLAAPDE
 -------
 
-.. figure::  ../_static/mlaapde_mapplot.png
+.. figure::  _static/mlaapde_mapplot.png
    :align:   center
 
 The :py:class:`~seisbench.data.neic.MLAAPDE` dataset is a global, mostly teleseismic dataset with detailed phase
@@ -402,7 +402,7 @@ it is stored in the SeisBench format, but without this normally required informa
 OBS
 ---
 
-.. figure::  ../_static/obs_mapplot.png
+.. figure::  _static/obs_mapplot.png
    :align:   center
 
 The ocean-bottom seismometer (OBS) benchmark dataset (:py:class:`~seisbench.data.obs.OBS`) comprises ~110,000 seismic waveforms with ~150,000 manually
@@ -420,7 +420,7 @@ settings.
 OBST2024
 --------
 
-.. figure::  ../_static/obst2024_mapplot_small.jpeg
+.. figure::  _static/obst2024_mapplot_small.jpeg
    :align:   center
 
 The OBST dataset (:py:class:`~seisbench.data.obst2024.OBST2024`) comprises ~60,000 seismic waveforms
@@ -441,7 +441,7 @@ The data comprises 11 deployments across different tectonic settings.
 PiSDL
 --------
 
-.. figure::  ../_static/pisdl.png
+.. figure::  _static/pisdl.png
    :align:   center
 
 
@@ -491,7 +491,7 @@ The full dataset can be loaded by using ``sbd.PiSDL()``. Afterwards, sub dataset
 PNW
 ----
 
-.. figure::  ../_static/pnw_mapplot.png
+.. figure::  _static/pnw_mapplot.png
    :align:   center
 
 A ML-ready curated data set for a wide range of sources from the Pacific Northwest (PNW). PNW dataset is made by several separate datasets.
@@ -514,7 +514,7 @@ For more information see: `PNW-ML <https://github.com/niyiyu/PNW-ML>`__.
 SCEDC
 -----
 
-.. figure::  ../_static/scedc_mapplot.png
+.. figure::  _static/scedc_mapplot.png
    :align:   center
 
 The :py:class:`~seisbench.data.scedc.SCEDC` benchmark dataset contains all publicly available recordings
@@ -534,7 +534,7 @@ of seismic events in the Southern Californian Seismic Network, which were manual
 STEAD
 -----
 
-.. figure::  ../_static/stead_mapplot.png
+.. figure::  _static/stead_mapplot.png
    :align:   center
 
 The :py:class:`~seisbench.data.stead.STEAD` dataset is a published benchmark dataset (see citation below) of local seismic signals -
@@ -555,7 +555,7 @@ are noise examples and the remaining contain seismic arrivals. 450,000 earthquak
 TXED
 -----
 
-.. figure::  ../_static/txed_mapplot.png
+.. figure::  _static/txed_mapplot.png
    :align:   center
 
 The :py:class:`~seisbench.data.txed.TXED` dataset is a benchmark dataset of local seismic signals in the state of Texas.
@@ -577,7 +577,7 @@ In total there are ~500,000 time series encompassing 20,000 earthquakes (~300,00
 VCSEIS
 ------
 
-.. figure::  ../_static/vcseis_except_japan.png
+.. figure::  _static/vcseis_except_japan.png
    :align:   center
 
 The :py:class:`~seisbench.data.vcseis.VCSEIS` benchmark dataset contains local earthquakes from volcanic regions cataloged by Alaska Volcano Observatory, Hawaiian volcano observatory, Northern California Earthquake Data Center, Pacific Northwest Seismic Network, and compiled into SeisBench format by Zhong and Tan (2024). This dataset is a subset of the dataset in Zhong and Tan (2024), with the data from Japan excluded.

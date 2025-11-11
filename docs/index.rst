@@ -48,11 +48,9 @@ be based of community feedback.
 
    self
    pages/installation_and_usage.rst
-   pages/data_format.rst
-   pages/benchmark_datasets.rst
-   pages/dataset_inspection.rst
-   pages/models.rst
    pages/examples.rst
+   pages/data/overview.rst
+   pages/models.rst
    pages/contributing.rst
    pages/documentation/overview.rst
 

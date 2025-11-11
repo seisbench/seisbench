@@ -16,7 +16,7 @@ Please consult their documentations for details on reading and writing the forma
 Derived from the :py:class:`~seisbench.data.base.WaveformDataset`,
 SeisBench offers a range of :doc:`benchmark datasets<benchmark_datasets>` in SeisBench format.
 
-.. figure::  ../_static/dataset_format.svg
+.. figure::  _static/dataset_format.svg
    :align:   center
 
 |
