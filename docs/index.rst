@@ -22,7 +22,7 @@ interoperability, interchangeability and comparability of different models and d
 
 To learn more about the dataset API, including the datasets currently integrated see :ref:`benchmark_datasets`.
 If you would like to know more about how to apply, build, and train models,
-along with information on the machine learning models readily available through *SeisBench*, see :ref:`models`.
+along with information on the machine learning models readily available through *SeisBench*, see :ref:`model_overview`.
 For an extensive reference of all features, check the code :ref:`documentation_overview`.
 
 SeisBench is built to be extensible and modular, allowing for easy incorporation of new models
@@ -50,7 +50,7 @@ be based of community feedback.
    pages/installation_and_usage.rst
    pages/examples.rst
    pages/data/overview.rst
-   pages/models.rst
+   pages/models/overview.rst
    pages/contributing.rst
    pages/documentation/overview.rst
 

@@ -511,7 +511,23 @@ class SeisBenchModel(nn.Module):
 
     @property
     def device(self):
-        return next(self.parameters()).device
+        """
+        Returns the device of the model parameters. Assumes all parameters are on the same device.
+        """
+        try:
+            return next(self.parameters()).device
+        except StopIteration:
+            return "cpu"
+
+    @property
+    def dtype(self):
+        """
+        Returns the dtype of the model parameters. Assumes all parameters are of the same dtype.
+        """
+        try:
+            return next(self.parameters()).dtype
+        except StopIteration:
+            return torch.float32
 
     def to_preferred_device(self, verbose: bool = False):
         """

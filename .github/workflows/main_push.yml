@@ -42,6 +42,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
+          pip install .[das]
           pip install .[tests]
 
       - name: Test with pytest

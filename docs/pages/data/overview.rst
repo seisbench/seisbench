@@ -13,7 +13,7 @@ datasets for both of the formats are explained on the subpages.
     If you are only looking to apply models, but not to train or quantitatively evaluate them, you probably will
     not need the functionality described here. Instead, most likely the model functionality to be applied
     directly to seismic and DAS records in convenient formats (through obspy/xdas) will be what you need. Check out
-    the :ref:`examples` and the :ref:`models`.
+    the :ref:`examples` and the :ref:`model_overview`.
 
 .. toctree::
    :maxdepth: 1
