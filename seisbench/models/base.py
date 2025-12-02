@@ -9,9 +9,10 @@ import tempfile
 import warnings
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from itertools import groupby
 from pathlib import Path
 from queue import PriorityQueue
-from typing import Any, Optional
+from typing import Any, AsyncGenerator, Optional
 from urllib.parse import urljoin
 
 import bottleneck as bn
@@ -21,11 +22,18 @@ import obspy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from obspy.core.trace import Stats
 from obspy.signal.trigger import trigger_onset
 from packaging import version
 
 import seisbench
 import seisbench.util as util
+from seisbench.models.utils import (
+    GroupedTraceData,
+    PredictionSegment,
+    PredictionsStacked,
+    TraceSegment,
+)
 from seisbench.util import in_notebook
 
 if in_notebook():
@@ -244,11 +252,7 @@ class GroupingHelper:
 
             covered[sta_idx, comp_idx, p0:p1] = True
 
-        if strict:
-            covered = covered.all(axis=1)
-        else:
-            covered = covered.any(axis=1)
-
+        covered = covered.all(axis=1) if strict else covered.any(axis=1)
         covered, coords = self._merge_intervals(covered, coords, min_length_s)
 
         intervals = []
@@ -426,11 +430,17 @@ class GroupingHelper:
         intervals: list[tuple[list[str], obspy.UTCDateTime, obspy.UTCDateTime]],
     ) -> list[list[obspy.Trace]]:
         groups = []
+        sliced_stream = obspy.Stream()
         for stations, t0, t1 in intervals:
-            sub = stream.slice(t0, t1)
+            # sub = stream.slice(t0, t1)
+            for tr in stream:
+                tr._ltrim(t0)
+                tr._rtrim(t1)
+                sliced_stream.append(tr)
             group = []
+
             for station in stations:
-                for trace in sub.select(id=station + "*"):
+                for trace in sliced_stream.select(id=station + "*"):
                     group.append(trace)
             groups.append(group)
 
@@ -1205,25 +1215,10 @@ class WaveformModel(SeisBenchModel, ABC):
 
         self.labels = labels
 
-        self._annotate_function_mapping = {
-            "point": (
-                self._async_cut_fragments_point,
-                self._async_reassemble_blocks_point,
-            ),
-            "array": (
-                self._async_cut_fragments_array,
-                self._async_reassemble_blocks_array,
-            ),
-        }
-
         if self.output_type == "point" and self._grouping.grouping == "full":
             raise NotImplementedError(
                 "Point outputs with full grouping are currently not implemented."
             )
-
-        self._annotate_functions = self._annotate_function_mapping.get(
-            output_type, None
-        )
 
     def __str__(self):
         return f"Component order:\t{self.component_order}\n{super().__str__()}"
@@ -1302,8 +1297,6 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         self._verify_argdict(kwargs)
 
-        cut_fragments, reassemble_blocks = self._get_annotate_functions()
-
         # Kwargs overwrite default args
         argdict = self.default_args.copy()
         argdict.update(kwargs)
@@ -1312,9 +1305,8 @@ class WaveformModel(SeisBenchModel, ABC):
             stream = stream.copy()
         stream.merge(-1)
 
-        output = obspy.Stream()
         if len(stream) == 0:
-            return output
+            return obspy.Stream()
 
         # Preprocess stream, e.g., filter/resample
         self.annotate_stream_pre(stream, argdict)
@@ -1323,7 +1315,7 @@ class WaveformModel(SeisBenchModel, ABC):
         stream = self.annotate_stream_validate(stream, argdict)
 
         if len(stream) == 0:
-            return output
+            return obspy.Stream()
 
         # Sampling rate of the data. Equal to self.sampling_rate is this is not None
         sampling_rate = stream[0].stats.sampling_rate
@@ -1342,173 +1334,146 @@ class WaveformModel(SeisBenchModel, ABC):
             comp_dict=comp_dict,
         )
 
-        # Queues for multiprocessing
-        batch_size = self._argdict_get_with_default(argdict, "batch_size")
-        queue_groups = asyncio.Queue()  # Waveform groups
-        queue_raw_blocks = (
-            asyncio.Queue()
-        )  # Waveforms as blocks of arrays and their metadata
-        queue_raw_fragments = asyncio.Queue(
-            4 * batch_size
-        )  # Raw waveform fragments with the correct input size
-        queue_postprocessed_pred = (
-            asyncio.Queue()
-        )  # Queue for raw (but unbatched) predictions
-        queue_pred_blocks = asyncio.Queue()  # Queue for blocks of predictions
-        queue_results = asyncio.Queue()  # Results streams
+        groups = self._iter_groups(groups, argdict)
+        if self.output_type == "array":
+            traces = self._iter_fragments_array(groups, argdict)
+            predictions_blocks = self._iter_predictions(traces, argdict)
+            predictions = self._iter_reassemble_predictions(predictions_blocks, argdict)
 
-        process_streams_to_arrays = asyncio.create_task(
-            self._async_streams_to_arrays(
-                queue_groups,
-                queue_raw_blocks,
-                argdict,
+        elif self.output_type == "point":
+            traces = self._iter_fragments_point(groups, argdict)
+            predictions_blocks = self._iter_predictions(traces, argdict)
+            predictions = self._iter_reassemble_predictions_point(
+                predictions_blocks, argdict
             )
-        )
-        process_cut_fragments = asyncio.create_task(
-            cut_fragments(queue_raw_blocks, queue_raw_fragments, argdict)
-        )
-        process_predict = asyncio.create_task(
-            self._async_predict(queue_raw_fragments, queue_postprocessed_pred, argdict)
-        )
-        process_reassemble_blocks = asyncio.create_task(
-            reassemble_blocks(queue_postprocessed_pred, queue_pred_blocks, argdict)
-        )
-        process_predictions_to_streams = asyncio.create_task(
-            self._async_predictions_to_streams(queue_pred_blocks, queue_results)
-        )
+        else:
+            raise NotImplementedError(
+                f"Output type '{self.output_type}' not implemented for annotate."
+            )
 
-        for group in groups:
-            await queue_groups.put(group)
-        await queue_groups.put(None)
+        annotations = self._iter_prediction_streams(predictions)
 
-        await asyncio.gather(
-            process_streams_to_arrays,
-            process_cut_fragments,
-            process_predict,
-            process_reassemble_blocks,
-            process_predictions_to_streams,
-        )
-
-        while True:
-            try:
-                output += queue_results.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-
+        output = obspy.Stream()
+        async for st in annotations:
+            output += st
         return output
 
-    def _get_annotate_functions(self):
-        if self._annotate_functions is None:
-            raise NotImplementedError(
-                "This model has no annotate function implemented."
-            )
-        cut_fragments, reassemble_blocks = self._annotate_functions
-        return cut_fragments, reassemble_blocks
-
-    async def _async_streams_to_arrays(
+    async def _iter_groups(
         self,
-        queue_in,
-        queue_out,
-        argdict,
-    ):
+        traces: list[list[obspy.Trace]],
+        argdict: dict,
+    ) -> AsyncGenerator[GroupedTraceData]:
         """
         Wrapper around :py:func:`stream_to_array`, adding the functionality to read from and write to queues.
         :param queue_in: Input queue
         :param queue_out: Output queue
         :return: None
         """
-        group = await queue_in.get()
-        while group is not None:
-            t0, block, stations = self.stream_to_array(
-                group,
-                argdict,
-            )
-            await queue_out.put((t0, block, stations))
-            group = await queue_in.get()
-        await queue_out.put(None)
+        out = asyncio.Queue()
 
-    async def _async_predict(self, queue_in, queue_out, argdict):
+        async def worker():
+            for stream in traces:
+                await out.put(self.stream_to_array(stream, argdict))
+                await asyncio.sleep(0)  # Yield control to event loop
+            await out.put(None)
+
+        task = asyncio.create_task(worker())
+
+        while True:
+            elem = await out.get()
+            if elem is None:
+                break
+            yield elem
+            out.task_done()
+        await task
+
+    async def _iter_predictions(
+        self,
+        traces: AsyncGenerator[list[TraceSegment]],
+        argdict: dict,
+    ) -> AsyncGenerator[list[PredictionSegment]]:
         """
-        Prediction function, gathering predictions until a batch is full and handing them to :py:func:`_predict_buffer`.
+        Prediction function, gathering predictions until a batch is full.
         :param queue_in: Input queue
         :param queue_out: Output queue
         :param argdict: Dictionary of arguments
         :return: None
         """
-        buffer = []
-        batch_size = self._argdict_get_with_default(argdict, "batch_size")
+        out_buffer: dict[tuple, list[PredictionSegment]] = defaultdict(list)
+        out_queue = asyncio.Queue()
 
-        elem = await queue_in.get()
-        while True:
-            shape_change = False
-            if elem is not None:
-                buffer.append(elem)
-
-                if len(buffer) >= 2 and buffer[-1][0].shape != buffer[-2][0].shape:
-                    buffer = buffer[:-1]
-                    shape_change = True
-
-            if (
-                shape_change
-                or len(buffer) == batch_size
-                or (elem is None and len(buffer) > 0)
-            ):
-                pred = await asyncio.to_thread(
-                    self._predict_buffer,
-                    [window for window, _ in buffer],
+        async def worker() -> None:
+            async for segment in traces:
+                preds = self._predict_windows(
+                    segment,
                     argdict=argdict,
                 )
-                for pred_window, (_, metadata) in zip(pred, buffer):
-                    await queue_out.put((pred_window, metadata))
-                buffer = []
+                for pred in preds:
+                    out_buffer[pred.key, pred.n_windows].append(pred)
+                for key in list(out_buffer.keys()):
+                    _, n_windows = key
+                    if len(out_buffer[key]) == n_windows:
+                        await out_queue.put(out_buffer.pop(key))
+                await asyncio.sleep(0)  # Yield control to event loop
 
-            if shape_change:
-                buffer.append(elem)
+            await out_queue.put(None)
 
-            if elem is None:
+        task = asyncio.create_task(worker())
+        while True:
+            out = await out_queue.get()
+            if out is None:
                 break
+            yield out
+            out_queue.task_done()
+        await task
 
-            elem = await queue_in.get()
-
-        await queue_out.put(None)
-
-    def _get_overlap(self, in_samples: int, argdict) -> int:
+    def _get_overlap(self, in_samples: int, argdict: dict) -> int:
         overlap = self._argdict_get_with_default(argdict, "overlap")
         if overlap < 1:
             return int(overlap * in_samples)
         else:
             return overlap
 
-    async def _async_predictions_to_streams(self, queue_in, queue_out):
+    async def _iter_prediction_streams(
+        self, predictions: AsyncGenerator[PredictionsStacked]
+    ) -> AsyncGenerator[obspy.Stream]:
         """
         Wrapper with queue IO functionality around :py:func:`_predictions_to_stream`
         :param queue_in: Input queue
         :param queue_out: Output queue
         :return: None
         """
-        elem = await queue_in.get()
-        while elem is not None:
-            (pred_rate, pred_time, preds), stations = elem
-            await queue_out.put(
-                self._predictions_to_stream(pred_rate, pred_time, preds, stations)
-            )
-            elem = await queue_in.get()
+        async for prediction in predictions:
+            st = self._predictions_to_stream(prediction)
+            yield st
 
-    async def _async_cut_fragments_point(self, queue_in, queue_out, argdict):
+    async def _iter_fragments_point(
+        self,
+        groups: AsyncGenerator[GroupedTraceData],
+        argdict,
+    ):
         """
         Wrapper with queue IO functionality around :py:func:`_cut_fragments_point`
         """
-        elem = await queue_in.get()
-        while elem is not None:
-            t0, block, stations = elem
+        out_queue = asyncio.Queue()
 
-            for output_elem in self._cut_fragments_point(t0, block, stations, argdict):
-                await queue_out.put(output_elem)
+        async def worker():
+            async for group in groups:
+                out = self._cut_fragments_point(group, argdict)
+                await out_queue.put(out)
 
-            elem = await queue_in.get()
-        await queue_out.put(None)
+            await out_queue.put(None)
 
-    def _cut_fragments_point(self, t0, block, stations, argdict):
+        task = asyncio.create_task(worker())
+        while True:
+            ret = await out_queue.get()
+            if ret is None:
+                break
+            yield ret
+            out_queue.task_done()
+        await task
+
+    def _cut_fragments_point(self, group: GroupedTraceData, argdict):
         """
         Cuts numpy arrays into fragments for point prediction models.
 
@@ -1519,273 +1484,364 @@ class WaveformModel(SeisBenchModel, ABC):
         :return:
         """
         stride = self._argdict_get_with_default(argdict, "stride")
-        starts = np.arange(0, block.shape[-1] - self.in_samples + 1, stride)
-        if len(starts) == 0:
+        offsets = np.arange(0, group.data.shape[-1] - self.in_samples + 1, stride)
+        in_samples, pred_sample = self._get_in_pred_samples(group)
+
+        if len(offsets) == 0:
             seisbench.logger.warning(
                 "Parts of the input stream consist of fragments shorter than the number "
                 "of input samples. Output might be empty."
             )
-            return
+            return []
 
-        bucket_id = np.random.randint(1000000)
+        bucket_id = np.random.randint(1e9)
 
         # Generate windows and preprocess
-        for s in starts:
-            window = block[..., s : s + self.in_samples]
-            # The combination of stations and t0 is a unique identifier
-            # s can be used to reassemble the block, len(starts) allows to identify if the block is complete yet
-            metadata = (t0, s, len(starts), stations, bucket_id)
-            yield window, metadata
 
-    async def _async_reassemble_blocks_point(self, queue_in, queue_out, argdict):
+        return [
+            TraceSegment(
+                data=group.data[..., offset : offset + self.in_samples],
+                key=(group.start_time.timestamp, "__".join(group.stations)),
+                start_time=group.start_time,
+                window_offset=int(offset),
+                n_windows=len(offsets),
+                stations=group.stations,
+                bucket_id=bucket_id,
+                in_samples=in_samples,
+                pred_sample=pred_sample,
+            )
+            for offset in offsets
+        ]
+
+    async def _iter_reassemble_predictions_point(
+        self,
+        prediction_segments: AsyncGenerator[list[PredictionSegment]],
+        argdict,
+    ) -> AsyncGenerator[PredictionsStacked]:
         """
         Wrapper with queue IO functionality around :py:func:`_reassemble_blocks_point`
         """
-        buffer = defaultdict(list)  # Buffers predictions until a block is complete
 
-        elem = await queue_in.get()
-        while elem is not None:
-            output = self._reassemble_blocks_point(elem, buffer, argdict)
-            if output is not None:
-                await queue_out.put(output)
+        out_queue = asyncio.Queue()
 
-            elem = await queue_in.get()
+        async def worker():
+            async for segment in prediction_segments:
+                out = self._reassemble_blocks_point(segment, argdict)
+                await out_queue.put(out)
+                await asyncio.sleep(0)  # Yield control to event loop
 
-        await queue_out.put(None)
+            await out_queue.put(None)
 
-    def _reassemble_blocks_point(self, elem, buffer, argdict):
+        task = asyncio.create_task(worker())
+        while True:
+            ret = await out_queue.get()
+            if ret is None:
+                break
+            yield ret
+            out_queue.task_done()
+        await task
+
+    def _reassemble_blocks_point(
+        self,
+        segments: list[PredictionSegment],
+        argdict: dict,
+    ) -> PredictionsStacked:
         """
         Reassembles point predictions into numpy arrays. Returns None except if a buffer was processed.
         """
         stride = self._argdict_get_with_default(argdict, "stride")
 
-        window, metadata = elem
-        t0, s, len_starts, stations, bucket_id = metadata
-        key = f"{t0}_{'__'.join(stations)}"
+        # Sort by start (overwrite keys to make sure window is never used as key)
+        segments = sorted(segments, key=lambda seg: seg.window_offset)
+        meta = segments[0]
+        data = np.array([seg.data for seg in segments])
+        if data.ndim == 1:
+            data = data.reshape(-1, 1)
+        pred_time = meta.start_time + self.pred_sample / argdict["sampling_rate"]
+        pred_rate = argdict["sampling_rate"] / stride
 
-        output = None
+        return PredictionsStacked(
+            data=data,
+            start_time=pred_time,
+            sampling_rate=pred_rate,
+            stations=meta.stations,
+        )
 
-        buffer[key].append(elem)
-        if len(buffer[key]) == len_starts:
-            preds = [(s, window) for window, (_, s, _, _, _) in buffer[key]]
-            preds = sorted(
-                preds, key=lambda x: x[0]
-            )  # Sort by start (overwrite keys to make sure window is never used as key)
-            preds = [window for s, window in preds]
-            preds = np.stack(preds, axis=0)
-            if preds.ndim == 1:
-                preds = preds.reshape(-1, 1)
-            pred_time = t0 + self.pred_sample / argdict["sampling_rate"]
-            pred_rate = argdict["sampling_rate"] / stride
+    async def _iter_fragments_array(
+        self,
+        groups: AsyncGenerator[GroupedTraceData],
+        argdict: dict,
+    ) -> AsyncGenerator[list[TraceSegment]]:
+        """Wrapper with queue IO functionality around :py:func:`_cut_fragments_array`."""
+        buffer: dict[int, list[TraceSegment]] = defaultdict(list)
+        batch_size = self._argdict_get_with_default(argdict, "batch_size")
 
-            output = ((pred_rate, pred_time, preds), stations)
+        out_queue: asyncio.Queue[list[TraceSegment] | None] = asyncio.Queue()
 
-            del buffer[key]
+        async def drain_buffer(force: bool = False) -> None:
+            if not force and any(len(v) >= batch_size for v in buffer.values()):
+                return
 
-        return output
+            for size in list(buffer.keys()):
+                while len(buffer[size]):
+                    output_elem = buffer[size][:batch_size]
+                    buffer[size] = buffer[size][batch_size:]
+                    await out_queue.put(output_elem)
 
-    async def _async_cut_fragments_array(self, queue_in, queue_out, argdict):
-        """
-        Wrapper with queue IO functionality around :py:func:`_cut_fragments_array`
-        """
+        async def worker() -> None:
+            async for group in groups:
+                blocks = self._cut_fragments_array(group, argdict)
+                for length, grouped_blocks in groupby(
+                    blocks, key=lambda blk: blk.n_samples
+                ):
+                    buffer[length].extend(list(grouped_blocks))
+                await drain_buffer()
+                await asyncio.sleep(0)  # Yield control to event loop
+
+            await drain_buffer(force=True)
+            await out_queue.put(None)
+
+        task = asyncio.create_task(worker())
         while True:
-            elem = await queue_in.get()
-            if elem is None:
+            ret = await out_queue.get()
+            if ret is None:
                 break
+            yield ret
+            out_queue.task_done()
+        await task
 
-            for output_elem in self._cut_fragments_array(elem, argdict):
-                await queue_out.put(output_elem)
-        await queue_out.put(None)
-
-    def _get_in_pred_samples(self, block: np.ndarray) -> tuple[int, tuple[int, int]]:
+    def _get_in_pred_samples(
+        self,
+        group: GroupedTraceData,
+    ) -> tuple[int, tuple[int, int]]:
         """
         To enable dynamic window sizes, depending on the shape of the input waveforms, this function can be overwritten.
         The sample axis is the last axis in the `block` variable.
 
         For an example, see the test_dynamic_samples unit test.
         """
-        return self.in_samples, self.pred_sample
+        pred_sample = (
+            (0, self.pred_sample)
+            if isinstance(self.pred_sample, int)
+            else self.pred_sample
+        )
+        return self.in_samples, pred_sample
 
-    def _cut_fragments_array(self, elem, argdict):
+    def _cut_fragments_array(
+        self,
+        group: GroupedTraceData,
+        argdict,
+    ) -> list[TraceSegment]:
         """
         Cuts numpy arrays into fragments for array prediction models.
         """
 
-        t0, block, stations = elem
+        in_samples, pred_sample = self._get_in_pred_samples(group)
 
-        bucket_id = np.random.randint(int(1e9))
-
-        in_samples, pred_sample = self._get_in_pred_samples(block)
         overlap = self._get_overlap(in_samples, argdict)
+        offsets = np.arange(0, group.n_samples - in_samples + 1, in_samples - overlap)
 
-        starts = np.arange(0, block.shape[-1] - in_samples + 1, in_samples - overlap)
-        if len(starts) == 0:
+        if len(offsets) == 0:
             seisbench.logger.warning(
                 "Parts of the input stream consist of fragments shorter than the number "
                 "of input samples. Output might be empty."
             )
-            return
+            return []
 
         # Add one more trace to the end
-        if starts[-1] + in_samples < block.shape[-1]:
-            starts = np.concatenate([starts, [block.shape[-1] - in_samples]])
+        if offsets[-1] + in_samples < group.n_samples:
+            offsets = np.concatenate([offsets, [group.n_samples - in_samples]])
 
         # Generate windows and preprocess
         # The combination of stations and t0 is a unique identifier
-        # s can be used to reassemble the block, len(starts) allows to identify if the block is complete yet
-        key = (t0.timestamp, "__".join(stations))
-        for s in starts:
-            window = block[..., s : s + in_samples]
-            metadata = (
-                key,
-                t0,
-                s,
-                len(starts),
-                stations,
-                bucket_id,
-                in_samples,
-                pred_sample,
-            )
-            yield window, metadata
+        # offset can be used to reassemble the block
+        # len(offsets) allows to identify if the block is complete yet
 
-    async def _async_reassemble_blocks_array(self, queue_in, queue_out, argdict):
+        return [
+            TraceSegment(
+                data=group.data[..., offset : offset + in_samples],
+                key=(group.start_time.timestamp, "__".join(group.stations)),
+                start_time=group.start_time,
+                window_offset=int(offset),
+                n_windows=len(offsets),
+                stations=group.stations,
+                bucket_id=np.random.randint(int(1e9)),
+                in_samples=in_samples,
+                pred_sample=pred_sample,
+            )
+            for offset in offsets
+        ]
+
+    async def _iter_reassemble_predictions(
+        self,
+        prediction_segments: AsyncGenerator[list[PredictionSegment]],
+        argdict: dict,
+    ) -> AsyncGenerator[PredictionsStacked]:
         """
         Wrapper with queue IO functionality around :py:func:`_reassemble_blocks_array`
         """
-        buffer = defaultdict(list)  # Buffers predictions until a block is complete
+        out_queue = asyncio.Queue()
 
+        async def worker() -> None:
+            async for segment in prediction_segments:
+                ret = self._stack_predictions_array(
+                    segment,
+                    argdict,
+                )
+                # ret = await self._stack_predictions_ext(segment, argdict)
+
+                await out_queue.put(ret)
+                await asyncio.sleep(0)  # Yield control to event loop
+            await out_queue.put(None)
+
+        task = asyncio.create_task(worker())
         while True:
-            elem = await queue_in.get()
+            elem = await out_queue.get()
             if elem is None:
                 break
+            yield elem
+            out_queue.task_done()
+        await task
 
-            output_elem = self._reassemble_blocks_array(elem, buffer, argdict)
-            if output_elem is not None:
-                await queue_out.put(output_elem)
-
-        await queue_out.put(None)
-
-    def _reassemble_blocks_array(self, elem, buffer, argdict):
+    def _stack_predictions_array(
+        self,
+        predictions: list[PredictionSegment],
+        argdict: dict,
+    ) -> PredictionsStacked:
         """
         Reassembles array predictions into numpy arrays.
         """
-        window, metadata = elem
-        key, t0, s, len_starts, stations, bucket_id, in_samples, pred_sample = metadata
-        buffer[key].append(elem)
+        n_predictions = len(predictions)
+        if n_predictions == 0:
+            raise ValueError("No predictions to reassemble.")
 
-        output = None
+        predictions = sorted(predictions, key=lambda x: x.window_offset)
+        meta = predictions[0]
 
-        if len(buffer[key]) == len_starts:
-            overlap = self._get_overlap(in_samples, argdict)
-            stack_method = self._argdict_get_with_default(
-                argdict, "stacking"
-            ).lower()  # This is a breaking change for v 0.3 - see PR#99
-            assert stack_method in self._stack_options, (
-                f"Stacking method {stack_method} unknown. Known options are: {self._stack_options}"
-            )
-            preds = [(s, window) for window, (_, _, s, _, _, _, _, _) in buffer[key]]
-            preds = sorted(
-                preds, key=lambda x: x[0]
-            )  # Sort by start (overwrite keys to make sure window is never used as key)
-            starts = [s for s, window in preds]
-            preds = [window for s, window in preds]
-            preds = [self._add_grouping_dimensions(pred) for pred in preds]
+        overlap = self._get_overlap(meta.in_samples, argdict)
+        # This is a breaking change for v 0.3 - see PR#99
+        stack_method = self._argdict_get_with_default(argdict, "stacking").lower()
 
-            # Number of prediction samples per input sample
-            prediction_sample_factor = preds[0].shape[1] / (
-                pred_sample[1] - pred_sample[0]
+        if stack_method not in self._stack_options:
+            raise ValueError(
+                f"Stacking method {stack_method} unknown. "
+                f"Known options are: {self._stack_options}"
             )
 
-            # Maximum number of predictions covering a point
-            coverage = int(np.ceil(in_samples / (in_samples - overlap) + 1))
+        offsets, segments = zip(
+            *((pred.window_offset, pred.data) for pred in predictions)
+        )
 
-            pred_length = int(
-                np.ceil((np.max(starts) + in_samples) * prediction_sample_factor)
-            )
-            pred_merge = np.full_like(
-                preds[0],
-                np.nan,
-                shape=(
-                    coverage,
-                    preds[0].shape[0],
-                    pred_length,
-                    preds[0].shape[-1],
-                ),
-            )
-            for i, (pred, start) in enumerate(zip(preds, starts)):
-                pred_start = int(start * prediction_sample_factor)
-                pred_merge[
-                    i % coverage, :, pred_start : pred_start + pred.shape[1], :
-                ] = pred
+        if self._grouping.grouping != "full":
+            segments = [
+                self._add_grouping_dimensions(pred.data) for pred in predictions
+            ]
+        # Number of prediction samples per input sample
+        pred_sample = meta.pred_sample
+        pred_sample_factor = meta.n_samples / (pred_sample[1] - pred_sample[0])
 
-            with warnings.catch_warnings():
-                if stack_method == "avg":
-                    warnings.filterwarnings(
-                        action="ignore", message="Mean of empty slice"
-                    )
-                    preds = bn.nanmean(pred_merge, axis=0)
-                elif stack_method == "max":
-                    warnings.filterwarnings(action="ignore", message="All-NaN")
-                    preds = bn.nanmax(pred_merge, axis=0)
-                # Case of stack_method not in avg or max is caught by assert above
+        pred_time = meta.start_time + meta.pred_sample[0] / argdict["sampling_rate"]
+        pred_rate = argdict["sampling_rate"] * pred_sample_factor
 
-            if self._grouping.grouping == "channel":
-                preds = preds[0, :, 0]
-            elif self._grouping.grouping == "instrument":
-                preds = preds[0]
+        # Maximum number of predictions covering a point
+        max_coverage = int(np.ceil(meta.in_samples / (meta.in_samples - overlap) + 1))
 
-            pred_time = t0 + pred_sample[0] / argdict["sampling_rate"]
-            pred_rate = argdict["sampling_rate"] * prediction_sample_factor
+        pred_length = int(
+            np.ceil((np.max(offsets) + meta.in_samples) * pred_sample_factor)
+        )
+        pred_merge = np.full_like(
+            segments[0],
+            np.nan,
+            shape=(
+                max_coverage,
+                segments[0].shape[0],
+                pred_length,
+                segments[0].shape[-1],
+            ),
+        )
 
-            output = ((pred_rate, pred_time, preds), stations)
+        for i, (data, start) in enumerate(zip(segments, offsets)):
+            pred_start = int(start * pred_sample_factor)
+            pred_merge[
+                i % max_coverage, :, pred_start : pred_start + data.shape[1], :
+            ] = data
 
-            del buffer[key]
+        with warnings.catch_warnings():
+            if stack_method == "avg":
+                warnings.filterwarnings(action="ignore", message="Mean of empty slice")
+                preds = bn.nanmean(pred_merge, axis=0)
+            elif stack_method == "max":
+                warnings.filterwarnings(action="ignore", message="All-NaN")
+                preds = bn.nanmax(pred_merge, axis=0)
+            # Case of stack_method not in avg or max is caught by assert above
 
-        return output
+        # preds = np.squeeze(preds)
+        if self._grouping.grouping == "channel":
+            preds = preds[0, :, 0]
+        elif self._grouping.grouping == "instrument":
+            preds = preds[0]
 
-    def _predict_buffer(self, buffer, argdict):
+        return PredictionsStacked(
+            data=preds,
+            stations=meta.stations,
+            sampling_rate=pred_rate,
+            start_time=pred_time,
+        )
+
+    def _predict_windows(
+        self,
+        segments: list[TraceSegment],
+        argdict: dict,
+    ) -> list[PredictionSegment]:
         """
         Batches model inputs, runs preprocess, prediction and postprocess, and unbatches output
 
         :param buffer: List of inputs to the model
         :return: Unpacked predictions
         """
+        data = [window.data for window in segments]
         if self.allow_padding:
-            fragments = seisbench.util.pad_packed_sequence(buffer)
+            fragments = seisbench.util.pad_packed_sequence(data)
         else:
-            fragments = np.stack(buffer, axis=0)
-        fragments = torch.tensor(fragments, device=self.device, dtype=torch.float32)
+            fragments = np.array(data)
+        fragments = torch.from_numpy(fragments).to(self.device).float()
 
         train_mode = self.training
         try:
-            self.eval()
+            if train_mode:
+                self.eval()
             with torch.no_grad():
                 preprocessed = self.annotate_batch_pre(fragments, argdict=argdict)
                 if isinstance(preprocessed, tuple):  # Contains piggyback information
-                    assert len(preprocessed) == 2
+                    if len(preprocessed) != 2:
+                        raise ValueError("preprocessed tuple must have length 2.")
                     preprocessed, piggyback = preprocessed
                 else:
                     piggyback = None
 
                 preds = self(preprocessed)
-
                 preds = self.annotate_batch_post(
-                    preds, piggyback=piggyback, argdict=argdict
+                    preds,
+                    piggyback=piggyback,
+                    argdict=argdict,
                 )
         finally:
-            if train_mode:
+            if train_mode and not self.training:
                 self.train()
 
-        # Explicit synchronisation can help profiling the stack
+        # torch is executing asynchroniously on the GPU
+        # explicit synchronisation is needed for correct profiling/timing
         # if torch.cuda.is_available():
-        #    torch.cuda.synchronize()
-
+        #     torch.cuda.synchronize()
         preds = self._recursive_torch_to_numpy(preds)
         # Unbatch window predictions
-        reshaped_preds = [pred for pred in self._recursive_slice_pred(preds)]
-        return reshaped_preds
+        preds = self._recursive_slice_pred(preds)
+        return [
+            PredictionSegment.from_trace_segment(pred, segment)
+            for pred, segment in zip(preds, segments)
+        ]
 
-    def _predictions_to_stream(self, pred_rate, pred_time, pred, stations):
+    def _predictions_to_stream(self, prediction: PredictionsStacked) -> obspy.Stream:
         """
         Converts a set of predictions to obspy streams
 
@@ -1796,34 +1852,40 @@ class WaveformModel(SeisBenchModel, ABC):
         :return: Obspy stream of predictions
         """
         output = obspy.Stream()
-
-        pred = self._add_grouping_dimensions(pred)
+        pred_data = self._add_grouping_dimensions(prediction.data)
 
         # Define and store default labels
         if self.labels is None:
-            self.labels = list(range(pred.shape[-1]))
+            self.labels = list(range(pred_data.shape[-1]))
 
-        for station_idx, trace_id in enumerate(stations):
-            for channel_idx in range(pred.shape[-1]):
+        for station_idx, trace_id in enumerate(prediction.stations):
+            for channel_idx in range(pred_data.shape[-1]):
                 if callable(self.labels):
-                    label = self.labels(stations)
+                    label = self.labels(prediction.stations)
                 else:
                     label = self.labels[channel_idx]
 
-                trimmed_pred, f, _ = self._trim_nan(pred[station_idx, :, channel_idx])
-                trimmed_start = pred_time + f / pred_rate
+                # trimmed_pred, f, _ = self._trim_zeros(
+                #     pred_data[station_idx, :, channel_idx]
+                # )
+                trimmed_pred, f, _ = self._trim_nan(
+                    pred_data[station_idx, :, channel_idx]
+                )
+                trimmed_start = prediction.start_time + f / prediction.sampling_rate
                 network, station, location = trace_id.split(".")[:3]
                 output.append(
                     obspy.Trace(
                         trimmed_pred,
-                        {
-                            "starttime": trimmed_start,
-                            "sampling_rate": pred_rate,
-                            "network": network,
-                            "station": station,
-                            "location": location,
-                            "channel": f"{self.__class__.__name__}_{label}",
-                        },
+                        Stats(
+                            {
+                                "starttime": trimmed_start,
+                                "sampling_rate": prediction.sampling_rate,
+                                "network": network,
+                                "station": station,
+                                "location": location,
+                                "channel": f"{self.__class__.__name__}_{label}",
+                            }
+                        ),
                     )
                 )
         return output
@@ -1832,10 +1894,10 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         Add fake dimensions to make pred shape (stations, samples, channels)
         """
-        if self._grouping.grouping == "full":
-            return pred
         if self._grouping.grouping == "instrument":
             return pred[None]
+        if self._grouping.grouping == "full":
+            return pred
         if self._grouping.grouping == "channel":
             return pred[None, ..., None]
         raise NotImplementedError(
@@ -1960,15 +2022,27 @@ class WaveformModel(SeisBenchModel, ABC):
         Removes all starting and trailing nan values from a 1D array and returns the new array and the number of NaNs
         removed per side.
         """
-        mask = ~np.isnan(x)
-        valid = np.nonzero(mask)[0]
-        mask[valid[0] : valid[-1]] = True
-        _end = len(x)
-        x = x[mask]
+        nan_mask = ~np.isnan(x)
+        valid = np.nonzero(nan_mask)[0]
+        nan_mask[valid[0] : valid[-1]] = True
+        end = x.size
 
-        return x, valid[0], _end - (1 + valid[-1])
+        return x[nan_mask], valid[0], end - (1 + valid[-1])
 
-    def _recursive_torch_to_numpy(self, x):
+    @staticmethod
+    def _trim_zeros(x):
+        """
+        Removes all starting and trailing nan values from a 1D array and returns the new array and the number of NaNs
+        removed per side.
+        """
+        valid = np.nonzero(x)[0]
+        nan_mask = np.zeros(x.size, dtype=bool)
+        nan_mask[valid[0] : valid[-1]] = True
+        end = x.size
+
+        return x[nan_mask], valid[0], end - (1 + valid[-1])
+
+    def _recursive_torch_to_numpy(self, x: torch.Tensor | list | tuple | np.ndarray):
         """
         Recursively converts torch.Tensor objects to numpy arrays while preserving any overarching tuple
         or list structure.
@@ -1986,7 +2060,7 @@ class WaveformModel(SeisBenchModel, ABC):
         else:
             raise ValueError(f"Can't unpack object of type {type(x)}.")
 
-    def _recursive_slice_pred(self, x):
+    def _recursive_slice_pred(self, x: np.ndarray | list | tuple):
         """
         Converts batched predictions into a list of single predictions, assuming batch axis is first in all cases.
         Preserves overarching tuple and list structures
@@ -2006,7 +2080,9 @@ class WaveformModel(SeisBenchModel, ABC):
             raise ValueError(f"Can't unpack object of type {type(x)}.")
 
     async def classify_async(
-        self, stream: obspy.Stream, **kwargs
+        self,
+        stream: obspy.Stream,
+        **kwargs,
     ) -> util.ClassifyOutput:
         """
         Async interface to the :py:func:`classify` function. See details there.
@@ -2170,9 +2246,9 @@ class WaveformModel(SeisBenchModel, ABC):
 
     def stream_to_array(
         self,
-        stream,
-        argdict,
-    ):
+        traces: obspy.Stream,
+        argdict: dict,
+    ) -> GroupedTraceData:
         """
         Converts streams into a start time and a numpy array.
         Assumes:
@@ -2189,55 +2265,60 @@ class WaveformModel(SeisBenchModel, ABC):
         :return: output_times: Start times for each array
         :return: output_data: Arrays with waveforms
         """
-        flexible_horizontal_components = self._argdict_get_with_default(
+        flexible_horizontal_comps = self._argdict_get_with_default(
             argdict, "flexible_horizontal_components"
         )
+        comp_dict, comp_order = self._build_comp_dict(traces, flexible_horizontal_comps)
 
-        comp_dict, component_order = self._build_comp_dict(
-            stream, flexible_horizontal_components
-        )
+        def group_by_id(trace: obspy.Trace) -> str:
+            return trace.id
 
-        if self._grouping.grouping == "channel":
+        def group_without_comp(trace: obspy.Trace) -> str:
+            return self._grouping.trace_id_without_component(trace)
 
-            def get_station_key(trace: obspy.Trace) -> str:
-                return trace.id
+        grouping = self._grouping.grouping
+        get_station_key = group_by_id if grouping == "channel" else group_without_comp
 
-        else:
-
-            def get_station_key(trace: obspy.Trace) -> str:
-                return self._grouping.trace_id_without_component(trace)
-
-        stations = np.unique([get_station_key(trace) for trace in stream])
+        stations = np.unique([get_station_key(trace) for trace in traces]).tolist()
         station_dict = {station: i for i, station in enumerate(stations)}
 
-        sampling_rate = stream[0].stats.sampling_rate
-        t0 = min(trace.stats.starttime for trace in stream)
-        t1 = max(trace.stats.endtime for trace in stream)
+        sampling_rate = traces[0].stats.sampling_rate
+        t_start = min(trace.stats.starttime for trace in traces)
+        t_end = max(trace.stats.endtime for trace in traces)
 
-        data = np.zeros(
-            (len(stations), len(component_order), int((t1 - t0) * sampling_rate + 2))
-        )  # +2 avoids fractional errors
+        n_stations = len(stations)
+        n_components = len(comp_order)
+        n_samples = int((t_end - t_start) * sampling_rate) + 2  # avoid fractional error
+
+        data = np.zeros((n_stations, n_components, n_samples))
 
         t_offsets = []
-        for trace in stream:
-            p = int((trace.stats.starttime - t0) * sampling_rate)
+        for trace in traces:
+            offset = int((trace.stats.starttime - t_start) * sampling_rate)
             if trace.id[-1] not in comp_dict:
                 continue
             comp_idx = comp_dict[trace.id[-1]]
             sta_idx = station_dict[get_station_key(trace)]
-            data[sta_idx, comp_idx, p : p + len(trace.data)] = trace.data
 
+            data[sta_idx, comp_idx, offset : offset + trace.data.size] = trace.data
             t_offsets.append(trace.stats.get("t_offset", 0.0))
 
-        t0 += np.mean(t_offsets)
+        t_start += np.mean(t_offsets)
 
         data = data[:, :, :-1]  # Remove fractional error +1
-        if self._grouping.grouping == "channel":
+        if grouping == "channel":
             data = data[0, 0]  # Remove station and channel dimension
-        elif self._grouping.grouping == "instrument":
+        elif grouping == "instrument":
             data = data[0]  # Remove station dimension
 
-        return t0, data, stations
+        return GroupedTraceData(
+            start_time=t_start,
+            data=data,
+            stations=stations,
+            component_order=comp_order,
+            sampling_rate=sampling_rate,
+            grouping=grouping,
+        )
 
     def _build_comp_dict(
         self, stream: obspy.Stream, flexible_horizontal_components: bool
@@ -2325,7 +2406,10 @@ class WaveformModel(SeisBenchModel, ABC):
         return util.PickList(sorted(picks))
 
     @staticmethod
-    def detections_from_annotations(annotations, threshold) -> util.DetectionList:
+    def detections_from_annotations(
+        annotations,
+        threshold: float,
+    ) -> util.DetectionList:
         """
         Converts the annotations streams for a single phase to discrete detections using a classical trigger on/off.
         The lower threshold is set to half the higher threshold.
@@ -2713,3 +2797,9 @@ class CustomLSTM(nn.Module):
 
         # Keep second argument for consistency with PyTorch LSTM
         return output, None
+
+
+def exception_hanlder(loop, context):
+    msg = context.get("exception", context["message"])
+    seisbench.logger.error(f"Caught exception: {msg}")
+    loop.stop()

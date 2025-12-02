@@ -1,7 +1,6 @@
 import asyncio
 import inspect
 import logging
-from collections import defaultdict
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -17,6 +16,12 @@ import seisbench.models
 import seisbench.util as sbu
 from seisbench.models.base import ActivationLSTMCell, CustomLSTM
 from seisbench.models.team import AlphabeticFullGroupingHelper
+from seisbench.models.utils import (
+    GroupedTraceData,
+    PredictionSegment,
+    PredictionsStacked,
+    TraceSegment,
+)
 
 
 def get_input_args(obj):
@@ -257,13 +262,13 @@ def test_stream_to_arrays_instrument():
 
     # Aligned strict
     stream = obspy.Stream([trace_z, trace_n, trace_e])
-    t0_out, data, stations = dummy.stream_to_array(stream, {})
-    assert t0_out == t0
-    assert stations == ["SB.TEST."]
-    assert data.shape == (3, len(trace_z.data))
-    assert (data[0] == trace_z.data).all()
-    assert (data[1] == trace_n.data).all()
-    assert (data[2] == trace_e.data).all()
+    grouped = dummy.stream_to_array(stream, {})
+    assert grouped.start_time == t0
+    assert grouped.stations == ["SB.TEST."]
+    assert grouped.data.shape == (3, len(trace_z.data))
+    assert (grouped.data[0] == trace_z.data).all()
+    assert (grouped.data[1] == trace_n.data).all()
+    assert (grouped.data[2] == trace_e.data).all()
 
 
 def test_stream_to_arrays_channel():
@@ -280,12 +285,11 @@ def test_stream_to_arrays_channel():
     trace_z = obspy.Trace(np.ones(1000), stats_z)
 
     stream = obspy.Stream([trace_z])
-    t0_out, data, stations = dummy.stream_to_array(stream, {})
-    assert t0_out == t0
-    print(stations)
-    assert stations == ["SB.TEST..HHZ"]
-    assert data.shape == (len(trace_z.data),)
-    assert (data == trace_z.data).all()
+    grouped = dummy.stream_to_array(stream, {})
+    assert grouped.start_time == t0
+    assert grouped.stations == ["SB.TEST..HHZ"]
+    assert grouped.data.shape == (len(trace_z.data),)
+    assert (grouped.data == trace_z.data).all()
 
 
 def test_flexible_horizontal_components(caplog):
@@ -343,21 +347,17 @@ def test_flexible_horizontal_components(caplog):
 
     # flexible_horizontal_components=False
     stream = obspy.Stream([trace_z, trace_1, trace_2])
-    _, data, stations = dummy.stream_to_array(
-        stream, {"flexible_horizontal_components": False}
-    )
-    assert np.allclose(data[0, :], 1)
-    assert np.allclose(data[1, :], 0)
-    assert np.allclose(data[2, :], 0)
+    grouped = dummy.stream_to_array(stream, {"flexible_horizontal_components": False})
+    assert np.allclose(grouped.data[0, :], 1)
+    assert np.allclose(grouped.data[1, :], 0)
+    assert np.allclose(grouped.data[2, :], 0)
 
     # flexible_horizontal_components=True
     stream = obspy.Stream([trace_z, trace_1, trace_2])
-    _, data, stations = dummy.stream_to_array(
-        stream, {"flexible_horizontal_components": True}
-    )
-    assert np.allclose(data[0, :], 1)
-    assert np.allclose(data[1, :], 4)
-    assert np.allclose(data[2, :], 5)
+    grouped = dummy.stream_to_array(stream, {"flexible_horizontal_components": True})
+    assert np.allclose(grouped.data[0, :], 1)
+    assert np.allclose(grouped.data[1, :], 4)
+    assert np.allclose(grouped.data[2, :], 5)
 
     # Warning for mixed component names
     caplog.clear()
@@ -496,25 +496,30 @@ def test_trim_nan():
 def test_predictions_to_stream():
     dummy = DummyWaveformModel(component_order="ZNE")
 
-    pred_rates = [100, 50]
-    pred_times = [UTCDateTime(), UTCDateTime()]
-    preds = [np.random.rand(1000, 3), np.random.rand(2000, 3)]
-    preds[0][:100] = np.nan  # Test proper shift
-    stations = ["SB.ABC1."]
-
-    stream = dummy._predictions_to_stream(
-        pred_rates[0], pred_times[0], preds[0], stations
+    data_1 = np.random.rand(1000, 3)
+    data_1[:100] = np.nan  # Test proper shift
+    preds_1 = PredictionsStacked(
+        data=data_1,
+        stations=["SB.ABC1."],
+        start_time=UTCDateTime(),
+        sampling_rate=100,
     )
-    stream += dummy._predictions_to_stream(
-        pred_rates[1], pred_times[1], preds[1], stations
+    preds_2 = PredictionsStacked(
+        data=np.random.rand(2000, 3),
+        stations=["SB.ABC1."],
+        start_time=UTCDateTime(),
+        sampling_rate=50,
     )
 
-    assert stream[0].stats.starttime == pred_times[0] + 1
-    assert stream[1].stats.starttime == pred_times[0] + 1
-    assert stream[2].stats.starttime == pred_times[0] + 1
-    assert stream[3].stats.starttime == pred_times[1]
-    assert stream[4].stats.starttime == pred_times[1]
-    assert stream[5].stats.starttime == pred_times[1]
+    stream = dummy._predictions_to_stream(preds_1)
+    stream += dummy._predictions_to_stream(preds_2)
+
+    assert stream[0].stats.starttime == preds_1.start_time + 1
+    assert stream[1].stats.starttime == preds_1.start_time + 1
+    assert stream[2].stats.starttime == preds_1.start_time + 1
+    assert stream[3].stats.starttime == preds_2.start_time
+    assert stream[4].stats.starttime == preds_2.start_time
+    assert stream[5].stats.starttime == preds_2.start_time
 
     assert stream[0].id == "SB.ABC1..DummyWaveformModel_0"
     assert stream[1].id == "SB.ABC1..DummyWaveformModel_1"
@@ -535,17 +540,18 @@ def test_cut_fragments_point():
     dummy = DummyWaveformModel(
         component_order="ZNE", in_samples=1000, sampling_rate=100
     )
-    data = [np.ones((3, 10000))]
-
-    out = [
-        x[0]
-        for x in dummy._cut_fragments_point(
-            0, data[0], None, {"stride": 100, "sampling_rate": 100}
-        )
-    ]
+    group = GroupedTraceData(
+        data=np.ones((3, 10000)),
+        stations=["A"],
+        component_order="ZNE",
+        start_time=UTCDateTime(),
+        sampling_rate=100,
+        grouping="instrument",
+    )
+    out = dummy._cut_fragments_point(group, {"stride": 100, "sampling_rate": 100})
 
     assert len(out) == 91
-    assert out[0].shape == (3, 1000)
+    assert out[0].data.shape == (3, 1000)
 
 
 def test_reassemble_blocks_point():
@@ -557,27 +563,45 @@ def test_reassemble_blocks_point():
 
     out = []
     argdict = {"stride": 100, "sampling_rate": 100}
-    buffer = defaultdict(list)
+    segments = []
+    n_segments = 100
     for i in range(100):
-        elem = ([0], (0, i, 100, trace_stats, 0))
-        out_elem = dummy._reassemble_blocks_point(elem, buffer, argdict)
-        if out_elem is not None:
-            out += [out_elem[0]]
+        # elem = ([0], (0, i, 100, trace_stats, 0))
+        # window, metadata = elem
+        # t0, s, len_starts, stations, bucket_id = metadata
+        seg = PredictionSegment(
+            data=np.array([0]),
+            key=(0.0, ""),
+            start_time=trace_stats.starttime,
+            window_offset=i,
+            n_windows=n_segments,
+            stations=["SB.ABC1."],
+            bucket_id=0,
+            in_samples=1000,
+            pred_sample=(0, 100),
+        )
+        segments.append(seg)
 
-    assert len(out) == 1
-    assert out[0][0] == 1
-    assert out[0][2].shape == (100, 1)
+    out = dummy._reassemble_blocks_point(segments, argdict)
+    assert out.sampling_rate == 1
+    assert out.data.shape == (100, 1)
 
 
 def test_cut_fragments_array():
     dummy = DummyWaveformModel(
         component_order="ZNE", in_samples=1000, sampling_rate=100, pred_sample=(0, 1000)
     )
-    data = [np.ones((3, 10001))]
     argdict = {"overlap": 100, "sampling_rate": 100}
-    elem = (UTCDateTime(), data[0], ["A", "B"])
+    grouped_data = GroupedTraceData(
+        data=np.ones((3, 10001)),
+        stations=["A", "B"],
+        component_order=["Z", "N", "E"],
+        start_time=UTCDateTime(),
+        sampling_rate=100,
+        grouping="instrument",
+    )
 
-    out = [x[0] for x in dummy._cut_fragments_array(elem, argdict)]
+    out = [x[0] for x in dummy._cut_fragments_array(grouped_data, argdict)]
 
     assert len(out) == 12
     assert out[0].shape == (3, 1000)
@@ -588,27 +612,31 @@ def test_reassemble_blocks_array():
         component_order="ZNE", in_samples=1000, sampling_rate=100, pred_sample=(0, 1000)
     )
 
-    trace_stats = obspy.read()[0].stats
-
     t0 = UTCDateTime()
-    out = []
     argdict = {"stride": 100, "sampling_rate": 100}
-    buffer = defaultdict(list)
 
-    starts = [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200, 8100, 9000, 9001]
+    offsets = [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200, 8100, 9000, 9001]
+    n_windows = len(offsets)
 
+    segments = []
     for i in range(12):
-        elem = (
-            np.ones((1000, 3)),
-            ("key", t0, starts[i], 12, trace_stats, 0, 1000, (0, 1000)),
+        seg = PredictionSegment(
+            data=np.ones((1000, 3)),
+            key=(0.0, "key"),
+            start_time=t0,
+            window_offset=offsets[i],
+            n_windows=n_windows,
+            stations=["SB.ABC1."],
+            bucket_id=0,
+            in_samples=1000,
+            pred_sample=(0, 1000),
         )
-        out_elem = dummy._reassemble_blocks_array(elem, buffer, argdict)
-        if out_elem is not None:
-            out += [out_elem[0]]
+        segments.append(seg)
 
-    assert len(out) == 1
-    assert out[0][0] == 100.0
-    assert out[0][2].shape == (10001, 3)
+    stacked = dummy._stack_predictions_array(segments, argdict)
+
+    assert stacked.sampling_rate == 100.0
+    assert stacked.data.shape == (10001, 3)
 
 
 def test_reassemble_blocks_array_stack_options():
@@ -618,35 +646,38 @@ def test_reassemble_blocks_array_stack_options():
     )
 
     t0 = UTCDateTime()
-    trace_stats = obspy.read()[0].stats
 
     for stacking in {"max", "avg"}:
-        out = []
         argdict = {"overlap": 100, "stacking": stacking, "sampling_rate": 100}
-        buffer = defaultdict(list)
-
         starts = [0, 900, 1800, 2700, 3600, 4500, 5400, 6300, 7200, 8100, 9000, 9001]
 
+        segments = []
         for i in range(12):
-            elem = (
-                np.ones((1000, 3)) + i,
-                ("key", t0, starts[i], 12, trace_stats, 0, 1000, (0, 1000)),
+            seg = PredictionSegment(
+                data=np.ones((1000, 3)) + i,
+                key=(0.0, "key"),
+                start_time=t0,
+                window_offset=starts[i],
+                n_windows=12,
+                stations=["SB.ABC1."],
+                bucket_id=0,
+                in_samples=1000,
+                pred_sample=(0, 1000),
             )
-            out_elem = dummy._reassemble_blocks_array(elem, buffer, argdict)
-            if out_elem is not None:
-                out += [out_elem[0]]
+            segments.append(seg)
 
-        assert len(out) == 1
-        assert out[0][0] == 100.0
-        assert out[0][2].shape == (10001, 3)
-        assert out[0][2].min() == 1
-        assert out[0][2].max() == 12
+        stacked = dummy._stack_predictions_array(segments, argdict)
+
+        assert stacked.sampling_rate == 100.0
+        assert stacked.data.shape == (10001, 3)
+        assert stacked.data.min() == 1
+        assert stacked.data.max() == 12
         if stacking == "max":
             # In the max stacking scheme the last window length samples should be equal to the max
-            assert np.all(out[0][2][-1000:] == 12)
+            assert np.all(stacked.data[-1000:] == 12)
         elif stacking == "avg":
             # In the avg stacking scheme the samples from 9100 to 10000 should be equal to the mean of 11, 12
-            assert np.all(out[0][2][9100:10000] == 11.5)
+            assert np.all(stacked.data[9100:10000] == 11.5)
 
 
 def test_picks_from_annotations():
@@ -891,14 +922,15 @@ def test_parse_default_args():
 
 
 def test_default_labels():
-    model = seisbench.models.PhaseNet(
-        sampling_rate=200, phases=None
-    )  # Higher sampling rate ensures trace is long enough
+    # Higher sampling_rate ensures trace is long enough
+    model = seisbench.models.PhaseNet(sampling_rate=200, phases=None)
+
     stream = obspy.read()
 
     assert model.labels is None
 
-    model.classify(stream)  # Ensures classify succeeds even though labels are unknown
+    # Ensures classify succeeds even though labels are unknown
+    model.classify(stream)
 
     assert model.labels == [0, 1, 2]
 
@@ -1217,11 +1249,14 @@ def test_save_load_gpd(tmp_path):
     model_load_args = get_input_args(model_orig.__class__)
 
     # Test no changes to weights
-    pred_orig = model_orig.annotate(stream, sampling_rate=400)
-    pred_load = model_load.annotate(stream, sampling_rate=400)
+    pred_orig = model_orig.annotate(stream)
+    pred_load = model_load.annotate(stream)
 
+    assert len(pred_orig)
+    assert len(pred_load)
+    assert len(pred_orig) == len(pred_load)
     for i in range(len(pred_orig)):
-        assert np.allclose(pred_orig[i].data, pred_load[i].data)
+        np.testing.assert_allclose(pred_orig[i].data, pred_load[i].data)
     assert model_orig_args == model_load_args
 
 
@@ -2399,7 +2434,6 @@ def test_assemble_groups():
         (["SB.ABC1..BH", "SB.ABC2..HH"], t0 + 10, t0 + 20),
     ]
     groups = helper._assemble_groups(stream, intervals)
-    print(groups)
 
     assert len(groups[0]) == 3
     for trace in groups[0]:
@@ -2556,14 +2590,28 @@ def test_predict_buffer_padding():
     # Note: Normally, for PhaseNet we don't want the model to do padding.
     model = seisbench.models.PhaseNet()
 
-    buffer = [np.random.rand(i, 3001) for i in range(1, 4)]
+    segments = []
+    n_windows = 3
+    for i in range(1, n_windows + 1):
+        seg = TraceSegment(
+            data=np.random.rand(i, 3001),
+            start_time=UTCDateTime(),
+            pred_sample=(0, 3001),
+            window_offset=0,
+            bucket_id=123,
+            key=(0.0, ""),
+            stations=["TEST"],
+            n_windows=n_windows,
+            in_samples=3001,
+        )
+        segments.append(seg)
 
     model.allow_padding = False
     with pytest.raises(ValueError):
-        model._predict_buffer(buffer, {})
+        model._predict_windows(segments, {})
 
     model.allow_padding = True
-    model._predict_buffer(buffer, {})
+    model._predict_windows(segments, {})
 
 
 def test_annotate_obstransformer():
@@ -2633,11 +2681,10 @@ def test_dynamic_samples():
             return torch.ones((x.shape[0], 3, x.shape[-1]))
 
         def _get_in_pred_samples(
-            self, block: np.ndarray
+            self, group: GroupedTraceData
         ) -> tuple[int, tuple[int, int]]:
-            in_samples = 2 ** int(
-                np.log2(block.shape[-1])
-            )  # The largest power of 2 below the block shape
+            # The largest power of 2 below the block shape
+            in_samples = 2 ** int(np.log2(group.data.shape[-1]))
             in_samples = min(
                 max(in_samples, 2**10), 2**20
             )  # Enforce upper and lower bounds
@@ -2676,7 +2723,6 @@ def test_dynamic_samples():
             assert len(ann) == 0
         else:
             assert len(ann) == 3
-
             assert model.shape_log[-1] == (target, (0, target))
 
     # Annotate mixed stream, i.e., mixed window sizes
