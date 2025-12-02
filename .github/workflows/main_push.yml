@@ -7,7 +7,7 @@ on:
   pull_request:
   push:
     branches:
-      - 'main*'
+      - "main*"
 
 env:
   SEISBENCH_CACHE_ROOT: seisbench_cache
@@ -16,9 +16,9 @@ jobs:
   pre-commit:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/setup-python@v3
-    - uses: pre-commit/action@v3.0.0
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v3
+      - uses: pre-commit/action@v3.0.0
 
   run_tests:
     runs-on: ${{ matrix.os }}
@@ -26,12 +26,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # Fetched tags too
+          fetch-depth: 0 # Fetched tags too
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
