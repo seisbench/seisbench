@@ -429,13 +429,8 @@ class GroupingHelper:
         intervals: list[tuple[list[str], obspy.UTCDateTime, obspy.UTCDateTime]],
     ) -> list[list[obspy.Trace]]:
         groups = []
-        sliced_stream = obspy.Stream()
         for stations, t0, t1 in intervals:
-            # sub = stream.slice(t0, t1)
-            for tr in stream:
-                tr._ltrim(t0)
-                tr._rtrim(t1)
-                sliced_stream.append(tr)
+            sliced_stream = stream.slice(t0, t1)
             group = []
 
             for station in stations:
@@ -1687,7 +1682,6 @@ class WaveformModel(SeisBenchModel, ABC):
                     segment,
                     argdict,
                 )
-                # ret = await self._stack_predictions_ext(segment, argdict)
 
                 await out_queue.put(ret)
                 await asyncio.sleep(0)  # Yield control to event loop
