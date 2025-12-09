@@ -1,8 +1,10 @@
-import pytest
 import shutil
+import tempfile
+
+import pytest
+
 import seisbench
 import seisbench.data as sbd
-import tempfile
 
 
 @pytest.fixture(scope="session", autouse=True)

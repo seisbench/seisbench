@@ -468,25 +468,25 @@ def test_recursive_slice_pred():
 
 
 def test_trim_nan():
-    dummy = DummyWaveformModel(component_order="ZNE")
+    from seisbench.models.base import _trim_nan
 
     x = np.random.rand(100)
-    y, f, b = dummy._trim_nan(x)
+    y, f, b = _trim_nan(x)
     assert (y == x).all()
     assert (f, b) == (0, 0)
 
     x[:10] = np.nan
-    y, f, b = dummy._trim_nan(x)
+    y, f, b = _trim_nan(x)
     assert (y == x[10:]).all()
     assert (f, b) == (10, 0)
 
     x[95:] = np.nan
-    y, f, b = dummy._trim_nan(x)
+    y, f, b = _trim_nan(x)
     assert (y == x[10:95]).all()
     assert (f, b) == (10, 5)
 
     x[30:40] = np.nan
-    y, f, b = dummy._trim_nan(x)
+    y, f, b = _trim_nan(x)
     # Needs an extra check as nan==nan is defined as false
     double_nan = np.logical_and(np.isnan(y), np.isnan(x[10:95]))
     assert (np.logical_or(y == x[10:95], double_nan)).all()
@@ -496,7 +496,7 @@ def test_trim_nan():
 def test_predictions_to_stream():
     dummy = DummyWaveformModel(component_order="ZNE")
 
-    data_1 = np.random.rand(1000, 3)
+    data_1 = np.random.rand(1000, 3).astype(np.float32)
     data_1[:100] = np.nan  # Test proper shift
     preds_1 = PredictionsStacked(
         data=data_1,
@@ -505,7 +505,7 @@ def test_predictions_to_stream():
         sampling_rate=100,
     )
     preds_2 = PredictionsStacked(
-        data=np.random.rand(2000, 3),
+        data=np.random.rand(2000, 3).astype(np.float32),
         stations=["SB.ABC1."],
         start_time=UTCDateTime(),
         sampling_rate=50,
