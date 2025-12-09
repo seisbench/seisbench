@@ -22,7 +22,6 @@ import obspy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from obspy.core.trace import Stats
 from obspy.signal.trigger import trigger_onset
 from packaging import version
 
@@ -1876,16 +1875,14 @@ class WaveformModel(SeisBenchModel, ABC):
                 output.append(
                     obspy.Trace(
                         trimmed_pred,
-                        Stats(
-                            {
-                                "starttime": trimmed_start,
-                                "sampling_rate": prediction.sampling_rate,
-                                "network": network,
-                                "station": station,
-                                "location": location,
-                                "channel": f"{self.__class__.__name__}_{label}",
-                            }
-                        ),
+                        {
+                            "starttime": trimmed_start,
+                            "sampling_rate": prediction.sampling_rate,
+                            "network": network,
+                            "station": station,
+                            "location": location,
+                            "channel": f"{self.__class__.__name__}_{label}",
+                        },
                     )
                 )
         return output
