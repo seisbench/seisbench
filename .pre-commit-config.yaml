@@ -4,6 +4,7 @@ repos:
     hooks:
       - id: check-added-large-files
         args: ["--maxkb=1000"]
+        exclude: ^tests/examples/
       - id: check-toml
       - id: check-json
       # Hook shows incompatibility with ipynb files
