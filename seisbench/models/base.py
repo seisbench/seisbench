@@ -1829,9 +1829,7 @@ class WaveformModel(SeisBenchModel, ABC):
             fragments = seisbench.util.pad_packed_sequence(data)
         else:
             fragments = np.array(data)
-        fragments = torch.tensor(fragments, device=self.device, dtype=torch.float32)
-        # fragments = torch.as_tensor(fragments, dtype=torch.float32, device=self.device)
-        # fragments = torch.from_numpy(fragments).float().to(self.device)
+        fragments = torch.as_tensor(fragments, dtype=torch.float32, device=self.device)
 
         with torch.no_grad():
             preprocessed = self.annotate_batch_pre(fragments, argdict=argdict)
