@@ -1,21 +1,24 @@
 import pytest
 import shutil
+import seisbench
 import seisbench.data as sbd
+import tempfile
 
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_data():
     """
-    Ensures that the DummyDataset is available in the SeisBench cache.
+    Create SeisBench cache and provide files
     """
-    dummy_dataset_path = sbd.DummyDataset._path_internal()
-    if not dummy_dataset_path.is_dir():
-        dummy_dataset_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree("./tests/examples/DummyDataset", dummy_dataset_path)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        seisbench.cache_data_root = tmpdir
 
-    chunked_dummy_dataset_path = sbd.ChunkedDummyDataset._path_internal()
-    if not chunked_dummy_dataset_path.is_dir():
-        chunked_dummy_dataset_path.parent.mkdir(parents=True, exist_ok=True)
+        dummy_dataset_path = sbd.DummyDataset._path_internal()
+        shutil.copytree("./tests/examples/dummydataset", dummy_dataset_path)
+
+        chunked_dummy_dataset_path = sbd.ChunkedDummyDataset._path_internal()
         shutil.copytree(
-            "./tests/examples/ChunkedDummyDataset", chunked_dummy_dataset_path
+            "./tests/examples/chunkeddummydataset", chunked_dummy_dataset_path
         )
+
+        yield
