@@ -250,7 +250,7 @@ def test_torch_detrend():
     y1 = seisbench.util.torch_detrend(torch.tensor(x)).numpy()
     y2 = scipy.signal.detrend(x)
 
-    assert np.allclose(y1, y2)
+    np.testing.assert_allclose(y1, y2)
 
 
 def test_pad_packed_sequence():
@@ -279,10 +279,10 @@ def test_pick_list_to_dataframe():
     pick_df = picks.to_dataframe()
 
     assert len(pick_df) == 2
-    assert np.allclose(
+    np.testing.assert_allclose(
         (pick_df["end_time"] - pick_df["time"]) / pd.Timedelta(1, "s"), 5
     )
-    assert np.allclose(
+    np.testing.assert_allclose(
         (pick_df["time"] - pick_df["start_time"]) / pd.Timedelta(1, "s"), 5
     )
     assert all(pick_df["station"] == ["XX.YY.Z1", "XX.YY.Z2"])
@@ -306,7 +306,7 @@ def test_detection_list_to_dataframe():
     detection_df = detections.to_dataframe()
 
     assert len(detection_df) == 2
-    assert np.allclose(
+    np.testing.assert_allclose(
         (detection_df["end_time"] - detection_df["start_time"]) / pd.Timedelta(1, "s"),
         5,
     )
