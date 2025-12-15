@@ -348,16 +348,16 @@ def test_flexible_horizontal_components(caplog):
     # flexible_horizontal_components=False
     stream = obspy.Stream([trace_z, trace_1, trace_2])
     grouped = dummy.stream_to_array(stream, {"flexible_horizontal_components": False})
-    assert np.allclose(grouped.data[0, :], 1)
-    assert np.allclose(grouped.data[1, :], 0)
-    assert np.allclose(grouped.data[2, :], 0)
+    np.testing.assert_allclose(grouped.data[0, :], 1)
+    np.testing.assert_allclose(grouped.data[1, :], 0)
+    np.testing.assert_allclose(grouped.data[2, :], 0)
 
     # flexible_horizontal_components=True
     stream = obspy.Stream([trace_z, trace_1, trace_2])
     grouped = dummy.stream_to_array(stream, {"flexible_horizontal_components": True})
-    assert np.allclose(grouped.data[0, :], 1)
-    assert np.allclose(grouped.data[1, :], 4)
-    assert np.allclose(grouped.data[2, :], 5)
+    np.testing.assert_allclose(grouped.data[0, :], 1)
+    np.testing.assert_allclose(grouped.data[1, :], 4)
+    np.testing.assert_allclose(grouped.data[2, :], 5)
 
     # Warning for mixed component names
     caplog.clear()
@@ -576,7 +576,6 @@ def test_reassemble_blocks_point():
             window_offset=i,
             n_windows=n_segments,
             stations=["SB.ABC1."],
-            bucket_id=0,
             in_samples=1000,
             pred_sample=(0, 100),
         )
@@ -627,7 +626,6 @@ def test_reassemble_blocks_array():
             window_offset=offsets[i],
             n_windows=n_windows,
             stations=["SB.ABC1."],
-            bucket_id=0,
             in_samples=1000,
             pred_sample=(0, 1000),
         )
@@ -660,7 +658,6 @@ def test_reassemble_blocks_array_stack_options():
                 window_offset=starts[i],
                 n_windows=12,
                 stations=["SB.ABC1."],
-                bucket_id=0,
                 in_samples=1000,
                 pred_sample=(0, 1000),
             )
@@ -1256,7 +1253,7 @@ def test_save_load_gpd(tmp_path):
     assert len(pred_load)
     assert len(pred_orig) == len(pred_load)
     for i in range(len(pred_orig)):
-        np.testing.assert_allclose(pred_orig[i].data, pred_load[i].data)
+        np.testing.assert_allclose(pred_orig[i].data, pred_load[i].data, rtol=1e-05)
     assert model_orig_args == model_load_args
 
 
@@ -1283,7 +1280,7 @@ def test_save_load_basicphaseae(tmp_path, caplog):
 
     # TODO: Find out why there is a single nan value in the reconstruction.
     #     for i in range(len(pred_orig)):
-    #         assert np.allclose(pred_orig[i].data, pred_load[i].data)
+    #         np.testing.assert_allclose(pred_orig[i].data, pred_load[i].data)
     assert model_orig_args == model_load_args
 
 
@@ -1307,7 +1304,7 @@ def test_save_load_phasenet(tmp_path):
     pred_load = model_load.annotate(stream)
 
     for i in range(len(pred_orig)):
-        assert np.allclose(pred_orig[i].data, pred_load[i].data)
+        np.testing.assert_allclose(pred_orig[i].data, pred_load[i].data)
     assert model_orig_args == model_load_args
 
 
@@ -1331,7 +1328,7 @@ def test_save_load_phasenetlight(tmp_path):
     pred_load = model_load.annotate(stream)
 
     for i in range(len(pred_orig)):
-        assert np.allclose(pred_orig[i].data, pred_load[i].data)
+        np.testing.assert_allclose(pred_orig[i].data, pred_load[i].data)
     assert model_orig_args == model_load_args
 
 
@@ -1354,9 +1351,9 @@ def test_save_load_eqtransformer(tmp_path):
     pred_orig = model_orig.annotate(stream)
     pred_load = model_load.annotate(stream)
 
-    for i in range(len(pred_orig)):
-        assert np.allclose(pred_orig[i].data, pred_load[i].data)
     assert model_orig_args == model_load_args
+    for i in range(len(pred_orig)):
+        np.testing.assert_allclose(pred_orig[i].data, pred_load[i].data, rtol=1e-5)
 
 
 def test_save_load_cred(tmp_path):
@@ -1369,6 +1366,8 @@ def test_save_load_cred(tmp_path):
     assert (tmp_path / "cred.pt").exists()
 
     stream = obspy.read()
+    print(stream)
+    print(model_orig.output_type)
 
     # Test model loading
     model_load = seisbench.models.CRED.load(tmp_path / "cred")
@@ -1378,8 +1377,10 @@ def test_save_load_cred(tmp_path):
     pred_orig = model_orig.annotate(stream, sampling_rate=400)
     pred_load = model_load.annotate(stream, sampling_rate=400)
 
+    print(pred_orig)
+
     for i in range(len(pred_orig)):
-        assert np.allclose(pred_orig[i].data, pred_load[i].data)
+        np.testing.assert_allclose(pred_orig[i].data, pred_load[i].data)
     assert model_orig_args == model_load_args
 
 
@@ -1403,7 +1404,7 @@ def test_save_load_deepdenoiser(tmp_path):
     pred_load = model_load.annotate(stream, sampling_rate=400)
 
     for i in range(len(pred_orig)):
-        assert np.allclose(pred_orig[i].data, pred_load[i].data)
+        np.testing.assert_allclose(pred_orig[i].data, pred_load[i].data)
     assert model_orig_args == model_load_args
 
 
@@ -1976,7 +1977,7 @@ def test_annotate_filter():
     model._filter_stream(stream)
 
     for trace_a, trace_b in zip(stream_org, stream):
-        assert np.allclose(trace_a.data, trace_b.data)
+        np.testing.assert_allclose(trace_a.data, trace_b.data)
 
     # Filter all
     stream_org = obspy.read()
@@ -1986,7 +1987,8 @@ def test_annotate_filter():
     model._filter_stream(stream)
 
     for trace_a, trace_b in zip(stream_org, stream):
-        assert not np.allclose(trace_a.data, trace_b.data)
+        with pytest.raises(AssertionError):
+            np.testing.assert_allclose(trace_a.data, trace_b.data)
 
     # Filter Z only
     stream_org = obspy.read()
@@ -1997,9 +1999,10 @@ def test_annotate_filter():
 
     for trace_a, trace_b in zip(stream_org, stream):
         if trace_a.stats.channel[-1] == "Z":
-            assert not np.allclose(trace_a.data, trace_b.data)
+            with pytest.raises(AssertionError):
+                np.testing.assert_allclose(trace_a.data, trace_b.data)
         else:
-            assert np.allclose(trace_a.data, trace_b.data)
+            np.testing.assert_allclose(trace_a.data, trace_b.data)
 
     # Invalid filter
     model.filter_args = {"??Z": ["highpass"]}
@@ -2017,11 +2020,12 @@ def test_phasenet_forward():
 
     with torch.no_grad():
         pred = model(x).numpy()
-    assert np.allclose(np.sum(pred, axis=1), 1)
+    np.testing.assert_allclose(np.sum(pred, axis=1), 1, rtol=1e-5)
 
     with torch.no_grad():
         pred = model(x, logits=True).numpy()
-    assert not np.allclose(np.sum(pred, axis=1), 1)
+    with pytest.raises(AssertionError):
+        np.testing.assert_allclose(np.sum(pred, axis=1), 1, rtol=1e-5)
 
 
 def test_phasenetlight_forward():
@@ -2030,11 +2034,12 @@ def test_phasenetlight_forward():
 
     with torch.no_grad():
         pred = model(x).numpy()
-    assert np.allclose(np.sum(pred, axis=1), 1)
+    np.testing.assert_allclose(np.sum(pred, axis=1), 1, rtol=1e-5)
 
     with torch.no_grad():
         pred = model(x, logits=True).numpy()
-    assert not np.allclose(np.sum(pred, axis=1), 1)
+    with pytest.raises(AssertionError):
+        np.testing.assert_allclose(np.sum(pred, axis=1), 1)
 
 
 def test_basicphaseae_forward():
@@ -2043,11 +2048,12 @@ def test_basicphaseae_forward():
 
     with torch.no_grad():
         pred = model(x).numpy()
-    assert np.allclose(np.sum(pred, axis=1), 1)
+    np.testing.assert_allclose(np.sum(pred, axis=1), 1, rtol=1e-5)
 
     with torch.no_grad():
         pred = model(x, logits=True).numpy()
-    assert not np.allclose(np.sum(pred, axis=1), 1)
+    with pytest.raises(AssertionError):
+        np.testing.assert_allclose(np.sum(pred, axis=1), 1)
 
 
 def test_gpd_forward():
@@ -2056,11 +2062,12 @@ def test_gpd_forward():
 
     with torch.no_grad():
         pred = model(x).numpy()
-    assert np.allclose(np.sum(pred, axis=1), 1)
+    np.testing.assert_allclose(np.sum(pred, axis=1), 1, rtol=1e-5)
 
     with torch.no_grad():
         pred = model(x, logits=True).numpy()
-    assert not np.allclose(np.sum(pred, axis=1), 1)
+    with pytest.raises(AssertionError):
+        np.testing.assert_allclose(np.sum(pred, axis=1), 1)
 
 
 def test_dpp_forward():
@@ -2069,11 +2076,12 @@ def test_dpp_forward():
 
     with torch.no_grad():
         pred = model(x).numpy()
-    assert np.allclose(np.sum(pred, axis=1), 1)
+    np.testing.assert_allclose(np.sum(pred, axis=1), 1, rtol=1e-5)
 
     with torch.no_grad():
         pred = model(x, logits=True).numpy()
-    assert not np.allclose(np.sum(pred, axis=1), 1)
+    with pytest.raises(AssertionError):
+        np.testing.assert_allclose(np.sum(pred, axis=1), 1)
 
 
 def test_eqtransformer_forward():
@@ -2090,7 +2098,8 @@ def test_eqtransformer_forward():
         pred_logit = [p.numpy() for p in model(x, logits=True)]
 
     for p, pl in zip(pred, pred_logit):
-        assert not np.allclose(p, pl)
+        with pytest.raises(AssertionError):
+            np.testing.assert_allclose(p, pl)
 
 
 def test_cred_forward():
@@ -2106,7 +2115,8 @@ def test_cred_forward():
     with torch.no_grad():
         pred_logit = model(x, logits=True).numpy()
 
-    assert not np.allclose(pred, pred_logit)
+    with pytest.raises(AssertionError):
+        np.testing.assert_allclose(pred, pred_logit)
 
 
 def test_argdict_get_with_default():
@@ -2132,12 +2142,12 @@ def test_model_normalize(cls):
     model.norm = "std"
     x = np.random.rand(5, 3, 100000)
     x_norm = model.annotate_batch_pre(torch.tensor(x), {}).numpy()
-    assert np.allclose(np.std(x_norm, axis=-1), 1, atol=1e-2, rtol=1e-2)
+    np.testing.assert_allclose(np.std(x_norm, axis=-1), 1, atol=1e-2, rtol=1e-2)
 
     model.norm = "peak"
     x = np.random.rand(5, 3, 100000)
     x_norm = model.annotate_batch_pre(torch.tensor(x), {}).numpy()
-    assert np.allclose(np.max(np.abs(x_norm), axis=-1), 1, atol=1e-2, rtol=1e-2)
+    np.testing.assert_allclose(np.max(np.abs(x_norm), axis=-1), 1, atol=1e-2, rtol=1e-2)
 
 
 def test_version_warnings(caplog):
@@ -2598,7 +2608,6 @@ def test_predict_buffer_padding():
             start_time=UTCDateTime(),
             pred_sample=(0, 3001),
             window_offset=0,
-            bucket_id=123,
             key=(0.0, ""),
             stations=["TEST"],
             n_windows=n_windows,

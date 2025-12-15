@@ -5,6 +5,8 @@ from typing import Literal, NamedTuple
 import numpy as np
 import obspy
 
+Key = tuple[float, str]
+
 
 class GroupedTraceData(NamedTuple):
     data: np.ndarray
@@ -29,12 +31,11 @@ class GroupedTraceData(NamedTuple):
 
 class TraceSegment(NamedTuple):
     data: np.ndarray
-    key: tuple[float, str]
+    key: Key
     start_time: obspy.UTCDateTime
     window_offset: int
     n_windows: int
     stations: list[str]
-    bucket_id: int
     in_samples: int
     pred_sample: tuple[int, int]
 
@@ -65,7 +66,6 @@ class PredictionSegment(TraceSegment):
             window_offset=segment.window_offset,
             n_windows=segment.n_windows,
             stations=segment.stations,
-            bucket_id=segment.bucket_id,
             in_samples=segment.in_samples,
             pred_sample=segment.pred_sample,
         )
