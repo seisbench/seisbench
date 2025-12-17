@@ -319,7 +319,7 @@ def test_detection_list_to_dataframe():
 def test_round_away():
     from obspy.core.compatibility import round_away
 
-    arr = np.random.uniform(-10, 10, size=1000)
+    arr = np.random.uniform(-1, 1, size=100_000)
 
     for val in arr:
         assert round(val) == round_away(val)
@@ -328,7 +328,7 @@ def test_round_away():
 @pytest.mark.parametrize("implementation", ["obspy", "seisbench"])
 def test_slice(benchmark, implementation: Literal["obspy", "seisbench"]):
     stream = obspy.Stream()
-    n_traces = 100
+    n_traces = 500
     sampling_rate = 100.0
     length = 60.0 * 60.0  # seconds
     n_samples = int(length * sampling_rate)
