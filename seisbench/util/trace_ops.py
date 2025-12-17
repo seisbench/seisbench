@@ -148,3 +148,73 @@ def _fdsn_get_bulk_safe(
         return _fdsn_get_bulk_safe(client, bulk[:m], new_failed) + _fdsn_get_bulk_safe(
             client, bulk[m:], new_failed
         )
+
+
+def stream_slice(
+    stream: obspy.Stream,
+    starttime: obspy.UTCDateTime,
+    endtime: obspy.UTCDateTime,
+) -> obspy.Stream:
+    """Slice an ObsPy Stream object between starttime and endtime.
+
+    This is a lightweight implementation of `obspy.Stream.slice` that ensures with
+    default paramters `Stream.slice(..., keep_empty_traces=False, nearest_sample=True)`.
+
+    The performance gain of ~7x is achieved by avoiding deepcopies of traces and
+    combining `Trace._ltrim` and `Trace._rtrim` into a single operation.
+
+    :param stream: The input ObsPy Stream.
+    :type stream: obspy.Stream
+    :param starttime: The start time for slicing.
+    :type starttime: obspy.UTCDateTime
+    :param endtime: The end time for slicing.
+    :type endtime: obspy.UTCDateTime
+
+    :return: The sliced ObsPy Stream.
+    :rtype: obspy.Stream
+    """
+    if len(stream) == 0:
+        raise ValueError("Stream is empty and cannot be sliced.")
+
+    if starttime >= endtime:
+        raise ValueError("starttime must be earlier than endtime.")
+
+    first = stream[0].stats
+
+    # select start/end time fitting to a sample point of the first trace
+    delta = round((starttime - first.starttime) * first.sampling_rate)
+    starttime = first.starttime + delta * first.delta
+
+    delta = round((endtime - first.endtime) * first.sampling_rate)
+    endtime = first.endtime + delta * first.delta  # delta is negative!
+
+    out = obspy.Stream()
+    for tr in stream:
+        stats = tr.stats
+        sampling_rate = stats.sampling_rate
+
+        samples_start = int(round((starttime - stats.starttime) * sampling_rate))
+        samples_end = int(round((endtime - stats.starttime) * sampling_rate) + 1)
+
+        samples_start = max(samples_start, 0)
+        samples_end = min(samples_end, stats.npts)
+        start_offset = samples_start / sampling_rate
+
+        n_samples = samples_end - samples_start
+        if n_samples <= 0:
+            continue
+
+        sliced_trace = obspy.Trace(
+            tr.data[samples_start:samples_end],
+            {
+                "network": stats.network,
+                "station": stats.station,
+                "location": stats.location,
+                "channel": stats.channel,
+                "starttime": stats.starttime + start_offset,
+                "sampling_rate": sampling_rate,
+                "t_offset": stats.get("t_offset", 0.0),
+            },
+        )
+        out.append(sliced_trace)
+    return out

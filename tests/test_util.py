@@ -2,6 +2,7 @@ import logging
 import os
 import pickle
 from pathlib import Path
+from typing import Literal
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -17,6 +18,7 @@ import seisbench
 import seisbench.util
 from seisbench.util.trace_ops import (
     fdsn_get_bulk_safe,
+    stream_slice,
     waveform_id_to_network_station_location,
 )
 
@@ -312,3 +314,72 @@ def test_detection_list_to_dataframe():
     )
     assert all(detection_df["station"] == ["XX.YY.Z1", "XX.YY.Z2"])
     assert all(detection_df["probability"] == [0.9, 0.6])
+
+
+def test_round_away():
+    from obspy.core.compatibility import round_away
+
+    arr = np.random.uniform(-10, 10, size=1000)
+
+    for val in arr:
+        assert round(val) == round_away(val)
+
+
+@pytest.mark.parametrize("implementation", ["obspy", "seisbench"])
+def test_slice(benchmark, implementation: Literal["obspy", "seisbench"]):
+    stream = obspy.Stream()
+    n_traces = 100
+    sampling_rate = 100.0
+    length = 60.0 * 60.0  # seconds
+    n_samples = int(length * sampling_rate)
+    slice_length = 30.0  # seconds
+
+    for i in range(n_traces):
+        random_begin = np.random.uniform(0, 60.0)  # seconds
+        trace = obspy.Trace(
+            np.random.uniform(-100, 100, size=n_samples).astype(np.float32),
+            header={
+                "network": "XX",
+                "station": f"STA{i:03d}",
+                "location": "",
+                "channel": "BHZ",
+                "starttime": obspy.UTCDateTime() + random_begin,
+                "sampling_rate": 100.0,
+            },
+        )
+        stream.append(trace)
+
+    st_starttime = min(tr.stats.starttime for tr in stream)
+    st_endtime = max(tr.stats.endtime for tr in stream)
+
+    cuts = np.arange(st_starttime.timestamp, st_endtime.timestamp, slice_length)
+
+    def slice_obspy():
+        groups = []
+        for cut in cuts:
+            cut_start = obspy.UTCDateTime(cut)
+            cut_end = cut_start + slice_length
+            sliced = stream.slice(cut_start, cut_end)
+            groups.append(sliced)
+        return groups
+
+    def slice_sb():
+        groups = []
+        for cut in cuts:
+            cut_start = obspy.UTCDateTime(cut)
+            cut_end = cut_start + slice_length
+            sliced = stream_slice(stream, cut_start, cut_end)
+            groups.append(sliced)
+        return groups
+
+    sb_slices = benchmark(slice_sb) if implementation == "seisbench" else slice_sb()
+    obspy_slices = (
+        benchmark(slice_obspy) if implementation == "obspy" else slice_obspy()
+    )
+
+    for traces_obspy, traces_sb in zip(obspy_slices, sb_slices, strict=True):
+        for tr_obspy, tr_sb in zip(traces_obspy, traces_sb, strict=True):
+            assert tr_obspy.id == tr_sb.id
+            assert tr_obspy.stats.npts == tr_sb.stats.npts
+            assert tr_obspy.stats.starttime == tr_sb.stats.starttime
+            assert tr_obspy.stats.endtime == tr_sb.stats.endtime
