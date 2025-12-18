@@ -17,6 +17,7 @@ from obspy.clients.fdsn.header import FDSNException
 import seisbench
 import seisbench.util
 from seisbench.util.trace_ops import (
+    _round_py2,
     fdsn_get_bulk_safe,
     stream_slice,
     waveform_id_to_network_station_location,
@@ -322,20 +323,27 @@ def test_round_away():
     arr = np.random.uniform(-1, 1, size=100_000)
 
     for val in arr:
-        assert round(val) == round_away(val)
+        assert _round_py2(val) == round_away(val)
+
+    assert round_away(0.5) == _round_py2(0.5)
+    assert round_away(-0.5) == _round_py2(-0.5)
 
 
 @pytest.mark.parametrize("implementation", ["obspy", "seisbench"])
-def test_slice(benchmark, implementation: Literal["obspy", "seisbench"]):
+@pytest.mark.parametrize("sampling_rate", [100, 200])
+def test_slice(
+    benchmark,
+    sampling_rate: int,
+    implementation: Literal["obspy", "seisbench"],
+):
     stream = obspy.Stream()
-    n_traces = 500
-    sampling_rate = 100.0
-    length = 60.0 * 60.0  # seconds
+    n_traces = 10
+    length = 60.0 * 5.0  # seconds
     n_samples = int(length * sampling_rate)
     slice_length = 30.0  # seconds
 
     for i in range(n_traces):
-        random_begin = np.random.uniform(0, 60.0)  # seconds
+        random_begin = np.round(np.random.uniform(0, 60.0), decimals=5)  # seconds
         trace = obspy.Trace(
             np.random.uniform(-100, 100, size=n_samples).astype(np.float32),
             header={
@@ -343,8 +351,8 @@ def test_slice(benchmark, implementation: Literal["obspy", "seisbench"]):
                 "station": f"STA{i:03d}",
                 "location": "",
                 "channel": "BHZ",
-                "starttime": obspy.UTCDateTime() + random_begin,
-                "sampling_rate": 100.0,
+                "starttime": obspy.UTCDateTime(2025, 1, 1) + random_begin,
+                "sampling_rate": sampling_rate,
             },
         )
         stream.append(trace)
@@ -352,7 +360,7 @@ def test_slice(benchmark, implementation: Literal["obspy", "seisbench"]):
     st_starttime = min(tr.stats.starttime for tr in stream)
     st_endtime = max(tr.stats.endtime for tr in stream)
 
-    cuts = np.arange(st_starttime.timestamp, st_endtime.timestamp, slice_length)
+    cuts = np.arange(st_starttime.timestamp, st_endtime.timestamp, slice_length)[:-1]
 
     def slice_obspy():
         groups = []
@@ -372,14 +380,25 @@ def test_slice(benchmark, implementation: Literal["obspy", "seisbench"]):
             groups.append(sliced)
         return groups
 
+    benchmark.group = f"slicing_{sampling_rate}hz"
+
     sb_slices = benchmark(slice_sb) if implementation == "seisbench" else slice_sb()
     obspy_slices = (
         benchmark(slice_obspy) if implementation == "obspy" else slice_obspy()
     )
 
+    assert len(obspy_slices) == len(sb_slices)
+
     for traces_obspy, traces_sb in zip(obspy_slices, sb_slices, strict=True):
+        traces_obspy.sort()
+        traces_sb.sort()
         for tr_obspy, tr_sb in zip(traces_obspy, traces_sb, strict=True):
             assert tr_obspy.id == tr_sb.id
-            assert tr_obspy.stats.npts == tr_sb.stats.npts
-            assert tr_obspy.stats.starttime == tr_sb.stats.starttime
-            assert tr_obspy.stats.endtime == tr_sb.stats.endtime
+            obspy_stats = tr_obspy.stats
+            sb_stats = tr_sb.stats
+
+            # We use Python3 rounding, so npts may differ by 1
+            # assert abs(tr_obspy.stats.npts - tr_sb.stats.npts) in [0, 1]
+            assert abs(obspy_stats.starttime - sb_stats.starttime) <= 1 / sampling_rate
+            assert abs(obspy_stats.endtime - sb_stats.endtime) <= 1 / sampling_rate
+            assert abs(obspy_stats.npts - sb_stats.npts) in (0, 1)

@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import obspy
 from obspy import ObsPyException
@@ -150,6 +152,13 @@ def _fdsn_get_bulk_safe(
         )
 
 
+def _round_py2(x: float) -> float:
+    if x > 0:
+        return float(math.floor((x) + 0.5))
+    else:
+        return float(math.ceil((x) - 0.5))
+
+
 def stream_slice(
     stream: obspy.Stream,
     starttime: obspy.UTCDateTime,
@@ -162,6 +171,11 @@ def stream_slice(
 
     The performance gain of ~7x is achieved by avoiding deepcopies of traces and
     combining `Trace._ltrim` and `Trace._rtrim` into a single operation.
+
+    Difference for edge cases compared to `Stream.slice` is that times are rounded
+    with Python3 rounding (round half to even) instead of ObsPy's custom rounding
+    (round half away from zero). This can lead to differences of 1 sample in edge
+    cases.
 
     :param stream: The input ObsPy Stream.
     :type stream: obspy.Stream
@@ -181,7 +195,7 @@ def stream_slice(
 
     first = stream[0].stats
 
-    # select start/end time fitting to a sample point of the first trace
+    # select start/end time fitting to a sample point on the first trace
     delta = round((starttime - first.starttime) * first.sampling_rate)
     starttime = first.starttime + delta * first.delta
 
@@ -193,12 +207,14 @@ def stream_slice(
         stats = tr.stats
         sampling_rate = stats.sampling_rate
 
+        # We use Python3 rounding here to be consistent with other parts of seisbench
+        # ObsPy uses a compat rounding function that mimics the behavior of Python2
+        # which rounds 0.5 away from zero. Thus npts can differ by 1 in edge cases.
         samples_start = int(round((starttime - stats.starttime) * sampling_rate))
         samples_end = int(round((endtime - stats.starttime) * sampling_rate) + 1)
 
         samples_start = max(samples_start, 0)
         samples_end = min(samples_end, stats.npts)
-        start_offset = samples_start / sampling_rate
 
         n_samples = samples_end - samples_start
         if n_samples <= 0:
@@ -211,7 +227,7 @@ def stream_slice(
                 "station": stats.station,
                 "location": stats.location,
                 "channel": stats.channel,
-                "starttime": stats.starttime + start_offset,
+                "starttime": stats.starttime + samples_start * stats.delta,
                 "sampling_rate": sampling_rate,
                 "t_offset": stats.get("t_offset", 0.0),
             },
