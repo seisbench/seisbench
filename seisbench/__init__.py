@@ -3,8 +3,7 @@ import logging as _logging
 import os as _os
 from pathlib import Path as _Path
 from urllib.parse import urljoin as _urljoin
-
-import pkg_resources
+from importlib.metadata import version as _version
 
 __all__ = [
     "cache_root",
@@ -39,7 +38,7 @@ else:
         config = _json.load(_fconfig)
 
 # Version number
-__version__ = pkg_resources.get_distribution("seisbench").version
+__version__ = _version("seisbench")
 
 logger = _logging.getLogger("seisbench")
 _ch = _logging.StreamHandler()
