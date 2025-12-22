@@ -1,5 +1,10 @@
 [build-system]
-requires = ["wheel", "setuptools >= 61.0.0", "setuptools_scm[toml]>=6.2"]
+requires = [
+    "wheel",
+    "setuptools >= 61.0.0",
+    "setuptools_scm[toml]>=6.2",
+    "numpy>=2.0",
+]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -43,7 +48,7 @@ include = ["seisbench*"]
 
 [project.optional-dependencies]
 dev = ["ruff", "pre-commit"]
-tests = ["pytest", "pytest-benchmark"]
+tests = ["pytest", "pytest-asyncio>=0.26.0", "pytest-benchmark"]
 
 [tool.setuptools_scm]
 
@@ -54,3 +59,7 @@ Issues = "https://github.com/seisbench/seisbench/issues"
 
 [tool.pytest.ini_options]
 markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
+
+[tool.cibuildwheel]
+test-requires = "pytest"
+test-command = "pytest --durations=10 {project}/tests/"

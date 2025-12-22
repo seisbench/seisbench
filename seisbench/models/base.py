@@ -27,6 +27,8 @@ from packaging import version
 
 import seisbench
 import seisbench.util as util
+from seisbench.ext import stack_windows
+from seisbench.ext.utils import get_edge_indices
 from seisbench.util import in_notebook
 from seisbench.util.trace_ops import stream_slice
 
@@ -69,6 +71,32 @@ def _cache_migration_v0_v3():
         (seisbench.cache_model_root / "phasenet").rename(
             seisbench.cache_model_root / "phasenetlight"
         )
+
+
+def _trim_nan(x) -> tuple[np.ndarray, int, int]:
+    """
+    Removes all starting and trailing nan values from a 1D array and returns the new array and the number of NaNs
+    removed per side.
+    """
+    nan_mask = ~np.isnan(x)
+    valid = np.nonzero(nan_mask)[0]
+    nan_mask[valid[0] : valid[-1]] = True
+    end = x.size
+
+    return x[nan_mask], int(valid[0]), int(end - (1 + valid[-1]))
+
+
+def _trim_zeros(x) -> tuple[np.ndarray, int, int]:
+    """
+    Removes all starting and trailing nan values from a 1D array and returns the new array and the number of NaNs
+    removed per side.
+    """
+    valid = np.nonzero(x)[0]
+    mask = np.zeros_like(x, dtype=bool)
+    mask[valid[0] : valid[-1]] = True
+    end = x.size
+
+    return x[mask], int(valid[0]), int(end - (1 + valid[-1]))
 
 
 class GroupingHelper:
@@ -1718,7 +1746,16 @@ class WaveformModel(SeisBenchModel, ABC):
 
         async def worker() -> None:
             async for segment in prediction_segments:
-                ret = self._stack_predictions_array(segment, argdict)
+                # ret = await asyncio.to_thread(
+                #     self._stack_predictions_array,
+                #     segment,
+                #     argdict,
+                # )
+                ret = self._stack_predictions_array_ext(
+                    segment,
+                    argdict,
+                )
+
                 await out_queue.put(ret)
                 # await asyncio.sleep(0)  # Yield control to event loop
             await out_queue.put(None)
@@ -1746,6 +1783,7 @@ class WaveformModel(SeisBenchModel, ABC):
         overlap = self._get_overlap(meta.in_samples, argdict)
         # This is a breaking change for v 0.3 - see PR#99
         stack_method = self._argdict_get_with_default(argdict, "stacking").lower()
+        sampling_rate = self.sampling_rate
 
         if stack_method not in self._stack_options:
             raise ValueError(
@@ -1765,8 +1803,8 @@ class WaveformModel(SeisBenchModel, ABC):
         pred_sample = meta.pred_sample
         pred_sample_factor = meta.n_samples / (pred_sample[1] - pred_sample[0])
 
-        pred_time = meta.start_time + meta.pred_sample[0] / argdict["sampling_rate"]
-        pred_rate = argdict["sampling_rate"] * pred_sample_factor
+        pred_time = meta.start_time + meta.pred_sample[0] / sampling_rate
+        pred_rate = sampling_rate * pred_sample_factor
 
         # Maximum number of predictions covering a point
         max_coverage = int(np.ceil(meta.in_samples / (meta.in_samples - overlap) + 1))
@@ -1808,6 +1846,57 @@ class WaveformModel(SeisBenchModel, ABC):
 
         return PredictionsStacked(
             data=preds,
+            stations=meta.stations,
+            sampling_rate=pred_rate,
+            start_time=pred_time,
+        )
+
+    def _stack_predictions_array_ext(
+        self,
+        predictions: list[PredictionSegment],
+        argdict: dict,
+    ) -> PredictionsStacked:
+        """
+        Reassembles array predictions into numpy arrays.
+        """
+        n_predictions = len(predictions)
+        if n_predictions == 0:
+            raise ValueError("No predictions to reassemble.")
+
+        predictions = sorted(predictions, key=lambda x: x.window_offset)
+        meta = predictions[0]
+
+        # This is a breaking change for v 0.3 - see PR#99
+        stack_method = self._argdict_get_with_default(argdict, "stacking").lower()
+        sampling_rate = argdict["sampling_rate"]
+
+        if stack_method not in self._stack_options:
+            raise ValueError(
+                f"Stacking method {stack_method} unknown. "
+                f"Known options are: {self._stack_options}"
+            )
+
+        offsets = [pred.window_offset for pred in predictions]
+
+        # Number of prediction samples per input sample
+        pred_sample = meta.pred_sample
+        pred_sample_factor = meta.n_samples / (pred_sample[1] - pred_sample[0])
+
+        data = np.array([pred.data for pred in predictions])
+        if data.ndim == 2:
+            data = data[..., np.newaxis]
+
+        stacked_data = stack_windows(
+            windows=data,
+            offsets=np.round(np.array(offsets) * pred_sample_factor).astype(int),
+            method=stack_method,
+        )
+
+        pred_time = meta.start_time + pred_sample[0] / sampling_rate
+        pred_rate = sampling_rate * pred_sample_factor
+
+        return PredictionsStacked(
+            data=stacked_data,
             stations=meta.stations,
             sampling_rate=pred_rate,
             start_time=pred_time,
@@ -1884,14 +1973,18 @@ class WaveformModel(SeisBenchModel, ABC):
                 else:
                     label = self.labels[channel_idx]
 
-                trimmed_pred, f, _ = self._trim_nan(
-                    pred_data[station_idx, :, channel_idx]
+                trace_data = pred_data[station_idx, :, channel_idx].copy()
+                trace_data = np.squeeze(trace_data)
+                begin_idx, end_idx = get_edge_indices(trace_data, edge_value=np.nan)
+
+                trace_data_trimmed = trace_data[begin_idx:end_idx]
+                trimmed_start = (
+                    prediction.start_time + begin_idx / prediction.sampling_rate
                 )
-                trimmed_start = prediction.start_time + f / prediction.sampling_rate
                 network, station, location = trace_id.split(".")[:3]
                 output.append(
                     obspy.Trace(
-                        trimmed_pred,
+                        trace_data_trimmed,
                         {
                             "starttime": trimmed_start,
                             "sampling_rate": prediction.sampling_rate,
@@ -2029,19 +2122,6 @@ class WaveformModel(SeisBenchModel, ABC):
         :return: Postprocessed predictions
         """
         return batch
-
-    @staticmethod
-    def _trim_nan(x):
-        """
-        Removes all starting and trailing nan values from a 1D array and returns the new array and the number of NaNs
-        removed per side.
-        """
-        nan_mask = ~np.isnan(x)
-        valid = np.nonzero(nan_mask)[0]
-        nan_mask[valid[0] : valid[-1]] = True
-        end = x.size
-
-        return x[nan_mask], valid[0], end - (1 + valid[-1])
 
     def _recursive_torch_to_numpy(self, x: torch.Tensor | list | tuple | np.ndarray):
         """
