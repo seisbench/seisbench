@@ -66,7 +66,7 @@ jobs:
     name: Upload if release
     # Disable publishing for manually triggered workflows
     if: |
-      startsWith(github.ref, 'refs/tags/') &&
+      startsWith(github.ref, 'refs/tags/v') &&
       github.event_name != 'workflow_dispatch'
     needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
