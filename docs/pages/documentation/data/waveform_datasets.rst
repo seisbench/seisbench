@@ -1,13 +1,5 @@
-seisbench.data
-==============
-
-Base classes
------------------------------------
-
-.. automodule:: seisbench.data.base
-    :members:
-    :undoc-members:
-    :show-inheritance:
+Waveform Datasets
+=================
 
 Dummy datasets
 -----------------------------------
@@ -182,15 +174,6 @@ VCSEIS dataset
 -----------------------------------
 
 .. automodule:: seisbench.data.vcseis
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-
-Dataset inspection utilities
------------------------------------
-
-.. automodule:: seisbench.data.inspection
     :members:
     :undoc-members:
     :show-inheritance:

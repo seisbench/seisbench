@@ -47,6 +47,7 @@ dependencies = [
 include = ["seisbench*"]
 
 [project.optional-dependencies]
+das = ["xdas>=0.2.3", "pyarrow"]
 dev = ["ruff", "pre-commit"]
 tests = ["pytest", "pytest-asyncio>=0.26.0", "pytest-benchmark"]
 

@@ -41,5 +41,5 @@ The following command will open the Snuffler with all training data. The events,
 
     squirrel snuffler -a mseed/
 
-.. figure::  ../_static/dataset_inspection_snuffler.webp
+.. figure::  _static/dataset_inspection_snuffler.webp
    :align:   center

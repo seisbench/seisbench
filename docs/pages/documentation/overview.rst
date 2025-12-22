@@ -1,12 +1,12 @@
 .. _documentation_overview:
 
-Documentation
+API reference
 =============
 
 .. toctree::
    :maxdepth: 2
 
-   data.rst
+   data/overview.rst
    util.rst
-   models.rst
+   models/overview.rst
    generate.rst

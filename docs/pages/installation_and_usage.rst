@@ -13,11 +13,17 @@ SeisBench is available directly through the pip package manager. To install loca
 
     pip install seisbench
 
-Alternatively, you can install the latest version from source. For this approach, clone `the repository <https://github.com/seisbench/seisbench>`_, switch to the repository root and run: ::
+By default, SeisBench will be installed without support for DAS data to avoid a range of additional dependencies.
+To install these, you can use: ::
+
+    pip install seisbench[das]
+
+If you want, you can install the latest version from source. For this approach, clone `the repository <https://github.com/seisbench/seisbench>`_, switch to the repository root and run: ::
 
     pip install .
 
 This will install SeisBench in your current python environment from source.
+As before, you can explicity specify that the DAS dependencies should be installed too by appending ``[das]``.
 
 CPU only installation
 ^^^^^^^^^^^^^^^^^^^^^

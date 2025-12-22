@@ -1,6 +1,8 @@
 import re
 from types import SimpleNamespace
+from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 MAX_ENTRIES_STR = 10
@@ -288,3 +290,13 @@ class Detection:
         parts = [self.trace_id, str(self.start_time), str(self.end_time)]
 
         return "\t".join(parts)
+
+
+@dataclass
+class DASPick:
+    time: np.datetime64
+    confidence: float
+    channel: float
+    phase: str
+    start_time: float = None
+    end_time: float = None

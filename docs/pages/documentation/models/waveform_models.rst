@@ -1,14 +1,5 @@
-seisbench.models
-================
-
-Base classes
------------------------------------
-
-.. automodule:: seisbench.models.base
-    :members:
-    :undoc-members:
-    :show-inheritance:
-    :exclude-members: Conv1dSame
+Waveform Models
+===============
 
 BasicPhaseAE
 -----------------------------------

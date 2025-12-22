@@ -16,6 +16,13 @@ from .bohemia import BohemiaSaxony
 from .ceed import CEED
 from .crew import CREW
 from .cwa import CWA, CWANoise
+from .das_base import (
+    DASDataset,
+    DASBenchmarkDataset,
+    DASDataWriter,
+    MultiDASDataset,
+    RandomDASDataset,
+)
 from .dummy import (
     ChunkedDummyDataset,
     DummyDataset,
@@ -71,6 +78,11 @@ __all__ = [
     "MultiWaveformDataset",
     "WaveformDataset",
     "WaveformDataWriter",
+    "DASDataset",
+    "DASDataWriter",
+    "DASBenchmarkDataset",
+    "MultiDASDataset",
+    "RandomDASDataset",
     "AQ2009GM",
     "AQ2009Counts",
     "CEED",

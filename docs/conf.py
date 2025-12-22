@@ -14,6 +14,8 @@ import sys
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 from datetime import datetime
+from docutils import nodes
+from docutils.parsers.rst import Directive
 
 # The rename is necessary to avoid namespace collision with the version attribute for RTD
 # See: https://github.com/sphinx-doc/sphinx/issues/10904
@@ -79,3 +81,23 @@ html_theme_options = {
 if os.getenv("READTHEDOCS"):
     extensions.append("sphinxcontrib.googleanalytics")
     googleanalytics_id = "G-LGH5V4LJBY"
+
+
+class DASExperimentalHint(Directive):
+    has_content = False
+
+    def run(self):
+        content = (
+            "The SeisBench DAS API is currently experimental and some features, such as more datasets and models,"
+            " will be added in the future."
+        )
+        tip_node = nodes.admonition(classes=["tip"])
+        title_node = nodes.title(text="DAS features are experimental")
+        tip_node += title_node
+        text_node = nodes.paragraph(text=content)
+        tip_node += text_node
+        return [tip_node]
+
+
+def setup(app):
+    app.add_directive("dasexperimentalhint", DASExperimentalHint)

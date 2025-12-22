@@ -1,6 +1,13 @@
-from .annotations import ClassifyOutput, Detection, DetectionList, Pick, PickList
+from .annotations import (
+    ClassifyOutput,
+    DASPick,
+    Detection,
+    DetectionList,
+    Pick,
+    PickList,
+)
 from .arraytools import pad_packed_sequence, torch_detrend
-from .auxiliary import in_notebook
+from .auxiliary import in_notebook, MissingOptionalDependency
 from .decorators import log_lifecycle
 from .file import (
     callback_if_uncached,
@@ -22,8 +29,10 @@ from .trace_ops import (
 __all__ = [
     "worker_seeding",
     "ClassifyOutput",
+    "DASPick",
     "Detection",
     "DetectionList",
+    "MissingOptionalDependency",
     "Pick",
     "PickList",
     "pad_packed_sequence",
