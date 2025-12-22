@@ -28,6 +28,7 @@ from packaging import version
 import seisbench
 import seisbench.util as util
 from seisbench.util import in_notebook
+from seisbench.util.trace_ops import stream_slice
 
 from .utils import (
     GroupedTraceData,
@@ -432,7 +433,7 @@ class GroupingHelper:
     ) -> list[list[obspy.Trace]]:
         groups = []
         for stations, t0, t1 in intervals:
-            sliced_stream = stream.slice(t0, t1)
+            sliced_stream = stream_slice(stream, t0, t1)
             group = []
 
             for station in stations:
