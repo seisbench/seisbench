@@ -337,13 +337,13 @@ def test_slice(
     implementation: Literal["obspy", "seisbench"],
 ):
     stream = obspy.Stream()
-    n_traces = 10
+    n_traces = 100
     length = 60.0 * 5.0  # seconds
     n_samples = int(length * sampling_rate)
     slice_length = 30.0  # seconds
 
     for i in range(n_traces):
-        random_begin = np.round(np.random.uniform(0, 60.0), decimals=5)  # seconds
+        random_begin = np.round(np.random.uniform(0, 60.0), decimals=3)  # seconds
         trace = obspy.Trace(
             np.random.uniform(-100, 100, size=n_samples).astype(np.float32),
             header={
@@ -360,24 +360,28 @@ def test_slice(
     st_starttime = min(tr.stats.starttime for tr in stream)
     st_endtime = max(tr.stats.endtime for tr in stream)
 
-    cuts = np.arange(st_starttime.timestamp, st_endtime.timestamp, slice_length)[:-1]
-
     def slice_obspy():
         groups = []
-        for cut in cuts:
-            cut_start = obspy.UTCDateTime(cut)
+        begin = st_starttime
+
+        while begin < st_endtime:
+            cut_start = begin
             cut_end = cut_start + slice_length
             sliced = stream.slice(cut_start, cut_end)
             groups.append(sliced)
+            begin += slice_length
         return groups
 
     def slice_sb():
         groups = []
-        for cut in cuts:
-            cut_start = obspy.UTCDateTime(cut)
+        begin = st_starttime
+
+        while begin < st_endtime:
+            cut_start = begin
             cut_end = cut_start + slice_length
             sliced = stream_slice(stream, cut_start, cut_end)
             groups.append(sliced)
+            begin += slice_length
         return groups
 
     benchmark.group = f"slicing_{sampling_rate}hz"
@@ -399,6 +403,6 @@ def test_slice(
 
             # We use Python3 rounding, so npts may differ by 1
             # assert abs(tr_obspy.stats.npts - tr_sb.stats.npts) in [0, 1]
-            assert abs(obspy_stats.starttime - sb_stats.starttime) <= 1 / sampling_rate
-            assert abs(obspy_stats.endtime - sb_stats.endtime) <= 1 / sampling_rate
-            assert abs(obspy_stats.npts - sb_stats.npts) in (0, 1)
+            assert obspy_stats.npts == sb_stats.npts
+            assert obspy_stats.starttime == sb_stats.starttime
+            assert obspy_stats.endtime == sb_stats.endtime

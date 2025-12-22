@@ -196,10 +196,10 @@ def stream_slice(
     first = stream[0].stats
 
     # select start/end time fitting to a sample point on the first trace
-    delta = round((starttime - first.starttime) * first.sampling_rate)
+    delta = _round_py2((starttime - first.starttime) * first.sampling_rate)
     starttime = first.starttime + delta * first.delta
 
-    delta = round((endtime - first.endtime) * first.sampling_rate)
+    delta = _round_py2((endtime - first.endtime) * first.sampling_rate)
     endtime = first.endtime + delta * first.delta  # delta is negative!
 
     out = obspy.Stream()
@@ -207,13 +207,17 @@ def stream_slice(
         stats = tr.stats
         sampling_rate = stats.sampling_rate
 
-        # We use Python3 rounding here to be consistent with other parts of seisbench
-        # ObsPy uses a compat rounding function that mimics the behavior of Python2
-        # which rounds 0.5 away from zero. Thus npts can differ by 1 in edge cases.
-        samples_start = int(round((starttime - stats.starttime) * sampling_rate))
-        samples_end = int(round((endtime - stats.starttime) * sampling_rate) + 1)
-
+        samples_start = int(_round_py2((starttime - stats.starttime) * sampling_rate))
         samples_start = max(samples_start, 0)
+        if samples_start >= stats.npts - 1:
+            continue
+        slice_starttime = stats.starttime + samples_start * stats.delta
+
+        samples_end = (
+            int(_round_py2((endtime - slice_starttime) * sampling_rate))
+            + samples_start
+            + 1
+        )
         samples_end = min(samples_end, stats.npts)
 
         n_samples = samples_end - samples_start
@@ -227,7 +231,7 @@ def stream_slice(
                 "station": stats.station,
                 "location": stats.location,
                 "channel": stats.channel,
-                "starttime": stats.starttime + samples_start * stats.delta,
+                "starttime": slice_starttime,
                 "sampling_rate": sampling_rate,
                 "t_offset": stats.get("t_offset", 0.0),
             },
