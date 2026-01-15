@@ -62,5 +62,5 @@ Issues = "https://github.com/seisbench/seisbench/issues"
 markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 
 [tool.cibuildwheel]
-test-requires = "seisbench[all]" # ensures all optional dependencies and test dependencies are included
+test-requires = ["seisbench[tests]", "seisbench[das]"]  # Ensure optional dependencies are available
 test-command = "pytest --durations=10 {project}/tests/"
