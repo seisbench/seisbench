@@ -543,6 +543,8 @@ class SeisBenchModel(nn.Module):
             self.to("cuda")
         elif torch.backends.mps.is_available():
             self.to("mps")
+        elif torch.xpu.is_available():
+            self.to("xpu")
 
         if verbose:
             print(f"Model device: {self.device}")
