@@ -1,36 +1,88 @@
-# following
-# https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/
-
 name: Publish to PyPI
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:  # Allows manual triggering - won't upload to PyPI
+
+env:
+  FORCE_COLOR: 3
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-and-publish:
-    name: Build and publish
+  build_sdist:
+    name: Build SDist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build SDist
+        run: pipx run build --sdist
+
+      - name: Check metadata
+        run: pipx run twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-sdist
+          path: dist/*.tar.gz
+
+
+  build_wheels:
+    name: Wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pypa/cibuildwheel@v3.3.0
+        env:
+          CIBW_ARCHS_MACOS: universal2
+          CIBW_ARCHS_WINDOWS: auto ARM64
+          CIBW_PRERELEASE_PYTHONS: true
+
+      - name: Verify clean directory
+        run: git diff --exit-code
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          path: wheelhouse/*.whl
+
+
+  upload_all:
+    name: Upload if release
+    # Disable publishing for manually triggered workflows
+    if: |
+      startsWith(github.ref, 'refs/tags/v') &&
+      github.event_name != 'workflow_dispatch'
+    needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v5
         with:
-          fetch-depth: 0  # Fetched tags too
+          python-version: "3.x"
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v4
+      - uses: actions/download-artifact@v4
         with:
-          python-version: '3.12'
+          pattern: cibw-*
+          path: dist
+          merge-multiple: true
 
-      - name: Install setuptools
-        run: pip install build  --user
-
-      - name: Build binary wheel and source tarball
-        run: |
-          python -m build --sdist --wheel --outdir dist/
-
-      - name: Publish package
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           user: __token__
           password: ${{ secrets.PYPI_API_TOKEN }}
