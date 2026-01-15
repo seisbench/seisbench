@@ -974,7 +974,7 @@ def test_annotate_eqtransformer():
         "eqtransformer",
     ],
 )
-def test_annotate_pickblue(model):
+def test_annotate_pickblue(data_dir, model):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
     with patch(
         "seisbench.models.SeisBenchModel._check_version_requirement"
@@ -983,7 +983,7 @@ def test_annotate_pickblue(model):
 
     model.sampling_rate = 400  # Higher sampling rate ensures trace is long enough
 
-    stream = obspy.read("./tests/examples/OBS*")
+    stream = obspy.read(data_dir / "OBS*")
     annotations = model.annotate(stream)
     assert len(annotations) == 3
     model.classify(
