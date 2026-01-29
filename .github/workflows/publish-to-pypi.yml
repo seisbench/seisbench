@@ -7,6 +7,7 @@ on:
 
 env:
   FORCE_COLOR: 3
+  CIBW_ENVIRONMENT: PIP_NO_CACHE_DIR=1
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -45,28 +46,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      # macOS-only: install LLVM (for llvmlite) and Rust target for x86_64 builds
-      - name: Install macOS build dependencies
-        if: ${{ matrix.os == 'macos-latest' }}
-        run: |
-          set -eux
-          brew update
-          brew install llvm
-
-          # Expose LLVM paths for subsequent steps
-          LLVM_PREFIX="$(brew --prefix llvm)"
-          echo "LDFLAGS=-L${LLVM_PREFIX}/lib" >> $GITHUB_ENV
-          echo "CPPFLAGS=-I${LLVM_PREFIX}/include" >> $GITHUB_ENV
-          # Make LLVM tools available on PATH
-          echo "${LLVM_PREFIX}/bin" >> $GITHUB_PATH
-
-          # Install rustup (non-interactive) and add the x86_64 macOS target needed
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-          # ensure rustup is available in this step immediately
-          source $HOME/.cargo/env
-          rustup target add x86_64-apple-darwin
 
       - uses: pypa/cibuildwheel@v3.3.0
         env:
