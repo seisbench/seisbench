@@ -407,7 +407,7 @@ def test_unify_sampling_rate(caplog):
     dummy = sbd.DummyDataset()
     caplog.clear()
     dummy._metadata["trace_sampling_rate_hz"] = 20.0
-    dummy._metadata["trace_sampling_rate_hz"].values[:20] = np.nan
+    dummy._metadata.loc[:20, "trace_sampling_rate_hz"] = np.nan
     dummy._metadata["trace_dt_s"] = 1 / 20.0
     del dummy._data_format["sampling_rate"]
     with caplog.at_level(logging.WARNING):
@@ -417,7 +417,7 @@ def test_unify_sampling_rate(caplog):
     dummy = sbd.DummyDataset()
     caplog.clear()
     dummy._metadata["trace_sampling_rate_hz"] = 20.0
-    dummy._metadata["trace_sampling_rate_hz"].values[:20] = np.nan
+    dummy._metadata.loc[:20, "trace_sampling_rate_hz"] = np.nan
     del dummy._data_format["sampling_rate"]
     with caplog.at_level(logging.WARNING):
         dummy._unify_sampling_rate()
@@ -426,7 +426,7 @@ def test_unify_sampling_rate(caplog):
     dummy = sbd.DummyDataset()
     caplog.clear()
     dummy._metadata["trace_sampling_rate_hz"] = 20.0
-    dummy._metadata["trace_sampling_rate_hz"].values[:20] = 40.0
+    dummy._metadata.loc[:20, "trace_sampling_rate_hz"] = 40.0
     del dummy._data_format["sampling_rate"]
     with caplog.at_level(logging.WARNING):
         dummy._unify_sampling_rate()
@@ -482,7 +482,7 @@ def test_unify_component_order(caplog):
 def test_resample():
     dummy = sbd.DummyDataset(metadata_cache=False)
     dummy._metadata["trace_sampling_rate_hz"] = 20.0
-    dummy._metadata["trace_sampling_rate_hz"].values[0] = np.nan
+    dummy._metadata.loc[0, "trace_sampling_rate_hz"] = np.nan
 
     # NaN sampling rate raises no error if sampling rate is None, but raises error otherwise
     dummy.get_waveforms(idx=0)
