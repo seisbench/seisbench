@@ -64,3 +64,7 @@ markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 [tool.cibuildwheel]
 test-requires = ["seisbench[tests]", "seisbench[das]"]  # Ensure optional dependencies are available
 test-command = "pytest --durations=10 {project}/tests/"
+# Disable free-threading builds on all platforms
+# h5py does not support thread-free wheels for now, so we don't build them
+# See: https://docs.h5py.org/en/latest/threads.html
+skip = "cp3??t-*"
