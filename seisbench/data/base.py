@@ -480,8 +480,8 @@ class WaveformDataset:
                 if np.any(np.isnan(self.metadata["trace_sampling_rate_hz"].values)):
                     # Implace NaN values. Useful if for parts of data set sampling rate is specified, and for others dt
                     mask = np.isnan(self.metadata["trace_sampling_rate_hz"].values)
-                    self._metadata["trace_sampling_rate_hz"].values[mask] = (
-                        1 / self.metadata["trace_dt_s"].values[mask]
+                    self._metadata.loc[mask, "trace_sampling_rate_hz"] = (
+                        1 / self.metadata.loc[mask, "trace_dt_s"]
                     )
 
                 q = (
