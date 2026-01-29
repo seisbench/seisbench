@@ -67,4 +67,5 @@ test-command = "pytest --durations=10 {project}/tests/"
 # Disable free-threading builds on all platforms
 # h5py does not support thread-free wheels for now, so we don't build them
 # See: https://docs.h5py.org/en/latest/threads.html
-skip = "cp3??t-*"
+# Skip musllinux because of lacking wheels for pytorch
+skip = ["cp3??t-*", "*musllinux*"]
