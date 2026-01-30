@@ -1,5 +1,5 @@
-sphinx==6.1.3
+sphinx==9.1.0
 recommonmark==0.7.1
-sphinx-rtd-theme==1.2.0
-sphinx-autodoc-typehints==1.23.0
+sphinx-rtd-theme==3.1.0
+sphinx-autodoc-typehints==3.6.2
 git+https://github.com/sphinx-contrib/googleanalytics.git

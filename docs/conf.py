@@ -59,6 +59,9 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 # Do not add module names in the doc to hide the internal package structure of SeisBench
 add_module_names = False
 
+# Solve optional dependencies
+autodoc_mock_imports = ["xdas", "pyrocko"]
+
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
@@ -75,7 +78,6 @@ html_favicon = "_static/seisbench_favicon.svg"
 
 html_theme_options = {
     "logo_only": True,
-    "display_version": False,
 }
 
 if os.getenv("READTHEDOCS"):
