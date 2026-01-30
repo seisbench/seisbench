@@ -532,7 +532,7 @@ class SeisBenchModel(nn.Module):
     def to_preferred_device(self, verbose: bool = False):
         """
         Move the model to an accelerator if available.
-        Currently, this function checks for CUDA and MPS accelerators (in this order).
+        Currently, this function checks for CUDA, MPS and XPU accelerators (in this order).
 
         The function does *not* automatically move models to TPU.
         Check out `torch_xla` to see how to move models to TPU.
@@ -975,6 +975,7 @@ class SeisBenchModel(nn.Module):
 
         The model config should contain the following information, which is automatically created from
         the model instance state:
+
             - "weights_docstring": A string documenting the pipeline. Usually also contains information on the author.
             - "model_args": Argument dictionary passed to the init function of the pipeline.
             - "seisbench_requirement": The minimal version of SeisBench required to use the weights file.
@@ -1188,6 +1189,12 @@ class WaveformModel(SeisBenchModel, ABC):
             "e.g., most picking models.",
             True,
         ),
+        "zerophase_resample": (
+            "If true, the filter applied before resampling for anti-aliasing is zero-phase. Otherwise, uses causal "
+            "filter. Note that using a different filter in application than in training might cause small out of "
+            "distribution issues",
+            True,
+        ),
     }
 
     _stack_options = {
@@ -1294,9 +1301,18 @@ class WaveformModel(SeisBenchModel, ABC):
         Please see the respective documentation for details on their functionality, inputs and outputs.
 
         .. hint::
-            If your machine is equipped with a GPU, this function will usually run faster when making use of the GPU.
-            Just call `model.cuda()`. In addition, you might want to increase the batch size by passing the `batch_size`
+            If your machine is equipped with an accelerator, e.g., a GPU, this function will usually run faster when
+            making use of the accelerator.
+            Just call ``model.to("cuda")/model.to("mps")/model.to("xpu")`` or use the function
+            :py:func:`~SeisBenchModel.to_preferred_device` to automatically select the best device.
+            In addition, you might want to increase the batch size by passing the `batch_size`
             argument to the function. Possible values might be 2048 or 4096 (or larger if your GPU permits).
+
+        .. hint::
+            All calls to ``annotate`` and ``classify`` will automatically resample the input data to the sampling rate
+            of the model, if defined. When data is downsampled, this might involve an anti-alias filter. To control
+            whether this filter is zero-phase, use the argument ``zerophase_resample``. For more fine-grained control
+            of the resampling process, manually resample the data before passing it to ``annotate``.
 
         .. warning::
             Even though the `asyncio` implementation itself is not parallel, this does not guarantee that only a single
@@ -2047,7 +2063,11 @@ class WaveformModel(SeisBenchModel, ABC):
         self._filter_stream(stream)
 
         if self.sampling_rate is not None:
-            self.resample(stream, self.sampling_rate)
+            self.resample(
+                stream,
+                self.sampling_rate,
+                zerophase=self._argdict_get_with_default(argdict, "zerophase_resample"),
+            )
         return stream
 
     def _filter_stream(self, stream) -> None:
@@ -2249,21 +2269,20 @@ class WaveformModel(SeisBenchModel, ABC):
         return util.ClassifyOutput(self.name)
 
     @staticmethod
-    def resample(stream, sampling_rate):
+    def resample(stream: obspy.Stream, sampling_rate: float, zerophase: bool = True):
         """
         Perform inplace resampling of stream to a given sampling rate.
 
         :param stream: Input stream
-        :type stream: obspy.core.Stream
         :param sampling_rate: Sampling rate (sps) to resample to
-        :type sampling_rate: float
+        :param zerophase: If true, use a zero-phase filter for antialiasing, otherwise a causal filter.
         """
         del_list = []
         for i, trace in enumerate(stream):
             if trace.stats.sampling_rate == sampling_rate:
                 continue
             if trace.stats.sampling_rate % sampling_rate == 0:
-                trace.filter("lowpass", freq=sampling_rate * 0.5, zerophase=True)
+                trace.filter("lowpass", freq=sampling_rate * 0.5, zerophase=zerophase)
                 trace.decimate(
                     int(trace.stats.sampling_rate / sampling_rate), no_filter=True
                 )

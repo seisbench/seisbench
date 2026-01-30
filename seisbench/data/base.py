@@ -32,18 +32,13 @@ class WaveformDataset:
     documentation of the ``cache`` parameter.
 
     :param path: Path to dataset.
-    :type path: pathlib.Path, str
     :param name: Dataset name, default is None.
-    :type name: str, optional
     :param dimension_order: Dimension order e.g. 'CHW', if not specified will be assumed from config file,
                             defaults to None.
-    :type dimension_order: str, optional
     :param component_order: Component order e.g. 'ZNE', if not specified will be assumed from config file,
                             defaults to None.
-    :type component_order: str, optional
     :param sampling_rate: Common sampling rate of waveforms in dataset, sampling rate can also be specified
                           as a metadata column if not common across dataset.
-    :type sampling_rate: int, optional
     :param cache: Defines the behaviour of the waveform cache. Provides three options:
 
                   *  "full": When a trace is queried, the full block containing the trace is loaded into the cache
@@ -68,9 +63,7 @@ class WaveformDataset:
                   as preloading can use sequential access.
                   Note that it is recommended to always first filter a dataset and then preload to reduce
                   unnecessary reads and memory consumption.
-    :type cache: str, optional
     :param chunks: Specify particular chunks to load. If None, loads all chunks. Defaults to None.
-    :type chunks: list, optional
     :param missing_components: Strategy to deal with missing components. Options are:
 
                                *  "pad": Fill with zeros.
@@ -80,27 +73,28 @@ class WaveformDataset:
                                *  "ignore": Order all existing components in the requested order,
                                   but ignore missing ones. This will raise an error if traces with different
                                   numbers of components are requested together.
-    :type missing_components: str
     :param metadata_cache: If true, metadata is cached in a lookup table.
                            This significantly speeds up access to metadata and thereby access to samples.
                            On the downside, this requires storing two copies of the metadata in memory.
                            The second copy usually consumes more memory due to the less space-efficient format.
                            Runtime differences are particularly big for large datasets.
-    :type bool:
+    :param resample_zerophase: If True, resampling in data loading uses a zerophase filter for antialiasing. Otherwise,
+                               uses a causal filter. See the documentation of ``scipy.signal.decimate`` for details.
     :param kwargs:
     """
 
     def __init__(
         self,
-        path=None,
-        name=None,
-        dimension_order=None,
-        component_order=None,
-        sampling_rate=None,
-        cache=None,
-        chunks=None,
-        missing_components="pad",
-        metadata_cache=False,
+        path: Path | str = None,
+        name: str | None = None,
+        dimension_order: str | None = None,
+        component_order: str | None = None,
+        sampling_rate: float | None = None,
+        cache: Literal["full", "trace", None] = None,
+        chunks: list[str] = None,
+        missing_components: Literal["pad", "copy", "ignore"] = "pad",
+        metadata_cache: bool = False,
+        resample_zerophase: bool = False,
         **kwargs,
     ):
         if name is None:
@@ -171,6 +165,7 @@ class WaveformDataset:
         self.component_order = component_order
         self.missing_components = missing_components
         self.metadata_cache = metadata_cache
+        self.resample_zerophase = resample_zerophase
 
         self._waveform_cache = defaultdict(dict)
 
@@ -1007,6 +1002,10 @@ class WaveformDataset:
         Adjusts all metadata traces with sampling rate dependent values to the correct sampling rate,
         e.g., p_pick_samples will still point to the right sample after this operation, even if the trace was resampled.
 
+        .. hint::
+            When decimating data, a low-pass filter needs to be applied to avoid aliasing. To control whether this
+            filter is causal or zerophase, the class attribute ``zerophase_resample`` can be used.
+
         :param idx: Idx of sample to return
         :param sampling_rate: Target sampling rate, overwrites sampling rate for dataset.
         :return: Tuple with the waveforms and the metadata of the sample.
@@ -1437,7 +1436,9 @@ class WaveformDataset:
 
             if (source_sampling_rate % target_sampling_rate) < eps:
                 q = int(source_sampling_rate // target_sampling_rate)
-                return scipy.signal.decimate(waveform, q, axis=sample_axis)
+                return scipy.signal.decimate(
+                    waveform, q, axis=sample_axis, zero_phase=self.resample_zerophase
+                )
             else:
                 num = int(
                     waveform.shape[sample_axis]

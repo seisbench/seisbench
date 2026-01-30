@@ -479,8 +479,11 @@ def test_unify_component_order(caplog):
     assert (dummy._metadata["trace_component_order"] == "ZNE").all()
 
 
-def test_resample():
-    dummy = sbd.DummyDataset(metadata_cache=False)
+@pytest.mark.parametrize("zerophase_resample", [True, False])
+def test_resample(zerophase_resample):
+    dummy = sbd.DummyDataset(
+        metadata_cache=False, zerophase_resample=zerophase_resample
+    )
     dummy._metadata["trace_sampling_rate_hz"] = 20.0
     dummy._metadata.loc[0, "trace_sampling_rate_hz"] = np.nan
 
