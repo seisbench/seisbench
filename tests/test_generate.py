@@ -694,7 +694,9 @@ def test_probabilistic_pick_labeller(noise_column, shape):
         assert np.allclose(np.sum(state_dict["y"][0], axis=0), 1)  # Sum is always 1
     else:
         assert state_dict["y"][0].shape == (3, 1000)
-        assert ~np.allclose(np.sum(state_dict["y"][0], axis=0), 1)  # Sum may not be 1
+        assert not np.allclose(
+            np.sum(state_dict["y"][0], axis=0), 1
+        )  # Sum may not be 1
     assert np.isclose(
         np.min(state_dict["y"][0]), 0
     )  # Minimum is close to 0, in particular noise is never negative
@@ -878,7 +880,7 @@ def test_probabilistic_pick_labeller_without_noise_column():
     labeller = ProbabilisticLabeller(dim=0, sigma=50, noise_column=False)
     labeller(state_dict)
 
-    assert ~np.allclose(np.sum(state_dict["y"][0], axis=0), 1)  # Sum is not 1
+    assert not np.allclose(np.sum(state_dict["y"][0], axis=0), 1)  # Sum is not 1
     assert np.isclose(
         np.min(state_dict["y"][0]), 0
     )  # Minimum is close to 0, in particular noise is never negative

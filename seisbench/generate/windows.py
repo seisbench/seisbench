@@ -548,7 +548,11 @@ class AlignGroupsOnKey:
     def _align_traces(self, metadata, x):
         offset = np.array(metadata[self.alignment_key])
         mask = ~np.isnan(offset)
-        offset = offset.astype(int)
+        # Supress a runtime warning for an invalid cast from NaN to int
+        # Can be safely ignored because this case is handled through the mask
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            offset = offset.astype(int)
 
         samples = np.array([elem.shape[self.sample_axis] for elem in x])
         samples_before = np.max(offset[mask])
