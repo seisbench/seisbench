@@ -59,6 +59,14 @@ ETHZ dataset
     :show-inheritance:
     :exclude-members: InventoryMapper
 
+EQSDenoiser datasets
+-----------------------------------
+.. automodule:: seisbench.data.eqsdenoiser
+    :members:
+    :undoc-members:
+    :show-inheritance:
+    :exclude-members: EQSDenoiserBase
+
 GEOFON dataset
 -----------------------------------
 
