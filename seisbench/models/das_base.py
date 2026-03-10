@@ -136,7 +136,7 @@ class VirtualTransformedDataArray:
 
     def __init__(
         self,
-        data: DataArray,
+        data: "DataArray",
         patching_structure: PatchingStructure,
         resample_samples: tuple[int, int] = (1, 1),
         resample_channels: tuple[int, int] = (1, 1),
@@ -171,7 +171,7 @@ class VirtualTransformedDataArray:
         self._reset_filter()
 
     @staticmethod
-    def guess_channel_coord_name(data: xdas.DataArray) -> str:
+    def guess_channel_coord_name(data: "xdas.DataArray") -> str:
         for cand in ["channel", "distance"]:
             if cand in data.coords:
                 return cand
@@ -214,7 +214,7 @@ class VirtualTransformedDataArray:
         return out_samples, out_channels
 
     @property
-    def coords(self) -> dict[str, xdas.Coordinate]:
+    def coords(self) -> "dict[str, xdas.Coordinate]":
         # Calculates the output coordinates by interpolating the input coordinates
         # Relies on the data validation for ensuring underlying data is evenly spaced
         return {
@@ -268,7 +268,7 @@ class VirtualTransformedDataArray:
 
     @staticmethod
     def estimate_theoretical_output_shape(
-        data: DataArray,
+        data: "DataArray",
         resample_samples: tuple[int, int],
         resample_channels: tuple[int, int],
     ) -> tuple[float, float]:
@@ -1420,7 +1420,7 @@ class DASModel(SeisBenchModel, ABC):
         return asyncio.run(self.classify_async(*args, **kwargs))
 
     async def annotate_async(
-        self, data: DataArray, callback: DASAnnotateCallback, **kwargs
+        self, data: "DataArray", callback: DASAnnotateCallback, **kwargs
     ) -> None:
         self._verify_argdict(kwargs)
         # Kwargs overwrite default args
@@ -1562,7 +1562,7 @@ class DASModel(SeisBenchModel, ABC):
         return output
 
     def get_resample_ratios(
-        self, data: DataArray, channel_coord_name: Optional[str]
+        self, data: "DataArray", channel_coord_name: Optional[str]
     ) -> tuple[tuple[int, int], tuple[int, int]]:
         """
         Estimates integer ratios for resampling along the sample and channel axes to fall into the predefined ratios.
@@ -1633,7 +1633,7 @@ class DASModel(SeisBenchModel, ABC):
     @staticmethod
     def calc_output_shape_and_coordinates(
         da: VirtualTransformedDataArray, patching_structure: PatchingStructure
-    ) -> tuple[tuple[int, int], dict[str, xdas.InterpCoordinate]]:
+    ) -> "tuple[tuple[int, int], dict[str, xdas.InterpCoordinate]]":
         """
         Calculates the shape and coordinate axis of the output array after processing with the given patching structure.
         In case the output shape would be fractional, an extra sample is added to the output array along the
@@ -1722,7 +1722,7 @@ class DASModel(SeisBenchModel, ABC):
         if pbar is not None:
             pbar.close()
 
-    async def classify_async(self, data: DataArray, **kwargs) -> sbu.ClassifyOutput:
+    async def classify_async(self, data: "DataArray", **kwargs) -> sbu.ClassifyOutput:
         """
         The classify method is used to process the data and apply the default callback.
         The ``kwargs`` are split into two groups: those that are passed to the callback and those that are passed to the
