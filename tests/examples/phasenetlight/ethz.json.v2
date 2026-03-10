@@ -1,0 +1,14 @@
+{
+    "docstring": "Model trained on ETHZ for 100 epochs with a learning rate of 0.01.\nThreshold selected for optimal F1 score on in-domain evaluation. Depending on the target region, the thresholds might need to be adjusted.\nWhen using this model, please reference the SeisBench publications listed at https://github.com/seisbench/seisbench\n\nJannes M\u00fcnchmeyer, Jack Woollam (munchmej@gfz-potsdam.de, jack.woollam@kit.edu)",
+    "model_args": {
+        "component_order": "ZNE",
+        "phases": "PSN",
+        "norm": "peak"
+    },
+    "seisbench_requirement": "0.3.2",
+    "default_args": {
+        "P_threshold": 0.4439247878516038,
+        "S_threshold": 0.4502677090692625
+    },
+    "version": "2"
+}

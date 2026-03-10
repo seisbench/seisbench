@@ -333,12 +333,18 @@ def test_download_dataset_chunk_arg(tmp_path):
             def _download_dataset(self, writer):
                 raise ValueError("Called without chunks")
 
+            def available_chunks(cls, force: bool = False, wait_for_file: bool = False):
+                return [""]
+
         class ChunkedMockDataset(sbd.WaveformBenchmarkDataset):
             def __init__(self, **kwargs):
                 super().__init__(citation="", **kwargs)
 
             def _download_dataset(self, writer, chunk):
                 raise ValueError("Called with chunks")
+
+            def available_chunks(cls, force: bool = False, wait_for_file: bool = False):
+                return ["a", "b", "c"]
 
         # Note: This would raise a TypeError when called with the chunk parameter
         with pytest.raises(ValueError) as e:

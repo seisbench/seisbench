@@ -33,10 +33,10 @@ def get_input_args(obj):
 
 
 def test_weights_docstring():
-    model = seisbench.models.GPD()
+    model = seisbench.models.PhaseNetLight()
     assert model.weights_docstring is None
 
-    model = seisbench.models.GPD.from_pretrained("dummy")
+    model = seisbench.models.PhaseNetLight.from_pretrained("ethz")
     assert isinstance(model.weights_docstring, str)
 
 
@@ -968,6 +968,7 @@ def test_annotate_eqtransformer():
     assert output.creator == model.name
 
 
+@pytest.mark.skip(reason="Depends on SeisBench repo")
 @pytest.mark.parametrize(
     "model",
     [
