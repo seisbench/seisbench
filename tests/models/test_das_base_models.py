@@ -1,3 +1,4 @@
+import gc
 import numpy as np
 import pytest
 import xdas
@@ -160,6 +161,11 @@ def test_das_model_annotate(tmp_path, virtual_data):
     if virtual_data:
         # Write and read back to make sure the data array is virtual
         da.to_netcdf(tmp_path / "data.nc")
+
+        # Ensure proper closing of the netcdf file - Avoids race condition
+        del da
+        gc.collect()
+
         da = xdas.open_dataarray(tmp_path / "data.nc")
 
     model.annotate(da, callback, overlap_samples=0.5, overlap_channels=0.5)
