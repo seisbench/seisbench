@@ -72,11 +72,17 @@ class PredictionSegment(TraceSegment):
 
     @property
     def n_samples(self) -> int:
-        return self.data.shape[0]
+        if self.data.ndim == 1:
+            return self.data.shape[0]
+        else:
+            return self.data.shape[-2]
 
     @property
     def n_channels(self) -> int:
-        return self.data.shape[1]
+        if self.data.ndim == 1:
+            return 1
+        else:
+            return self.data.shape[-1]
 
 
 class PredictionsStacked(NamedTuple):

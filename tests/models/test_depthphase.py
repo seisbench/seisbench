@@ -6,7 +6,7 @@ import obspy
 import pytest
 import torch
 from obspy import UTCDateTime
-from obspy.core.inventory import Channel, Inventory, Network, Station
+from obspy.core.inventory import Channel, Inventory, Network, Station, Site
 
 import seisbench.models
 
@@ -368,3 +368,81 @@ def test_depth_finder():
 
     output = depth_finder.get_depth(lat, lon, depth, org_time)
     assert isinstance(output.depth, float)
+
+
+@pytest.mark.parametrize(
+    "cls", [seisbench.models.DepthPhaseTEAM, seisbench.models.DepthPhaseNet]
+)
+def test_classify(cls):
+    t0 = obspy.UTCDateTime()
+    n_stations = 10
+    stream = obspy.Stream(
+        [
+            obspy.Trace(
+                data=np.random.rand(20000),
+                header={
+                    "network": "XY",
+                    "station": f"STA{idx}",
+                    "location": "",
+                    "channel": f"BH{c}",
+                    "starttime": t0,
+                    "sampling_rate": 20,
+                },
+            )
+            for c in "ZNE"
+            for idx in range(n_stations)
+        ]
+    )
+    picks = {f"XY.STA{idx}.": t0 + 50 for idx in range(n_stations)}
+    epicenter = (0.0, 0.0)
+
+    # Create random station coordinates
+    n_stations = 10
+    lats = np.random.uniform(-90, 90, n_stations)
+    lons = np.random.uniform(-180, 180, n_stations)
+    elevs = np.random.uniform(0, 2000, n_stations)  # meters
+
+    stations = []
+
+    for idx in range(n_stations):
+        sta_code = f"STA{idx}"
+        lat = lats[idx]
+        lon = lons[idx]
+        elev = elevs[idx]
+
+        channels = []
+        for comp in "ZNE":
+            cha = Channel(
+                code=f"BH{comp}",
+                location_code="",
+                latitude=lat,
+                longitude=lon,
+                elevation=elev,
+                depth=0.0,
+                azimuth={"Z": 0, "N": 0, "E": 90}[comp],
+                dip={"Z": -90, "N": 0, "E": 0}[comp],
+                sample_rate=100.0,
+            )
+            channels.append(cha)
+
+        sta = Station(
+            code=sta_code,
+            latitude=lat,
+            longitude=lon,
+            elevation=elev,
+            creation_date=t0,
+            site=Site(name=f"Random station {sta_code}"),
+            channels=channels,
+        )
+        stations.append(sta)
+
+    net = Network(
+        code="XY",
+        stations=stations,
+        description="Fake random network",
+    )
+
+    inventory = Inventory(networks=[net], source="synthetic")
+
+    model = cls()
+    model.classify(stream, picks, inventory=inventory, epicenter=epicenter)
