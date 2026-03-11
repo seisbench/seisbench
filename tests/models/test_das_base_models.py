@@ -1,6 +1,7 @@
 import gc
 import numpy as np
 import pytest
+import time
 import xdas
 from xdas import Coordinate, DataArray
 from scipy.signal import resample_poly, sosfilt_zi, sosfilt
@@ -158,17 +159,29 @@ def test_das_model_annotate(tmp_path, virtual_data):
     )
 
     da = DataArray(data=data, coords={"time": time_coords, "channel": channel_coords})
-    if virtual_data:
-        # Write and read back to make sure the data array is virtual
-        da.to_netcdf(tmp_path / "data.nc")
 
-        # Ensure proper closing of the netcdf file - Avoids race condition
-        del da
-        gc.collect()
+    # Write in case it's needed for the virtual option
+    da.to_netcdf(tmp_path / "data.nc")
 
-        da = xdas.open_dataarray(tmp_path / "data.nc")
+    for retries in range(5):
+        try:
+            if virtual_data:
+                # Ensure proper closing of the netcdf file - Avoids race condition on Mac OS, but doesn't fully solve it
+                del da
+                gc.collect()
 
-    model.annotate(da, callback, overlap_samples=0.5, overlap_channels=0.5)
+                # Read back version on disk to make sure the data array is virtual
+
+                da = xdas.open_dataarray(tmp_path / "data.nc")
+
+            model.annotate(da, callback, overlap_samples=0.5, overlap_channels=0.5)
+            break
+
+        except BlockingIOError:
+            time.sleep(1.0)
+
+    else:
+        raise RuntimeError("Failed with BlockingIOError on each retry")
 
     assert len(callback.results) == 54
     for pred, input_coords, output_coords in callback.results:
