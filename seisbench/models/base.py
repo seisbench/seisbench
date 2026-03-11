@@ -1785,10 +1785,17 @@ class WaveformModel(SeisBenchModel, ABC):
                 #     segment,
                 #     argdict,
                 # )
-                ret = self._stack_predictions_array_ext(
-                    segment,
-                    argdict,
-                )
+                if self._grouping.grouping == "full":
+                    # The external stacking option is not implemented for "full" grouping
+                    ret = self._stack_predictions_array(
+                        segment,
+                        argdict,
+                    )
+                else:
+                    ret = self._stack_predictions_array_ext(
+                        segment,
+                        argdict,
+                    )
 
                 await out_queue.put(ret)
                 # await asyncio.sleep(0)  # Yield control to event loop
