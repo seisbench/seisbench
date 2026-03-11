@@ -210,6 +210,58 @@ Dataset contains 36,743 waveform examples.
     * XT: https://doi.org/10.12686/alparray/xt_2014
 
 
+EQSDenoiser
+-----------
+
+.. figure::  _static/eqsdenoiser_overview.png
+   :align:   center
+
+The Earthquake Seismogram Denoiser (EQS) datasets (:py:class:`~seisbench.data.eqsdenoiser.EQSDenoiserEvents`,
+:py:class:`~seisbench.data.eqsdenoiser.EQSDenoiserNoise`, :py:class:`~seisbench.data.eqsdenoiser.EQSDenoiserCombined`)
+contain earthquake and noise signals recorded in and around Switzerland by `SED
+<http://www.seismo.ethz.ch/en/home/>`__ and partner networks. All waveforms are
+three-component (Z12, vertical + 2 horizontals), in physical units [m/s], and sampled at 100
+sps. The dataset includes 27k earthquake waveforms recorded in 0-30 km epicentral
+distance, each 18k samples long. The event start is aligned around sample 6000. Metadata
+includes Pg and Sg phase picks (when available), and first-motion polarities. Note that the
+event waveforms have been preprocessed to reduce noise contamination, yielding clean
+event signals that improve label quality for the training of denoising models and support data
+augmentation.
+In addition, the dataset contains 396k noise recordings with 8k samples, including a subset
+with impulsive noise signals.
+
+.. warning::
+
+    Event signals: waveforms.hdf5 **~12Gb**, metadata.csv **~8Mb**
+    Noise signals: waveforms_noise.hdf5 **~76Gb**, metadata_noise.csv **~31Mb**
+
+.. admonition:: Citation
+
+    Dahmen, N., Clinton, J., Meier, M. A., & Scarabello, L. (2026). Toward Operational
+    Earthquake Seismogram Denoising. Bulletin of the Seismological Society of America.
+
+    Each individual network has its own DOI. From publicly available data:
+
+    * CH: https://doi.org/10.12686/sed/networks/ch
+    * 9S: http://networks.seismo.ethz.ch/networks/9s/
+    * 8D: https://doi.org/10.12686/sed/networks/8d
+    * G2: https://networks.seismo.ethz.ch/en/networks/g2/
+    * S: https://doi.org/10.12686/sed/networks/s
+    * C4: https://doi.org/10.12686/sed/networks/c4
+    * 1I: https://networks.seismo.ethz.ch/networks/1i/
+    * Z3: http://networks.seismo.ethz.ch/networks/z3/
+    * GU: https://www.fdsn.org/networks/detail/GU/
+    * OX: https://www.fdsn.org/networks/detail/OX/
+    * IV: https://eida.ingv.it/en/network/IV
+    * 8C: https://seismology.resif.fr/networks/#/8C__2019
+    * FR: https://seismology.resif.fr/networks/#/FR
+    * RA: https://seismology.resif.fr/networks/#/RA
+    * BW: https://www.fdsn.org/networks/detail/BW/
+    * GR: https://www.seismologie.bgr.de/doi/grsn/
+    * LE: https://www.fdsn.org/networks/detail/LE/
+    * OE: https://www.fdsn.org/networks/detail/OE/
+    * MN: https://doi.org/10.13127/SD/FBBBTDTD6Q
+
 GEOFON
 ------
 
