@@ -28,6 +28,7 @@ from .dummy import (
     DummyDataset,
 )
 from .ethz import ETHZ
+from .eqsdenoiser import EQSDenoiserEvents, EQSDenoiserNoise, EQSDenoiserCombined
 from .geofon import GEOFON
 from .instance import (
     InstanceCounts,
@@ -92,6 +93,9 @@ __all__ = [
     "ChunkedDummyDataset",
     "DummyDataset",
     "ETHZ",
+    "EQSDenoiserEvents",
+    "EQSDenoiserNoise",
+    "EQSDenoiserCombined",
     "GEOFON",
     "InstanceCounts",
     "InstanceCountsCombined",
