@@ -48,9 +48,7 @@ _ch.setFormatter(
 logger.addHandler(_ch)
 
 
-default_remote_root = (
-    "https://hifis-storage.desy.de:2880/Helmholtz/HelmholtzAI/SeisBench/"
-)
+default_remote_root = "https://hifis-storage.desy.de/Helmholtz/HelmholtzAI/SeisBench/"
 backup_remote_root = "https://seisbench.gfz.de/mirror/"
 
 remote_root = config.get("remote_root", default_remote_root)

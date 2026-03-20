@@ -43,11 +43,9 @@ Configuring the remote repository
 
 SeisBench uses a remote repository to serve datasets and model weights from.
 This repository is hosted on dCache, a high-performance large scale data storage, delivering very high download speeds.
-Unfortunately, this comes at the cost of running on a non-standard port for the data transfer that some institutions/providers block.
 You can find the server URL by calling `seisbench.remote_root`.
-While we highly recommend users to get in touch with their IT department to allow access to our server,
-we understand that this might not be possible for all users.
-Therefore, we offer a backup server. To use the backup server, simply call `seisbench.use_backup_repository()`.
+As we have experienced occasional issues with this server, we offer a backup server.
+To use the backup server, simply call `seisbench.use_backup_repository()`.
 This will change the repository used within the current runtime.
 For a more permanent solution, put the backup repository into your SeisBench config file (usually at `.seisbench/config.json`).
 Simply add the following line: ::
