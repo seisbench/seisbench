@@ -2362,7 +2362,7 @@ class WaveformBenchmarkDataset(AbstractBenchmarkDataset, WaveformDataset, ABC):
     This class is the base class for benchmark waveform datasets. For the functionality, see the superclasses.
     """
 
-    _files = ["waveforms$CHUNK.hdf5", "metadata$CHUNK.csv"]
+    _files = ["metadata$CHUNK.csv", "waveforms$CHUNK.hdf5"]
 
     def _download_dataset_wrapper(self, files, chunk, **kwargs):
         tmp_download_args = self.add_chunk_to_download_args(chunk, kwargs)
