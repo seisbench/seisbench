@@ -15,6 +15,7 @@ from .das_base import (
 )
 from .das_wrapper import DASWaveformModelWrapper
 from .deepdenoiser import DeepDenoiser
+from .deepsubdas import DeepSubDAS
 from .depthphase import DepthFinder, DepthPhaseModel, DepthPhaseNet, DepthPhaseTEAM
 from .dpp import DeepPhasePick, DPPDetector, DPPPicker
 from .eqtransformer import EQTransformer
@@ -39,6 +40,7 @@ __all__ = [
     "DASModel",
     "DASPickingCallback",
     "DASWaveformModelWrapper",
+    "DeepSubDAS",
     "FKFilter",
     "InMemoryCollectionCallback",
     "MultiCallback",

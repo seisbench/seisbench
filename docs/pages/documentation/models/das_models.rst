@@ -10,3 +10,11 @@ DASWaveformModelWrapper
     :members:
     :undoc-members:
     :show-inheritance:
+
+DeepSubDAS
+-----------------------------------
+
+.. automodule:: seisbench.models.deepsubdas
+    :members:
+    :undoc-members:
+    :show-inheritance:
