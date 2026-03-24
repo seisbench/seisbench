@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 import xdas
 from unittest.mock import patch
 
@@ -22,7 +23,7 @@ def test_deepsubdas():
 
     # Mock function to avoid costly forward call
     def fake_forward(_, x, *args, **kwargs):
-        return {"full": x, "P": x, "S": x}
+        return {"full": None, "P": torch.zeros_like(x), "S": torch.zeros_like(x)}
 
     with patch("seisbench.models.DeepSubDAS.forward", fake_forward):
         callback = sbm.InMemoryCollectionCallback()
