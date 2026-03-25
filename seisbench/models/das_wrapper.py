@@ -1,10 +1,15 @@
-from typing import Any, Optional
+from typing import Any, Optional, Type
 
 import numpy as np
 import torch
 import seisbench
 
-from .das_base import DASModel, PatchingStructure
+from .das_base import (
+    DASAnnotateCallback,
+    DASModel,
+    DASPickingCallback,
+    PatchingStructure,
+)
 from .base import WaveformModel
 
 
@@ -232,3 +237,7 @@ class DASWaveformModelWrapper(DASModel):
             "Saving not supported for this type of model."
             "Instead, save the underlying WaveformModel."
         )
+
+    @property
+    def classify_callback(self) -> Type[DASAnnotateCallback]:
+        return DASPickingCallback
