@@ -44,6 +44,7 @@ from .lfe_stacks import (
     LFEStacksMexicoFrank2014,
     LFEStacksSanAndreasShelly2017,
 )
+from .mlsubdas import MLSubDAS
 from .neic import MLAAPDE, NEIC
 from .obs import OBS
 from .obst2024 import OBST2024
@@ -108,6 +109,7 @@ __all__ = [
     "LFEStacksMexicoFrank2014",
     "LFEStacksSanAndreasShelly2017",
     "MLAAPDE",
+    "MLSubDAS",
     "NEIC",
     "OBS",
     "OBST2024",
