@@ -835,6 +835,10 @@ class WriterBuffer:
             self._channel_buffer_count = None
             self._previous_sample_buffer_count = None
             self._current_sample_buffer_count = None
+        elif self.stacking == "weighted":
+            self._channel_buffer_weight = None
+            self._previous_sample_buffer_weight = None
+            self._current_sample_buffer_weight = None
 
     @property
     def stacking(self) -> str:
@@ -842,9 +846,16 @@ class WriterBuffer:
 
     @stacking.setter
     def stacking(self, value: str):
-        if value not in ["avg", "max"]:
-            raise ValueError("Stacking must be either 'avg' or 'max'.")
+        if value not in ["avg", "max", "weighted"]:
+            raise ValueError("Stacking must be either 'avg', 'max', or 'weighted'.")
         self._stacking = value
+
+    @staticmethod
+    def _get_weight_mask(shape: tuple[int]):
+        # A 2D Hanning window with a lower clip at 1e-5 to avoid division by zero
+        return np.clip(
+            np.hanning(shape[0]).reshape(-1, 1) * np.hanning(shape[1]), 1e-5, None
+        ).astype(np.float32)
 
     def add_data(
         self, data: np.ndarray, out_coords: PatchCoordinate
@@ -861,6 +872,9 @@ class WriterBuffer:
 
         output = None
 
+        if self.stacking == "weighted":
+            data = data * self._get_weight_mask(data.shape)
+
         if self._last_channel is None:
             if out_coords.channel > 0:
                 raise ValueError("Each row needs to start at channel 0.")
@@ -869,6 +883,10 @@ class WriterBuffer:
                 self._channel_buffer_count = np.ones_like(
                     self._channel_buffer, dtype=np.uint32
                 )
+            elif self.stacking == "weighted":
+                self._channel_buffer_weight = np.zeros_like(
+                    self._channel_buffer, dtype=np.float32
+                ) + self._get_weight_mask(data.shape)
             finalized_segment = None
             self._last_channel = 0
         else:
@@ -883,6 +901,10 @@ class WriterBuffer:
             finalized_segment = self._channel_buffer[:, :boundary_channels]
             if self.stacking == "avg":
                 finalized_segment_count = self._channel_buffer_count[
+                    :, :boundary_channels
+                ]
+            elif self.stacking == "weighted":
+                finalized_segment_weight = self._channel_buffer_weight[
                     :, :boundary_channels
                 ]
 
@@ -906,6 +928,17 @@ class WriterBuffer:
                 ]
                 tmp_buffer_count += 1
                 self._channel_buffer_count = tmp_buffer_count
+            elif self.stacking == "weighted":
+                tmp_buffer[:, :-boundary_channels] = (
+                    self._channel_buffer[:, boundary_channels:]
+                    + data[:, :-boundary_channels]
+                )
+                tmp_buffer_weight = np.zeros_like(tmp_buffer, dtype=np.float32)
+                tmp_buffer_weight[:, :-boundary_channels] = self._channel_buffer_weight[
+                    :, boundary_channels:
+                ]
+                tmp_buffer_weight += self._get_weight_mask(data.shape)
+                self._channel_buffer_weight = tmp_buffer_weight
 
             self._channel_buffer = tmp_buffer
 
@@ -917,6 +950,8 @@ class WriterBuffer:
                 finalized_segment = self._channel_buffer
                 if self.stacking == "avg":
                     finalized_segment_count = self._channel_buffer_count
+                elif self.stacking == "weighted":
+                    finalized_segment_weight = self._channel_buffer_weight
             else:
                 finalized_segment = np.concatenate(
                     [finalized_segment, self._channel_buffer], axis=1
@@ -924,6 +959,10 @@ class WriterBuffer:
                 if self.stacking == "avg":
                     finalized_segment_count = np.concatenate(
                         [finalized_segment_count, self._channel_buffer_count], axis=1
+                    )
+                elif self.stacking == "weighted":
+                    finalized_segment_weight = np.concatenate(
+                        [finalized_segment_weight, self._channel_buffer_weight], axis=1
                     )
 
         # Update sample buffer - Note that horizontal overlap is already handled
@@ -934,6 +973,10 @@ class WriterBuffer:
             if self.stacking == "avg":
                 self._current_sample_buffer_count = np.zeros_like(
                     self._current_sample_buffer, dtype=np.uint32
+                )
+            elif self.stacking == "weighted":
+                self._current_sample_buffer_weight = np.zeros_like(
+                    self._current_sample_buffer, dtype=np.float32
                 )
             self._current_sample = out_coords.sample_int
 
@@ -947,6 +990,12 @@ class WriterBuffer:
                     self._last_channel : self._last_channel
                     + finalized_segment.shape[1],
                 ] = finalized_segment_count
+            elif self.stacking == "weighted":
+                self._current_sample_buffer_weight[
+                    :,
+                    self._last_channel : self._last_channel
+                    + finalized_segment.shape[1],
+                ] = finalized_segment_weight
 
         self._last_channel = out_coords.channel_int
 
@@ -962,12 +1011,20 @@ class WriterBuffer:
                     self._previous_sample_buffer_count = (
                         self._current_sample_buffer_count
                     )
+                elif self.stacking == "weighted":
+                    self._previous_sample_buffer_weight = (
+                        self._current_sample_buffer_weight
+                    )
                 self._previous_sample = self._current_sample
             else:
                 boundary_samples = self._current_sample - self._previous_sample
                 finalized_segment = self._previous_sample_buffer[:boundary_samples]
                 if self.stacking == "avg":
                     finalized_segment_count = self._previous_sample_buffer_count[
+                        :boundary_samples
+                    ]
+                elif self.stacking == "weighted":
+                    finalized_segment_weight = self._previous_sample_buffer_weight[
                         :boundary_samples
                     ]
 
@@ -995,6 +1052,17 @@ class WriterBuffer:
                     )
                     tmp_buffer_count += self._current_sample_buffer_count
                     self._previous_sample_buffer_count = tmp_buffer_count
+                elif self.stacking == "weighted":
+                    tmp_buffer[:-boundary_samples] = (
+                        self._previous_sample_buffer[boundary_samples:]
+                        + self._current_sample_buffer[:-boundary_samples]
+                    )
+                    tmp_buffer_weight = np.zeros_like(tmp_buffer, dtype=np.float32)
+                    tmp_buffer_weight[:-boundary_samples] = (
+                        self._previous_sample_buffer_weight[boundary_samples:]
+                    )
+                    tmp_buffer_weight += self._current_sample_buffer_weight
+                    self._previous_sample_buffer_weight = tmp_buffer_weight
 
                 finalized_sample = self._previous_sample
                 self._previous_sample_buffer = tmp_buffer
@@ -1015,6 +1083,8 @@ class WriterBuffer:
                     finalized_segment = self._previous_sample_buffer
                     if self.stacking == "avg":
                         finalized_segment_count = self._previous_sample_buffer_count
+                    elif self.stacking == "weighted":
+                        finalized_segment_weight = self._previous_sample_buffer_weight
                 else:
                     finalized_segment = np.concatenate(
                         [finalized_segment, self._previous_sample_buffer], axis=0
@@ -1027,6 +1097,14 @@ class WriterBuffer:
                             ],
                             axis=0,
                         )
+                    elif self.stacking == "weighted":
+                        finalized_segment_weight = np.concatenate(
+                            [
+                                finalized_segment_weight,
+                                self._previous_sample_buffer_weight,
+                            ],
+                            axis=0,
+                        )
 
                 self._previous_sample_buffer = None
                 self._previous_sample_buffer_count = None
@@ -1034,6 +1112,11 @@ class WriterBuffer:
             if finalized_segment is not None:
                 if self.stacking == "avg":
                     finalized_segment = finalized_segment / finalized_segment_count
+                elif self.stacking == "weighted":
+                    # The clipping will downweight values with very low coverage
+                    finalized_segment = finalized_segment / np.clip(
+                        finalized_segment_weight, 1e-8, None
+                    )
                 else:
                     # Copy to avoid passing out pointers to a view of a large array
                     finalized_segment = finalized_segment.copy()
@@ -1083,10 +1166,10 @@ class WriterCallback(DASAnnotateCallback):
     ``data.coords["time"] = data.coords["time"].simplify(tolerance=np.timedelta64(1, "us"))``.
     """
 
-    def __init__(self, output_path: Path | str, stacking: str = "avg"):
+    def __init__(self, output_path: Path | str, stacking: str = "weighted"):
         self.output_path = Path(output_path)
         self.output_path.mkdir(parents=False, exist_ok=True)
-        if stacking not in ["avg", "max"]:
+        if stacking not in ["avg", "max", "weighted"]:
             raise ValueError("Stacking must be either 'avg' or 'max'.")
         self.stacking = stacking
 
@@ -1162,7 +1245,7 @@ class InMemoryCollectionCallback(DASAnnotateCallback):
     patches. To avoid memory overflows, this callback should only be used for small datasets.
     """
 
-    def __init__(self, stacking: str = "avg"):
+    def __init__(self, stacking: str = "weighted"):
         self.annotations = None
         self.stacking = stacking
 
