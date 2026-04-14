@@ -543,7 +543,7 @@ def test_calc_output_shape_and_coordinates(dense_coordinates):
 
 @pytest.mark.parametrize("sample_length_factor", [1, 1.1, 4.5])
 @pytest.mark.parametrize("channel_length_factor", [1, 1.1, 4.5])
-@pytest.mark.parametrize("stacking", ["max", "avg"])
+@pytest.mark.parametrize("stacking", ["max", "avg", "weighted"])
 @pytest.mark.parametrize("overlap", [0.0, 0.5])
 def test_inmemory_collection_callback(
     sample_length_factor, channel_length_factor, stacking, overlap
@@ -581,7 +581,7 @@ def test_inmemory_collection_callback(
     assert np.allclose(da.data, callback.annotations["x"].data)
 
 
-@pytest.mark.parametrize("stacking", ["max", "avg"])
+@pytest.mark.parametrize("stacking", ["max", "avg", "weighted"])
 @pytest.mark.parametrize("overlap", [0.0, 0.5])
 def test_writer_callback(tmp_path, stacking, overlap):
     model = DemoModel()
