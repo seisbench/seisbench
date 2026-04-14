@@ -672,12 +672,15 @@ class DASPickingCallback(DASAnnotateCallback):
     :param thresholds: Confidence thresholds for picking. Can be a single value for all phases,
                        or a dictionary with thresholds per phase.
     :param min_time_separation: Minimum time separation between two picks of the same phase in seconds.
+    :param blinding: Number of samples to ignore at the start and end of each window for picking. Useful to avoid
+                     boundary artifacts in picking.
     """
 
     def __init__(
         self,
         thresholds: float | dict[str, float] = 0.2,
         min_time_separation: float = 1.0,
+        blinding: tuple[int, int] = (100, 100),
     ):
         self._picks: dict[str, list[sbu.DASPick]] = {}
         self._picks_per_channel_idx: dict[tuple[str, int], list[sbu.DASPick]] = (
@@ -685,6 +688,7 @@ class DASPickingCallback(DASAnnotateCallback):
         )
         self.thresholds = thresholds
         self.min_time_separation = min_time_separation
+        self.blinding = blinding
 
         self._thresholds: dict[str, float] = {}
         self._annotate_keys: list[str] = []
@@ -732,7 +736,7 @@ class DASPickingCallback(DASAnnotateCallback):
             for channel_idx in range(ann.shape[1]):
                 if (ann[:, channel_idx] > threshold).any():
                     peaks, peak_properties = scipy.signal.find_peaks(
-                        ann[:, channel_idx],
+                        ann[self.blinding[0] : -self.blinding[1], channel_idx],
                         height=threshold,
                         distance=min_separation_samples,
                     )
@@ -740,7 +744,7 @@ class DASPickingCallback(DASAnnotateCallback):
                         self._picks_per_channel_idx[(key, channel_idx)].append(
                             sbu.DASPick(
                                 time=self._translate_coords(
-                                    out_coords.sample + peak, "time"
+                                    out_coords.sample + self.blinding[0] + peak, "time"
                                 ),
                                 channel=self._translate_coords(
                                     out_coords.channel + channel_idx,
