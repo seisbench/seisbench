@@ -1042,7 +1042,9 @@ class WriterBuffer:
                     finalized_sample = 0
 
                 output = (
-                    finalized_segment,
+                    finalized_segment.astype(
+                        self._dtype
+                    ),  # Type cast required because float32 / uint32 -> float64
                     PatchCoordinate(
                         finalized_sample,
                         0,
