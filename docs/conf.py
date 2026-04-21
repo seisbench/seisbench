@@ -60,7 +60,7 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 add_module_names = False
 
 # Solve optional dependencies
-autodoc_mock_imports = ["xdas", "pyrocko"]
+autodoc_mock_imports = ["xdas", "pyrocko", "seisbench.ext", "seisbench.ext.utils"]
 
 # -- Options for HTML output -------------------------------------------------
 
