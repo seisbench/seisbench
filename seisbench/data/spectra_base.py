@@ -11,7 +11,7 @@ class SpectrumDataset(WaveformDataset):
     """
     This class allows to handle datasets consisting of spectra. It is very similar to the regular WaveformDataset,
     but with small adjustments for spectra. The automatic resampling has been dropped. Instead, the dataset has a
-    ``frequencies`` attribute. The frequencies are read from the hdf5 file at `data/x_axis` and need to be identical
+    ``frequencies`` attribute. The frequencies are read from the hdf5 file at ``data/x_axis`` and need to be identical
     for all samples.
     """
 
@@ -72,7 +72,7 @@ class SpectrumDataset(WaveformDataset):
 
 class SpectrumBenchmarkDataset(AbstractBenchmarkDataset, SpectrumDataset, ABC):
     """
-    This class is the base class for benchmark DAS datasets. For the functionality, see the superclasses.
+    This class is the base class for benchmark spectra datasets. For the functionality, see the superclasses.
     """
 
     _files = ["metadata$CHUNK.csv", "waveforms$CHUNK.hdf5"]
