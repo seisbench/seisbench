@@ -63,7 +63,7 @@ class MLSubDAS(DASBenchmarkDataset):
 
         data_key = "data"
 
-        with DASDataWriter(self.path, chunk, files[0], files[1]) as writer:
+        with DASDataWriter(self.path, chunk, files[0], files[1], strict=False) as writer:
             for _, entry in tqdm(entries.iterrows(), total=len(entries)):
                 csv_path = base_path / entry["folder"] / (entry["file"] + ".csv")
                 if not csv_path.is_file():
@@ -83,8 +83,8 @@ class MLSubDAS(DASBenchmarkDataset):
 
                 data = self._preprocess_data(
                     data
-                )  # --> transposes to (channels, samples)
-                annotations = self._convert_annotations(metadata, data.shape[1])
+                )
+                annotations = self._convert_annotations(metadata, data.shape[1], entry)
 
                 record_metadata = self._get_record_metadata(entry)
 
@@ -107,11 +107,14 @@ class MLSubDAS(DASBenchmarkDataset):
             for file in csv_files:
                 if file in hdf_files:
                     try:
-                        metadata = pd.read_csv(folder / f"{file}.csv")
+                        metadata = pd.read_csv(folder / f"{file}.csv", dtype={"p_wave_index": np.float32, "s_wave_index": np.float32})
                     except FileNotFoundError:
-                        metadata = pd.read_csv(folder / f"{file}.mat.csv")
-                    p_labels = np.sum(~np.isnan(metadata["p_wave_index"]))
-                    s_labels = np.sum(~np.isnan(metadata["s_wave_index"]))
+                        metadata = pd.read_csv(folder / f"{file}.mat.csv", dtype={"p_wave_index": np.float32, "s_wave_index": np.float32})
+                    if "p_wave_index" in metadata.columns:
+                        p_labels = np.sum(~np.isnan(metadata["p_wave_index"]))
+                        s_labels = np.sum(~np.isnan(metadata["s_wave_index"]))
+                    else:
+                        p_labels, s_labels = 0, 0
                 else:
                     p_labels, s_labels = 0, 0
 
@@ -132,13 +135,13 @@ class MLSubDAS(DASBenchmarkDataset):
 
     @staticmethod
     def _convert_annotations(
-        metadata: pd.DataFrame, n_channels: int
+        metadata: pd.DataFrame, n_channels: int, entry: dict[str, Any],
     ) -> dict[str, np.ndarray]:
         # Should output P_0, P_1, ... in case of multiple P waves
         index_column = "Unnamed: 0"
         annotations = {}
         for phase in "PS":
-            if metadata[f"{phase.lower()}_count"] >= MLSubDAS.min_phase_labels:
+            if entry[f"{phase.lower()}_labels"] >= MLSubDAS.min_phase_labels:
                 phase_labels = metadata[
                     ~np.isnan(metadata[f"{phase.lower()}_wave_index"])
                 ]
@@ -186,11 +189,12 @@ class MLSubDAS(DASBenchmarkDataset):
         data = window * (data - np.mean(data, axis=0, keepdims=True))
         data = sosfilt(sos, data, axis=0)
 
-        return data.astype(np.float32).T
+        return data.astype(np.float32)
 
     @staticmethod
     def _get_record_metadata(entry: pd.Series) -> dict[str, Any]:
         # TODO: Figure out the channel spacing for the remaining examples
+        # TODO: Validate channel spacings
         general = {
             "record_identifier": entry["file"],
             "record_sampling_rate_hz": 100.0,
