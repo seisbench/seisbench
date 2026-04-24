@@ -1149,7 +1149,11 @@ class WaveformDataset:
             for trace_name, chunk, trace_sampling_rate, trace_component_order in zip(
                 load_metadata["trace_name"],
                 load_metadata["trace_chunk"],
-                load_metadata["trace_source_sampling_rate_hz"],
+                # Ensures these examples aren't resampled
+                load_metadata.get(
+                    "trace_source_sampling_rate_hz",
+                    [0.0] * len(load_metadata["trace_name"]),
+                ),
                 load_metadata["trace_component_order"],
             )
         ]
