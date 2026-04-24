@@ -88,7 +88,7 @@ class WaveformDataset:
         path: Path | str = None,
         name: str | None = None,
         dimension_order: str | None = None,
-        component_order: str | None = None,
+        component_order: tuple[str] | str | None = None,
         sampling_rate: float | None = None,
         cache: Literal["full", "trace", None] = None,
         chunks: list[str] = None,
@@ -314,7 +314,7 @@ class WaveformDataset:
         return self._component_order
 
     @component_order.setter
-    def component_order(self, value):
+    def component_order(self, value: tuple[str] | str | None):
         if value is None:
             value = seisbench.config["component_order"]
             seisbench.logger.warning(
@@ -668,6 +668,16 @@ class WaveformDataset:
         for key in data_format.keys():
             if isinstance(data_format[key], bytes):
                 data_format[key] = data_format[key].decode()
+            if isinstance(data_format[key], np.ndarray):
+
+                def decode_bytes_if_needed(x):
+                    if isinstance(x, bytes):
+                        return x.decode()
+                    return x
+
+                data_format[key] = tuple(
+                    [decode_bytes_if_needed(x) for x in data_format[key]]
+                )
 
         if "dimension_order" not in data_format:
             seisbench.logger.warning(
@@ -697,9 +707,9 @@ class WaveformDataset:
                         "Using values from metadata."
                     )
             else:
-                self._metadata["trace_component_order"] = self.data_format[
-                    "component_order"
-                ]
+                self._metadata["trace_component_order"] = [
+                    self.data_format["component_order"]
+                ] * len(self._metadata)
         else:
             if "trace_component_order" not in self.metadata.columns:
                 seisbench.logger.warning(
