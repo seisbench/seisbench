@@ -114,7 +114,14 @@ Reference publications for SeisBench:
 
 ---
 
-## Acknowledgement
+## Acknowledgements
 
 The initial version of SeisBench has been developed at [GFZ Potsdam](https://www.gfz-potsdam.de/) and [KIT](https://www.gpi.kit.edu/) with funding from [Helmholtz AI](https://www.helmholtz.ai/).
 The SeisBench repository is hosted by [HIFIS - Helmholtz Federated IT Services](https://www.hifis.net/).
+
+This development of the LFE detection model has been supported by MIAI@Grenoble Alpes (ANR-19-P3IA-0003) and
+the European Union through the Marie Skłodowska-Curie Actions (n°101104996 - DECODE).
+
+The initial DAS model and data interface was supported by the European Commission
+under the Horizon Europe programme, through the project SUBMERSE (https://submerse.eu/)
+(Grant Agreement No. 101095055), funded within the HORIZON-INFRA-2022-TECH-01 call.
