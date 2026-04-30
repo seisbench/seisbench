@@ -63,7 +63,9 @@ class MLSubDAS(DASBenchmarkDataset):
 
         data_key = "data"
 
-        with DASDataWriter(self.path, chunk, files[0], files[1], strict=False) as writer:
+        with DASDataWriter(
+            self.path, chunk, files[0], files[1], strict=False
+        ) as writer:
             for _, entry in tqdm(entries.iterrows(), total=len(entries)):
                 csv_path = base_path / entry["folder"] / (entry["file"] + ".csv")
                 if not csv_path.is_file():
@@ -81,11 +83,10 @@ class MLSubDAS(DASBenchmarkDataset):
                     # Data shape: (samples, channels)
                     data = f[data_key][()]
 
-                data = self._preprocess_data(
-                    data
-                )
+                data = self._preprocess_data(data)
                 annotations = self._convert_annotations(metadata, data.shape[1], entry)
 
+                # TODO: Get event metadata
                 record_metadata = self._get_record_metadata(entry)
 
                 writer.add_record(record_metadata, data, annotations)
@@ -107,9 +108,21 @@ class MLSubDAS(DASBenchmarkDataset):
             for file in csv_files:
                 if file in hdf_files:
                     try:
-                        metadata = pd.read_csv(folder / f"{file}.csv", dtype={"p_wave_index": np.float32, "s_wave_index": np.float32})
+                        metadata = pd.read_csv(
+                            folder / f"{file}.csv",
+                            dtype={
+                                "p_wave_index": np.float32,
+                                "s_wave_index": np.float32,
+                            },
+                        )
                     except FileNotFoundError:
-                        metadata = pd.read_csv(folder / f"{file}.mat.csv", dtype={"p_wave_index": np.float32, "s_wave_index": np.float32})
+                        metadata = pd.read_csv(
+                            folder / f"{file}.mat.csv",
+                            dtype={
+                                "p_wave_index": np.float32,
+                                "s_wave_index": np.float32,
+                            },
+                        )
                     if "p_wave_index" in metadata.columns:
                         p_labels = np.sum(~np.isnan(metadata["p_wave_index"]))
                         s_labels = np.sum(~np.isnan(metadata["s_wave_index"]))
@@ -135,7 +148,9 @@ class MLSubDAS(DASBenchmarkDataset):
 
     @staticmethod
     def _convert_annotations(
-        metadata: pd.DataFrame, n_channels: int, entry: dict[str, Any],
+        metadata: pd.DataFrame,
+        n_channels: int,
+        entry: dict[str, Any],
     ) -> dict[str, np.ndarray]:
         # Should output P_0, P_1, ... in case of multiple P waves
         index_column = "Unnamed: 0"
@@ -193,8 +208,6 @@ class MLSubDAS(DASBenchmarkDataset):
 
     @staticmethod
     def _get_record_metadata(entry: pd.Series) -> dict[str, Any]:
-        # TODO: Figure out the channel spacing for the remaining examples
-        # TODO: Validate channel spacings
         general = {
             "record_identifier": entry["file"],
             "record_sampling_rate_hz": 100.0,
@@ -207,32 +220,39 @@ class MLSubDAS(DASBenchmarkDataset):
         }
         cable = {}
         if entry["folder"] == "das_alaska":
+            # Stated in Xiao et al. (2026)
             cable = {
                 "record_channel_spacing_m": 9.57,
             }
         elif entry["folder"] == "das_chillie":
             if "CCN" in entry["file"] or "SER" in entry["file"]:
+                # Stated in Xiao et al. (2026)
                 cable = {
                     "record_channel_spacing_m": 10.0,
                 }
             else:
+                # Stated in Xiao et al. (2026)
                 cable = {
                     "record_channel_spacing_m": 4.08,
                 }
         elif entry["folder"] == "das_japan":
+            # Stated in Xiao et al. (2026)
             cable = {
                 "record_channel_spacing_m": 10.0,
             }
         elif entry["folder"] == "das_spain":
+            # Stated in Xiao et al. (2026)
             cable = {
                 "record_channel_spacing_m": 10.0,
             }
         elif entry["folder"] == "other_data":
             if "NyAalesund" in entry["file"]:
+                # Stated in Bouffaut et al. (2022)
                 cable = {
                     "record_channel_spacing_m": 4.08,
                 }
             elif "maderia" in entry["file"]:
+                # Stated in Loureiro et al. (2025)
                 cable = {
                     "record_channel_spacing_m": 5.1,
                 }
