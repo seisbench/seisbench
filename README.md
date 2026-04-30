@@ -110,7 +110,7 @@ Reference publications for SeisBench:
 
 * [Which picker fits my data? A quantitative evaluation of deep learning based seismic pickers](https://doi.org/10.1029/2021JB023499)
 
-  _Example of in-depth bencharking study of deep learning-based picking routines using the SeisBench framework._
+  _Example of in-depth benchmarking study of deep learning-based picking routines using the SeisBench framework._
 
 ---
 
