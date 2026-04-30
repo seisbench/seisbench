@@ -52,6 +52,7 @@ be based of community feedback.
    pages/data/overview.rst
    pages/models/overview.rst
    pages/contributing.rst
+   pages/referencing.rst
    pages/documentation/overview.rst
 
 
