@@ -450,28 +450,30 @@ class VirtualTransformedDataArray:
         ) % self.resample_channels[1]
 
         # Load data
+        # np.asarray triggers the actual loading in case of a virtual array
+        # as_array needs to happen before transposing, because transposition on virtual arrays is not defined
         if self.transpose:
-            patch = self.data.data[
-                pad_source_channel : pad_source_channel
-                + source_w_channel
-                + 2 * extra_channels,
-                pad_source_sample : pad_source_sample
-                + source_w_sample
-                + 2 * extra_samples,
-            ].T
+            patch = np.asarray(
+                self.data.data[
+                    pad_source_channel : pad_source_channel
+                    + source_w_channel
+                    + 2 * extra_channels,
+                    pad_source_sample : pad_source_sample
+                    + source_w_sample
+                    + 2 * extra_samples,
+                ]
+            ).T
         else:
-            patch = self.data.data[
-                pad_source_sample : pad_source_sample
-                + source_w_sample
-                + 2 * extra_samples,
-                pad_source_channel : pad_source_channel
-                + source_w_channel
-                + 2 * extra_channels,
-            ]
-
-        patch = np.asarray(
-            patch
-        )  # Triggers the actual loading in case of a virtual array
+            patch = np.asarray(
+                self.data.data[
+                    pad_source_sample : pad_source_sample
+                    + source_w_sample
+                    + 2 * extra_samples,
+                    pad_source_channel : pad_source_channel
+                    + source_w_channel
+                    + 2 * extra_channels,
+                ]
+            )
 
         # Resample samples and truncate padding
         patch = resample_poly(

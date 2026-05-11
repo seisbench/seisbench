@@ -134,7 +134,8 @@ class DemoCallback(sbm.DASAnnotateCallback):
 
 
 @pytest.mark.parametrize("virtual_data", [True, False])
-def test_das_model_annotate(tmp_path, virtual_data):
+@pytest.mark.parametrize("transpose", [True, False])
+def test_das_model_annotate(tmp_path, virtual_data, transpose):
     model = DemoModel()
     callback = DemoCallback()
 
@@ -158,7 +159,14 @@ def test_das_model_annotate(tmp_path, virtual_data):
         }
     )
 
-    da = DataArray(data=data, coords={"time": time_coords, "channel": channel_coords})
+    if transpose:
+        da = DataArray(
+            data=data.T, coords={"channel": channel_coords, "time": time_coords}
+        )
+    else:
+        da = DataArray(
+            data=data, coords={"time": time_coords, "channel": channel_coords}
+        )
 
     # Write in case it's needed for the virtual option
     da.to_netcdf(tmp_path / "data.nc")
