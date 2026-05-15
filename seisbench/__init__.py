@@ -14,6 +14,7 @@ __all__ = [
     "remote_model_root",
     "__version__",
     "config",
+    "logger",
 ]
 
 # global variable: cache_root

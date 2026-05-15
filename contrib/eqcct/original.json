@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "docstring": "EQCCT P-branch — institutional PyTorch checkpoint in SeisBench format (6000 samples, 100 Hz, ZNE, peak norm). Pair with original.pt in ``contrib/eqcct/`` or ``<cache_model_root>/eqcct/`` after export.",
+  "model_args": {
+    "sampling_rate": 100,
+    "norm": "peak",
+    "norm_amp_per_comp": false,
+    "norm_detrend": false
+  },
+  "default_args": {
+    "batch_size": 256,
+    "overlap": 3000,
+    "stacking": "max",
+    "P_threshold": 0.3
+  }
+}
