@@ -1,0 +1,157 @@
+import numpy as np
+import obspy
+import pytest
+import torch
+
+import seisbench.models as sbm
+import seisbench.util as sbu
+
+
+def _stream(components="ZNE", n_samples=3201, sampling_rate=100.0):
+    start = obspy.UTCDateTime(2020, 1, 1)
+    t = np.arange(n_samples) / sampling_rate
+    values = {
+        "Z": np.sin(2 * np.pi * 3 * t),
+        "N": np.cos(2 * np.pi * 4 * t),
+        "E": np.sin(2 * np.pi * 5 * t),
+        "1": np.cos(2 * np.pi * 4 * t),
+        "2": np.sin(2 * np.pi * 5 * t),
+    }
+
+    stream = obspy.Stream()
+    for component in components:
+        stream += obspy.Trace(
+            values[component].astype(np.float64),
+            {
+                "network": "XX",
+                "station": "DKPN",
+                "location": "",
+                "channel": f"BH{component}",
+                "sampling_rate": sampling_rate,
+                "starttime": start,
+            },
+        )
+
+    return stream
+
+
+def test_dkpn_constructor_and_forward():
+    model = sbm.DKPN()
+
+    assert model.labels == "PSN"
+    assert model.sampling_rate == 100
+    assert model.in_samples == 3001
+    assert model.component_order == "ZNEIM"
+
+    x = torch.randn(2, 5, 3001)
+    y = model(x)
+    assert y.shape == (2, 3, 3001)
+    np.testing.assert_allclose(
+        y.sum(dim=1).detach().numpy(), np.ones((2, 3001)), rtol=1e-5
+    )
+
+
+def test_dkpn_preprocessor_creates_feature_stream():
+    model = sbm.DKPN()
+
+    features = model.annotate_stream_pre(_stream(), model.default_args.copy())
+
+    assert len(features) == 5
+    assert [trace.stats.channel for trace in features] == [
+        "CFZ",
+        "CFN",
+        "CFE",
+        "CFI",
+        "CFM",
+    ]
+    assert [trace.id[-1] for trace in features] == list("ZNEIM")
+    assert all(trace.data.dtype == np.float32 for trace in features)
+    assert np.isfinite(np.stack([trace.data for trace in features])).all()
+
+
+def test_dkpn_batch_pre_keeps_incidence_unchanged():
+    model = sbm.DKPN()
+    batch = torch.randn(2, 5, 3001)
+    incidence = batch[:, 3, :].clone()
+
+    normalized = model.annotate_batch_pre(batch, {})
+
+    torch.testing.assert_close(normalized[:, 3, :], incidence)
+
+
+def test_dkpn_annotate_and_classify():
+    model = sbm.DKPN()
+    stream = _stream()
+
+    annotations = model.annotate(stream)
+    assert len(annotations) == 3
+    assert {trace.stats.channel for trace in annotations} == {
+        "DKPN_P",
+        "DKPN_S",
+        "DKPN_N",
+    }
+
+    output = model.classify(stream)
+    assert isinstance(output, sbu.ClassifyOutput)
+    assert isinstance(output.picks, sbu.PickList)
+    assert output.creator == model.name
+
+
+def test_dkpn_save_load(tmp_path):
+    model_orig = sbm.DKPN()
+    stream = _stream()
+
+    model_orig.save(tmp_path / "dkpn")
+    model_load = sbm.DKPN.load(tmp_path / "dkpn")
+
+    assert model_load.get_model_args() == model_orig.get_model_args()
+
+    pred_orig = model_orig.annotate(stream)
+    pred_load = model_load.annotate(stream)
+
+    assert len(pred_orig) == len(pred_load)
+    for trace_orig, trace_load in zip(pred_orig, pred_load):
+        assert trace_orig.id == trace_load.id
+        np.testing.assert_allclose(trace_orig.data, trace_load.data)
+
+
+def test_dkpn_accepts_flexible_horizontal_components():
+    model = sbm.DKPN()
+
+    features = model.annotate_stream_pre(
+        _stream("Z12"), {**model.default_args, "flexible_horizontal_components": True}
+    )
+
+    assert [trace.stats.channel for trace in features] == [
+        "CFZ",
+        "CFN",
+        "CFE",
+        "CFI",
+        "CFM",
+    ]
+
+
+def test_dkpn_skips_incomplete_component_groups(caplog):
+    model = sbm.DKPN()
+
+    with caplog.at_level("WARNING"):
+        features = model.annotate_stream_pre(_stream("ZN"), model.default_args.copy())
+
+    assert len(features) == 0
+    assert "complete 3-component" in caplog.text
+
+
+@pytest.mark.parametrize("pre, post", [(100, 0), (0, 100), (100, 100)])
+def test_dkpn_annotate_batch_post_blinding(pre, post):
+    model = sbm.DKPN()
+    pred = torch.ones((2, 3, 1000))
+
+    blinded = model.annotate_batch_post(
+        pred, None, argdict={"blinding": (pre, post)}
+    ).numpy()
+
+    if pre:
+        assert np.isnan(blinded[:, :pre]).all()
+    if post:
+        assert np.isnan(blinded[:, -post:]).all()
+    assert np.isfinite(blinded[:, pre : 1000 - post]).all()

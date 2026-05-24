@@ -17,6 +17,14 @@ CRED
     :undoc-members:
     :show-inheritance:
 
+DKPN
+-----------------------------------
+
+.. automodule:: seisbench.models.dkpn
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 DeepDenoiser
 -----------------------------------
 
