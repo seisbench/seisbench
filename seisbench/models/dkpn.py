@@ -5,19 +5,17 @@ from typing import Any
 import numpy as np
 import obspy
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from obspy.core import Trace
 from obspy.signal.filter import bandpass
 from scipy.signal import lfilter
 
 import seisbench
-import seisbench.util as sbu
 
-from .base import GroupingHelper, WaveformModel
+from .base import GroupingHelper
+from .phasenet import PhaseNet
 
 
-class DKPN(WaveformModel):
+class DKPN(PhaseNet):
     """
     Domain-Knowledge PhaseNet.
 
@@ -52,13 +50,7 @@ class DKPN(WaveformModel):
         "blinding": (250, 250),
     }
 
-    _annotate_args = WaveformModel._annotate_args.copy()
-    _annotate_args["*_threshold"] = ("Detection threshold for the provided phase", 0.3)
-    _annotate_args["blinding"] = (
-        "Number of prediction samples to discard on each side of each window prediction",
-        (0, 0),
-    )
-    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 1500)
+    _annotate_args = PhaseNet._annotate_args.copy()
     _annotate_args["fp_stabilization"] = (
         "Length of the initial stabilization interval used during DKPN training",
         4,
@@ -122,113 +114,15 @@ class DKPN(WaveformModel):
             default_args = {**self._dkpn_defaults, **default_args}
 
         super().__init__(
-            citation=citation,
-            component_order=component_order,
-            in_samples=3001,
-            output_type="array",
-            pred_sample=(0, 3001),
-            labels=phases,
+            in_channels=in_channels,
+            classes=classes,
+            phases=phases,
             sampling_rate=sampling_rate,
+            component_order=component_order,
             default_args=default_args,
             **kwargs,
         )
-
-        self.in_channels = in_channels
-        self.classes = classes
-        self.depth = 5
-        self.kernel_size = 7
-        self.stride = 4
-        self.filters_root = 8
-        self.activation = torch.relu
-
-        self.inc = nn.Conv1d(
-            self.in_channels, self.filters_root, self.kernel_size, padding="same"
-        )
-        self.in_bn = nn.BatchNorm1d(self.filters_root, eps=1e-3)
-
-        self.down_branch = nn.ModuleList()
-        self.up_branch = nn.ModuleList()
-
-        last_filters = self.filters_root
-        for i in range(self.depth):
-            filters = int(2**i * self.filters_root)
-            conv_same = nn.Conv1d(
-                last_filters, filters, self.kernel_size, padding="same", bias=False
-            )
-            last_filters = filters
-            bn1 = nn.BatchNorm1d(filters, eps=1e-3)
-            if i == self.depth - 1:
-                conv_down = None
-                bn2 = None
-            else:
-                if i in [1, 2, 3]:
-                    padding = 0
-                else:
-                    padding = self.kernel_size // 2
-                conv_down = nn.Conv1d(
-                    filters,
-                    filters,
-                    self.kernel_size,
-                    self.stride,
-                    padding=padding,
-                    bias=False,
-                )
-                bn2 = nn.BatchNorm1d(filters, eps=1e-3)
-
-            self.down_branch.append(nn.ModuleList([conv_same, bn1, conv_down, bn2]))
-
-        for i in range(self.depth - 1):
-            filters = int(2 ** (3 - i) * self.filters_root)
-            conv_up = nn.ConvTranspose1d(
-                last_filters, filters, self.kernel_size, self.stride, bias=False
-            )
-            last_filters = filters
-            bn1 = nn.BatchNorm1d(filters, eps=1e-3)
-            conv_same = nn.Conv1d(
-                2 * filters, filters, self.kernel_size, padding="same", bias=False
-            )
-            bn2 = nn.BatchNorm1d(filters, eps=1e-3)
-
-            self.up_branch.append(nn.ModuleList([conv_up, bn1, conv_same, bn2]))
-
-        self.out = nn.Conv1d(last_filters, self.classes, 1, padding="same")
-        self.softmax = torch.nn.Softmax(dim=1)
-
-    def forward(self, x, logits=False):
-        x = self.activation(self.in_bn(self.inc(x)))
-
-        skips = []
-        for i, (conv_same, bn1, conv_down, bn2) in enumerate(self.down_branch):
-            x = self.activation(bn1(conv_same(x)))
-
-            if conv_down is not None:
-                skips.append(x)
-                if i == 1:
-                    x = F.pad(x, (2, 3), "constant", 0)
-                elif i == 2:
-                    x = F.pad(x, (1, 3), "constant", 0)
-                elif i == 3:
-                    x = F.pad(x, (2, 3), "constant", 0)
-
-                x = self.activation(bn2(conv_down(x)))
-
-        for (conv_up, bn1, conv_same, bn2), skip in zip(self.up_branch, skips[::-1]):
-            x = self.activation(bn1(conv_up(x)))
-            x = x[:, :, 1:-2]
-
-            x = self._merge_skip(skip, x)
-            x = self.activation(bn2(conv_same(x)))
-
-        x = self.out(x)
-        if logits:
-            return x
-        return self.softmax(x)
-
-    @staticmethod
-    def _merge_skip(skip, x):
-        offset = (x.shape[-1] - skip.shape[-1]) // 2
-        x_resize = x[:, :, offset : offset + skip.shape[-1]]
-        return torch.cat([skip, x_resize], dim=1)
+        self._citation = citation
 
     def annotate_stream_pre(self, stream, argdict):
         super().annotate_stream_pre(stream, argdict)
@@ -348,38 +242,6 @@ class DKPN(WaveformModel):
 
         return batch
 
-    def annotate_batch_post(
-        self, batch: torch.Tensor, piggyback: Any, argdict: dict[str, Any]
-    ) -> torch.Tensor:
-        batch = torch.transpose(batch, -1, -2)
-        prenan, postnan = argdict.get(
-            "blinding", self._annotate_args.get("blinding")[1]
-        )
-        if prenan > 0:
-            batch[:, :prenan] = np.nan
-        if postnan > 0:
-            batch[:, -postnan:] = np.nan
-        return batch
-
-    def classify_aggregate(self, annotations, argdict) -> sbu.ClassifyOutput:
-        picks = sbu.PickList()
-        if self.labels is None:
-            return sbu.ClassifyOutput(self.name, picks=picks)
-
-        for phase in self.labels:
-            if phase == "N":
-                continue
-
-            picks += self.picks_from_annotations(
-                annotations.select(channel=f"{self.__class__.__name__}_{phase}"),
-                argdict.get(
-                    f"{phase}_threshold", self._annotate_args.get("*_threshold")[1]
-                ),
-                phase,
-            )
-
-        return sbu.ClassifyOutput(self.name, picks=sbu.PickList(sorted(picks)))
-
     def get_model_args(self):
         model_args = super().get_model_args()
         for key in [
@@ -392,6 +254,10 @@ class DKPN(WaveformModel):
             "filter_args",
             "filter_kwargs",
             "grouping",
+            "norm",
+            "norm_amp_per_comp",
+            "norm_detrend",
+            "filter_factor",
         ]:
             if key in model_args:
                 del model_args[key]
