@@ -22,6 +22,10 @@ class DKPN(PhaseNet):
     DKPN uses the PhaseNet U-Net architecture on a five-channel feature
     representation derived from raw three-component waveforms. The features are
     three frequency-band characteristic functions, incidence, and modulus.
+    ``annotate`` and ``classify`` accept raw three-component ObsPy streams and
+    compute these features internally. Direct calls to ``forward`` expect
+    precomputed five-channel DKPN features; generator training pipelines should
+    use :py:class:`seisbench.generate.DKPNPreprocessor`.
 
     The DKPN reference implementation was released under the MIT license by
     Matteo Bagagli, Anthony Lomax, Sonja Gaviano, and the SOME project.
@@ -235,13 +239,20 @@ class DKPN(PhaseNet):
     def annotate_batch_pre(
         self, batch: torch.Tensor, argdict: dict[str, Any]
     ) -> torch.Tensor:
-        if batch.shape[1] >= 3:
-            std = batch[:, 0:3, :].std(axis=-1, keepdims=True)
-            batch[:, 0:3, :] = batch[:, 0:3, :] / (std + 1e-10)
+        if batch.ndim != 3 or batch.shape[1] != self.in_channels:
+            raise ValueError(
+                "DKPN expects five precomputed feature channels with component "
+                "order 'ZNEIM'. Use model.annotate(stream) or "
+                "model.classify(stream) for raw ObsPy streams, and use "
+                "seisbench.generate.DKPNPreprocessor in training generators "
+                "before calling annotate_batch_pre()."
+            )
 
-        if batch.shape[1] >= 5:
-            std = batch[:, 4:5, :].std(axis=-1, keepdims=True)
-            batch[:, 4:5, :] = batch[:, 4:5, :] / (std + 1e-10)
+        std = batch[:, 0:3, :].std(axis=-1, keepdims=True)
+        batch[:, 0:3, :] = batch[:, 0:3, :] / (std + 1e-10)
+
+        std = batch[:, 4:5, :].std(axis=-1, keepdims=True)
+        batch[:, 4:5, :] = batch[:, 4:5, :] / (std + 1e-10)
 
         return batch
 

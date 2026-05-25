@@ -6,6 +6,173 @@ import scipy.signal
 import seisbench.data.base
 
 
+class DKPNPreprocessor:
+    """
+    Converts raw three-component waveforms into DKPN feature channels.
+
+    The augmentation maps a raw waveform matrix with three components to the
+    five DKPN feature channels ``ZNEIM``: three characteristic functions,
+    incidence, and modulus. It does not apply DKPN's final batch/window
+    normalization; use :py:meth:`seisbench.models.dkpn.DKPN.annotate_batch_pre`
+    for that step.
+
+    :param output_samples: If provided, crop the feature matrix to this length
+                           after removing the DKPN stabilization interval.
+    :type output_samples: int, None
+    :param component_order: Component order of the input. If ``None``, read from
+                            ``trace_component_order`` metadata and fall back to
+                            ``ZNE``.
+    :type component_order: str, None
+    :param flexible_horizontal_components: If true, accepts ``Z12`` as ``ZNE``.
+    :type flexible_horizontal_components: bool
+    :param key: The keys for reading from and writing to the state dict.
+                If key is a single string, the corresponding entry in state dict
+                is modified. Otherwise, a 2-tuple is expected.
+    :type key: str, tuple[str, str]
+    :param kwargs: DKPN characteristic-function parameters.
+    """
+
+    def __init__(
+        self,
+        output_samples=None,
+        component_order=None,
+        flexible_horizontal_components=True,
+        key="X",
+        **kwargs,
+    ):
+        from seisbench.models.dkpn import _DKPNFeatureExtractor
+
+        unknown = set(kwargs) - set(_DKPNFeatureExtractor.default_args)
+        if unknown:
+            raise ValueError(f"Unknown DKPN preprocessing arguments: {sorted(unknown)}")
+
+        if isinstance(key, str):
+            self.key = (key, key)
+        else:
+            self.key = key
+
+        self.output_samples = output_samples
+        self.component_order = component_order
+        self.flexible_horizontal_components = flexible_horizontal_components
+        self.feature_kwargs = {
+            **_DKPNFeatureExtractor.default_args,
+            **kwargs,
+        }
+
+    def __call__(self, state_dict):
+        x, metadata = state_dict[self.key[0]]
+        metadata = copy.deepcopy(metadata)
+
+        sampling_rate = self._sampling_rate(metadata)
+        component_order = self._component_order(x, metadata)
+        waveforms = self._ordered_waveforms(x, component_order)
+
+        from seisbench.models.dkpn import _DKPNFeatureExtractor
+
+        extractor = _DKPNFeatureExtractor(**self.feature_kwargs)
+        features = extractor.matrix_cfs(waveforms, sampling_rate=sampling_rate)
+
+        if self.output_samples is not None:
+            crop_start = int(
+                round(self.feature_kwargs["fp_stabilization"] * sampling_rate)
+            )
+            crop_end = crop_start + self.output_samples
+            if features.shape[-1] < crop_end:
+                raise ValueError(
+                    "DKPNPreprocessor received too few samples for the requested "
+                    f"output length. Need at least {crop_end}, got "
+                    f"{features.shape[-1]}."
+                )
+            features = features[:, crop_start:crop_end]
+            self._shift_sample_metadata(metadata, crop_start)
+
+        metadata["trace_component_order"] = "ZNEIM"
+        state_dict[self.key[1]] = (features, metadata)
+
+    @staticmethod
+    def _sampling_rate(metadata):
+        sampling_rate = metadata["trace_sampling_rate_hz"]
+        if isinstance(sampling_rate, (list, tuple, np.ndarray)):
+            if not np.allclose(sampling_rate, sampling_rate[0]):
+                raise ValueError("DKPNPreprocessor requires one sampling rate.")
+            sampling_rate = sampling_rate[0]
+        return float(sampling_rate)
+
+    def _component_order(self, x, metadata):
+        component_order = self.component_order
+        if component_order is None:
+            component_order = metadata.get("trace_component_order", "ZNE")
+
+        if not isinstance(component_order, str):
+            component_order = "".join(component_order)
+
+        if x.ndim != 2:
+            raise ValueError(
+                "DKPNPreprocessor expects a 2D waveform array with shape "
+                "(components, samples)."
+            )
+
+        if x.shape[0] != len(component_order):
+            if x.shape[-1] == len(component_order):
+                x = x.T
+            else:
+                raise ValueError(
+                    "DKPNPreprocessor input shape does not match "
+                    f"component_order='{component_order}'."
+                )
+
+        return component_order
+
+    def _ordered_waveforms(self, x, component_order):
+        if x.shape[0] != len(component_order):
+            x = x.T
+
+        from seisbench.models.dkpn import DKPN
+
+        raw_comp_dict = DKPN._raw_component_dict(self.flexible_horizontal_components)
+        out = np.zeros((3, x.shape[-1]), dtype=np.float64)
+        seen = set()
+
+        for input_idx, component in enumerate(component_order):
+            if component not in raw_comp_dict:
+                continue
+
+            output_idx = raw_comp_dict[component]
+            if output_idx in seen:
+                raise ValueError(
+                    "DKPNPreprocessor received multiple components mapping to "
+                    f"'{DKPN._raw_component_order[output_idx]}'."
+                )
+
+            out[output_idx] = x[input_idx]
+            seen.add(output_idx)
+
+        missing = [
+            DKPN._raw_component_order[idx] for idx in range(3) if idx not in seen
+        ]
+        if missing:
+            raise ValueError(
+                "DKPNPreprocessor requires complete ZNE input components. "
+                f"Missing: {missing}."
+            )
+
+        return out
+
+    @staticmethod
+    def _shift_sample_metadata(metadata, shift):
+        for key in metadata.keys():
+            if key.endswith("_sample"):
+                try:
+                    metadata[key] = metadata[key] - shift
+                except TypeError:
+                    pass
+
+    def __str__(self):
+        return (
+            f"DKPNPreprocessor (output_samples={self.output_samples}, key={self.key})"
+        )
+
+
 class Normalize:
     """
     A normalization augmentation that allows demeaning, detrending and amplitude normalization (in this order).

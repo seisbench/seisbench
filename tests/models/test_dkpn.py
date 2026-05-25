@@ -4,13 +4,15 @@ import numpy as np
 import obspy
 import pytest
 import torch
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
 
+import seisbench.generate as sbg
 import seisbench.models as sbm
 import seisbench.util as sbu
 
 
-def _stream(components="ZNE", n_samples=3201, sampling_rate=100.0):
-    start = obspy.UTCDateTime(2020, 1, 1)
+def _waveforms(components="ZNE", n_samples=3401, sampling_rate=100.0):
     t = np.arange(n_samples) / sampling_rate
     values = {
         "Z": np.sin(2 * np.pi * 3 * t),
@@ -19,11 +21,17 @@ def _stream(components="ZNE", n_samples=3201, sampling_rate=100.0):
         "1": np.cos(2 * np.pi * 4 * t),
         "2": np.sin(2 * np.pi * 5 * t),
     }
+    return np.stack([values[component] for component in components]).astype(np.float64)
+
+
+def _stream(components="ZNE", n_samples=3201, sampling_rate=100.0):
+    start = obspy.UTCDateTime(2020, 1, 1)
+    waveforms = _waveforms(components, n_samples, sampling_rate)
 
     stream = obspy.Stream()
-    for component in components:
+    for idx, component in enumerate(components):
         stream += obspy.Trace(
-            values[component].astype(np.float64),
+            waveforms[idx],
             {
                 "network": "XX",
                 "station": "DKPN",
@@ -35,6 +43,23 @@ def _stream(components="ZNE", n_samples=3201, sampling_rate=100.0):
         )
 
     return stream
+
+
+class _WaveformDataset:
+    def __init__(self, n_examples=2):
+        self.n_examples = n_examples
+
+    def __len__(self):
+        return self.n_examples
+
+    def get_sample(self, idx):
+        metadata = {
+            "trace_component_order": "ZNE",
+            "trace_sampling_rate_hz": 100.0,
+            "trace_p_arrival_sample": 900 + idx,
+            "trace_s_arrival_sample": 1400 + idx,
+        }
+        return _waveforms(n_samples=3401), metadata
 
 
 def test_dkpn_constructor_and_forward():
@@ -124,6 +149,129 @@ def test_dkpn_batch_pre_keeps_incidence_unchanged():
     normalized = model.annotate_batch_pre(batch, {})
 
     torch.testing.assert_close(normalized[:, 3, :], incidence)
+
+
+def test_dkpn_batch_pre_rejects_raw_three_component_batches():
+    model = sbm.DKPN()
+    batch = torch.randn(2, 3, 3001)
+
+    with pytest.raises(ValueError, match="DKPNPreprocessor"):
+        model.annotate_batch_pre(batch, {})
+
+
+def test_dkpn_generator_preprocessor_creates_feature_tensor_and_shifts_metadata():
+    state_dict = {
+        "X": (
+            _waveforms(n_samples=3401),
+            {
+                "trace_component_order": "ZNE",
+                "trace_sampling_rate_hz": 100.0,
+                "trace_p_arrival_sample": 900,
+                "trace_s_arrival_sample": 1400,
+            },
+        )
+    }
+
+    sbg.DKPNPreprocessor(output_samples=3001)(state_dict)
+
+    features, metadata = state_dict["X"]
+    assert features.shape == (5, 3001)
+    assert features.dtype == np.float32
+    assert np.isfinite(features).all()
+    assert metadata["trace_component_order"] == "ZNEIM"
+    assert metadata["trace_p_arrival_sample"] == 500
+    assert metadata["trace_s_arrival_sample"] == 1000
+
+
+def test_dkpn_generator_preprocessor_accepts_flexible_horizontal_components():
+    state_dict = {
+        "X": (
+            _waveforms("Z12"),
+            {
+                "trace_component_order": "Z12",
+                "trace_sampling_rate_hz": 100.0,
+            },
+        )
+    }
+
+    sbg.DKPNPreprocessor()(state_dict)
+
+    features, metadata = state_dict["X"]
+    assert features.shape == (5, 3401)
+    assert metadata["trace_component_order"] == "ZNEIM"
+
+
+def test_dkpn_generator_preprocessor_rejects_incomplete_components():
+    state_dict = {
+        "X": (
+            _waveforms("ZN"),
+            {
+                "trace_component_order": "ZN",
+                "trace_sampling_rate_hz": 100.0,
+            },
+        )
+    }
+
+    with pytest.raises(ValueError, match="complete ZNE"):
+        sbg.DKPNPreprocessor()(state_dict)
+
+
+def test_dkpn_stream_and_generator_preprocessors_match():
+    model = sbm.DKPN()
+    stream = _stream(n_samples=3401)
+    feature_stream = model.annotate_stream_pre(stream.copy(), model.default_args.copy())
+
+    state_dict = {
+        "X": (
+            _waveforms(n_samples=3401),
+            {
+                "trace_component_order": "ZNE",
+                "trace_sampling_rate_hz": 100.0,
+            },
+        )
+    }
+    sbg.DKPNPreprocessor()(state_dict)
+    features, _ = state_dict["X"]
+
+    stream_features = np.stack([trace.data for trace in feature_stream])
+    np.testing.assert_allclose(features, stream_features, rtol=1e-5, atol=1e-6)
+
+
+def test_dkpn_generator_training_batch_and_backward_step():
+    model = sbm.DKPN()
+    generator = sbg.GenericGenerator(_WaveformDataset())
+    generator.add_augmentations(
+        [
+            sbg.DKPNPreprocessor(output_samples=model.in_samples),
+            sbg.ProbabilisticLabeller(
+                label_columns={
+                    "trace_p_arrival_sample": "P",
+                    "trace_s_arrival_sample": "S",
+                },
+                model_labels=model.labels,
+                sigma=10,
+                dim=0,
+            ),
+            sbg.ChangeDtype(np.float32, key="X"),
+            sbg.ChangeDtype(np.float32, key="y"),
+        ]
+    )
+    loader = DataLoader(generator, batch_size=2)
+    batch = next(iter(loader))
+
+    assert batch["X"].shape == (2, 5, 3001)
+    assert batch["y"].shape == (2, 3, 3001)
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    x = model.annotate_batch_pre(batch["X"].clone(), model.default_args.copy())
+    probabilities = model(x).clamp_min(1e-7)
+    loss = F.nll_loss(probabilities.log(), batch["y"].argmax(dim=1))
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    assert torch.isfinite(loss)
 
 
 def test_dkpn_annotate_and_classify():
