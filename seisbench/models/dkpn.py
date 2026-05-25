@@ -19,16 +19,19 @@ class DKPN(PhaseNet):
     """
     Domain-Knowledge PhaseNet.
 
-    DKPN uses the PhaseNet U-Net architecture on a five-channel feature
-    representation derived from raw three-component waveforms. The features are
-    three frequency-band characteristic functions, incidence, and modulus.
-    ``annotate`` and ``classify`` accept raw three-component ObsPy streams and
-    compute these features internally. Direct calls to ``forward`` expect
-    precomputed five-channel DKPN features; generator training pipelines should
-    use :py:class:`seisbench.generate.DKPNPreprocessor`.
+    DKPN uses the PhaseNet U-Net architecture on a five-channel
+    feature representation derived from raw three-component waveforms.
+    The features are three frequency-band characteristic functions,
+    incidence, and modulus.
+    ``annotate`` and ``classify`` accept raw three-component ObsPy
+    streams and compute these features internally. Direct calls to
+    ``forward`` expect precomputed five-channel DKPN features;
+    generator training pipelines should use
+    :py:class:`seisbench.generate.DKPNPreProcessor`.
 
-    The DKPN reference implementation was released under the MIT license by
-    Matteo Bagagli, Anthony Lomax, Sonja Gaviano, and the SOME project.
+    The DKPN reference implementation was released under the MIT
+    license by Matteo Bagagli, Anthony Lomax, Sonja Gaviano, and the
+    SOME project.
 
     .. document_args:: seisbench.models DKPN
     """
@@ -60,24 +63,30 @@ class DKPN(PhaseNet):
         4,
     )
     _annotate_args["t_long"] = (
-        "Long-window length in seconds for DKPN frequency-band characteristic functions",
+        "Long-window length in seconds for DKPN frequency-band "
+        "characteristic functions",
         4,
     )
     _annotate_args["freqmin"] = (
         "Minimum frequency for DKPN octave-band characteristic functions",
         0.5,
     )
-    _annotate_args["corner"] = ("Number of corners for the DKPN bandpass filters", 1)
+    _annotate_args["corner"] = (
+        "Number of corners for the DKPN bandpass filters",
+        1,
+    )
     _annotate_args["perc_taper"] = (
         "Reference DKPN taper parameter, retained for metadata compatibility",
         0.1,
     )
     _annotate_args["mode"] = (
-        "Statistic used for DKPN characteristic functions; currently only 'rms' is supported",
+        "Statistic used for DKPN characteristic functions; currently "
+        "only 'rms' is supported",
         "rms",
     )
     _annotate_args["clip"] = (
-        "Upper clipping value for DKPN characteristic functions; values <= 0 disable clipping",
+        "Upper clipping value for DKPN characteristic functions; "
+        "values <= 0 disable clipping",
         -999,
     )
     _annotate_args["log"] = (
@@ -140,7 +149,8 @@ class DKPN(PhaseNet):
         features = self._extract_feature_stream(stream, argdict)
         if len(features) == 0:
             seisbench.logger.warning(
-                "DKPN preprocessing did not find any complete 3-component waveform groups."
+                "DKPN preprocessing did not find any complete "
+                "3-component waveform groups."
             )
 
         stream.traces = features.traces
@@ -244,7 +254,7 @@ class DKPN(PhaseNet):
                 "DKPN expects five precomputed feature channels with component "
                 "order 'ZNEIM'. Use model.annotate(stream) or "
                 "model.classify(stream) for raw ObsPy streams, and use "
-                "seisbench.generate.DKPNPreprocessor in training generators "
+                "seisbench.generate.DKPNPreProcessor in training generators "
                 "before calling annotate_batch_pre()."
             )
 

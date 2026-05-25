@@ -155,7 +155,7 @@ def test_dkpn_batch_pre_rejects_raw_three_component_batches():
     model = sbm.DKPN()
     batch = torch.randn(2, 3, 3001)
 
-    with pytest.raises(ValueError, match="DKPNPreprocessor"):
+    with pytest.raises(ValueError, match="DKPNPreProcessor"):
         model.annotate_batch_pre(batch, {})
 
 
@@ -172,7 +172,7 @@ def test_dkpn_generator_preprocessor_creates_feature_tensor_and_shifts_metadata(
         )
     }
 
-    sbg.DKPNPreprocessor(output_samples=3001)(state_dict)
+    sbg.DKPNPreProcessor(output_samples=3001)(state_dict)
 
     features, metadata = state_dict["X"]
     assert features.shape == (5, 3001)
@@ -194,7 +194,7 @@ def test_dkpn_generator_preprocessor_accepts_flexible_horizontal_components():
         )
     }
 
-    sbg.DKPNPreprocessor()(state_dict)
+    sbg.DKPNPreProcessor()(state_dict)
 
     features, metadata = state_dict["X"]
     assert features.shape == (5, 3401)
@@ -213,7 +213,7 @@ def test_dkpn_generator_preprocessor_rejects_incomplete_components():
     }
 
     with pytest.raises(ValueError, match="complete ZNE"):
-        sbg.DKPNPreprocessor()(state_dict)
+        sbg.DKPNPreProcessor()(state_dict)
 
 
 def test_dkpn_stream_and_generator_preprocessors_match():
@@ -230,7 +230,7 @@ def test_dkpn_stream_and_generator_preprocessors_match():
             },
         )
     }
-    sbg.DKPNPreprocessor()(state_dict)
+    sbg.DKPNPreProcessor()(state_dict)
     features, _ = state_dict["X"]
 
     stream_features = np.stack([trace.data for trace in feature_stream])
@@ -242,7 +242,7 @@ def test_dkpn_generator_training_batch_and_backward_step():
     generator = sbg.GenericGenerator(_WaveformDataset())
     generator.add_augmentations(
         [
-            sbg.DKPNPreprocessor(output_samples=model.in_samples),
+            sbg.DKPNPreProcessor(output_samples=model.in_samples),
             sbg.ProbabilisticLabeller(
                 label_columns={
                     "trace_p_arrival_sample": "P",

@@ -6,7 +6,7 @@ import scipy.signal
 import seisbench.data.base
 
 
-class DKPNPreprocessor:
+class DKPNPreProcessor:
     """
     Converts raw three-component waveforms into DKPN feature channels.
 
@@ -79,7 +79,7 @@ class DKPNPreprocessor:
             crop_end = crop_start + self.output_samples
             if features.shape[-1] < crop_end:
                 raise ValueError(
-                    "DKPNPreprocessor received too few samples for the requested "
+                    "DKPNPreProcessor received too few samples for the requested "
                     f"output length. Need at least {crop_end}, got "
                     f"{features.shape[-1]}."
                 )
@@ -94,7 +94,7 @@ class DKPNPreprocessor:
         sampling_rate = metadata["trace_sampling_rate_hz"]
         if isinstance(sampling_rate, (list, tuple, np.ndarray)):
             if not np.allclose(sampling_rate, sampling_rate[0]):
-                raise ValueError("DKPNPreprocessor requires one sampling rate.")
+                raise ValueError("DKPNPreProcessor requires one sampling rate.")
             sampling_rate = sampling_rate[0]
         return float(sampling_rate)
 
@@ -108,7 +108,7 @@ class DKPNPreprocessor:
 
         if x.ndim != 2:
             raise ValueError(
-                "DKPNPreprocessor expects a 2D waveform array with shape "
+                "DKPNPreProcessor expects a 2D waveform array with shape "
                 "(components, samples)."
             )
 
@@ -117,7 +117,7 @@ class DKPNPreprocessor:
                 x = x.T
             else:
                 raise ValueError(
-                    "DKPNPreprocessor input shape does not match "
+                    "DKPNPreProcessor input shape does not match "
                     f"component_order='{component_order}'."
                 )
 
@@ -140,7 +140,7 @@ class DKPNPreprocessor:
             output_idx = raw_comp_dict[component]
             if output_idx in seen:
                 raise ValueError(
-                    "DKPNPreprocessor received multiple components mapping to "
+                    "DKPNPreProcessor received multiple components mapping to "
                     f"'{DKPN._raw_component_order[output_idx]}'."
                 )
 
@@ -152,7 +152,7 @@ class DKPNPreprocessor:
         ]
         if missing:
             raise ValueError(
-                "DKPNPreprocessor requires complete ZNE input components. "
+                "DKPNPreProcessor requires complete ZNE input components. "
                 f"Missing: {missing}."
             )
 
@@ -169,7 +169,7 @@ class DKPNPreprocessor:
 
     def __str__(self):
         return (
-            f"DKPNPreprocessor (output_samples={self.output_samples}, key={self.key})"
+            f"DKPNPreProcessor (output_samples={self.output_samples}, key={self.key})"
         )
 
 
