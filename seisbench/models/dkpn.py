@@ -104,8 +104,11 @@ class DKPN(PhaseNet):
         **kwargs,
     ):
         citation = (
-            "Lomax et al. (2023). "
-            "Domain-Knowledge PhaseNet (DKPN): a deep-neural-network-based on domain-knowledge."
+            "A. Lomax, M. Bagagli, S. Gaviano, S. Cianetti, D. Jozinović, "
+            "A. Michelini, C. Zerafa, C. Giunchi (2024). Effects on a "
+            "deep-learning, seismic arrival-time picker of domain-knowledge "
+            "based preprocessing of input seismograms. Seismica, 3(1). "
+            "doi:10.26443/seismica.v3i1.1164"
         )
 
         if default_args is None:

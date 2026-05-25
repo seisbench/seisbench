@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import numpy as np
 import obspy
 import pytest
@@ -38,6 +40,7 @@ def _stream(components="ZNE", n_samples=3201, sampling_rate=100.0):
 def test_dkpn_constructor_and_forward():
     model = sbm.DKPN()
 
+    assert isinstance(model, sbm.PhaseNet)
     assert model.labels == "PSN"
     assert model.sampling_rate == 100
     assert model.in_samples == 3001
@@ -49,6 +52,50 @@ def test_dkpn_constructor_and_forward():
     np.testing.assert_allclose(
         y.sum(dim=1).detach().numpy(), np.ones((2, 3001)), rtol=1e-5
     )
+
+
+def test_dkpn_from_pretrained_uses_seisbench_cache(tmp_path):
+    model_orig = sbm.DKPN()
+    model_orig.save(tmp_path / "test", version_str="1")
+
+    checkpoint = torch.load(tmp_path / "test.pt.v1", map_location="cpu")
+    assert list(checkpoint.keys()) == list(model_orig.state_dict().keys())
+
+    with patch("seisbench.models.DKPN._model_path") as model_path:
+        model_path.return_value = tmp_path
+        assert sbm.DKPN.list_pretrained(remote=False) == ["test"]
+        assert sbm.DKPN.list_versions("test", remote=False) == ["1"]
+        model = sbm.DKPN.from_pretrained(
+            "test", version_str="1", update=False, wait_for_file=True
+        )
+
+    assert isinstance(model, sbm.DKPN)
+    assert isinstance(model, sbm.PhaseNet)
+    assert model.get_model_args() == model_orig.get_model_args()
+    assert model.labels == "PSN"
+    assert model.component_order == "ZNEIM"
+    assert model.in_channels == 5
+    assert model.classes == 3
+    assert model.sampling_rate == 100
+
+    for key in [
+        "P_threshold",
+        "S_threshold",
+        "blinding",
+        "t_long",
+        "freqmin",
+        "corner",
+        "mode",
+    ]:
+        assert key in model.default_args
+
+    for name, parameter in model_orig.state_dict().items():
+        torch.testing.assert_close(model.state_dict()[name], parameter)
+
+    model.eval()
+    x = torch.randn(1, 5, 3001)
+    y = model(x)
+    assert y.shape == (1, 3, 3001)
 
 
 def test_dkpn_preprocessor_creates_feature_stream():
