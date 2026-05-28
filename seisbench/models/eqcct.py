@@ -1,16 +1,15 @@
 """
-EQCCT P- and S-branch pickers as SeisBench :class:`~seisbench.models.base.WaveformModel` classes.
+EQCCT P- and S-wave phase pickers as SeisBench :class:`~seisbench.models.base.WaveformModel` classes.
 
-EQCCT uses separate models for P and S; load with
-EQCCTP.from_pretrained(...) and EQCCTS.from_pretrained(...) respectively.
-Weights live under <cache_model_root>/eqcct/ and …/eqccts/ (not eqcctp/), or
-under contrib/eqcct / contrib/eqccts in a source checkout when both original.pt and
-original.json are present.
+EQCCT uses separate models for P and S phase picking. Load the P-branch with
+:py:class:`EQCCTP` and the S-branch with :py:class:`EQCCTS`, each via
+:py:meth:`~seisbench.models.base.SeisBenchModel.from_pretrained`.
+Pretrained weights are stored under ``<cache_model_root>/eqcct/`` and
+``<cache_model_root>/eqccts/`` respectively.
 """
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +22,15 @@ import seisbench
 import seisbench.util as sbu
 from .base import WaveformModel
 
+_EQCCT_CITATION = (
+    "Saad, O. M., Chen, Y., Siervo, D., Zhang, F., Savvaidis, A., Huang, G.-c., "
+    "Igonin, N., Fomel, S., & Chen, Y. (2023). "
+    "EQCCT: A Production-Ready Earthquake Detection and Phase-Picking Method Using "
+    "the Compact Convolutional Transformer. "
+    "IEEE Transactions on Geoscience and Remote Sensing, 61, 1-15. "
+    "https://doi.org/10.1109/TGRS.2023.3319440"
+)
+
 # Model parameters (matching TensorFlow / EQCCT reference)
 stochastic_depth_rate = 0.1
 image_size = 6000
@@ -34,57 +42,21 @@ patch_dim = 40 * 1 * patch_size
 transformer_layers = 4
 
 
-def _package_tree_root_with_contrib() -> Path | None:
-    """
-    Return the repository root that contains contrib/ (editable install / git checkout).
-    Wheels do not ship contrib; return None there.
-    """
-    inner_pkg = Path(__file__).resolve().parent.parent
-    root = inner_pkg.parent
-    if (root / "contrib").is_dir():
-        return root
-    return None
-
-
-def _contrib_weights_dir(cache_subdir: str) -> Path | None:
-    root = _package_tree_root_with_contrib()
-    if root is None:
-        return None
-    d = root / "contrib" / cache_subdir
-    return d if d.is_dir() else None
-
-
-def _eqcct_weights_directory(cache_subdir: str) -> Path:
-    """
-    Directory for original.pt + original.json.
-
-    Prefer contrib/{cache_subdir}/ when both files exist in a source checkout.
-
-    The P-branch folder name is eqcct (not the class name EQCCTP) so it
-    matches contrib/eqcct and weight export defaults.
-    """
-    cdir = _contrib_weights_dir(cache_subdir)
-    if cdir is not None:
-        if (cdir / "original.pt").is_file() and (cdir / "original.json").is_file():
-            return cdir
-    return Path(seisbench.cache_model_root) / cache_subdir
-
-
 class ConvF1Block(nn.Module):
-    def __init__(self, in_channels, out_channels, kernal_size=11, dropout_rate=0.1):
+    def __init__(self, in_channels, out_channels, kernel_size=11, dropout_rate=0.1):
         super().__init__()
         self.conv1 = nn.Conv1d(
-            in_channels, in_channels, kernal_size, padding=kernal_size // 2
+            in_channels, in_channels, kernel_size, padding=kernel_size // 2
         )
         self.bn1 = nn.BatchNorm1d(in_channels, eps=0.001)
 
         self.conv2 = nn.Conv1d(
-            in_channels, in_channels, kernal_size, padding=kernal_size // 2
+            in_channels, in_channels, kernel_size, padding=kernel_size // 2
         )
         self.bn2 = nn.BatchNorm1d(in_channels, eps=0.001)
 
         self.conv3 = nn.Conv1d(
-            in_channels, out_channels, kernal_size, padding=kernal_size // 2
+            in_channels, out_channels, kernel_size, padding=kernel_size // 2
         )
         self.bn3 = nn.BatchNorm1d(out_channels, eps=0.001)
 
@@ -222,7 +194,7 @@ class KerasMHA(nn.Module):
         self.num_heads = num_heads
         self.key_dim = key_dim
         self.inner_dim = num_heads * key_dim  # 160
-        self.scale = 1.0 / math.sqrt(key_dim)
+        self.scale = 1.0 / np.sqrt(key_dim)
 
         self.q = nn.Linear(embed_dim, self.inner_dim, bias=True)
         self.k = nn.Linear(embed_dim, self.inner_dim, bias=True)
@@ -356,25 +328,12 @@ class EQCCTModelS(nn.Module):
 
 class _EQCCTBranchWaveform(WaveformModel):
     """
-    Shared windowing, preprocessing, and I/O for EQCCT P/S branches (6000 samples @ 100 Hz).
-    Subclasses supply the backbone module and phase label list.
-    """
+    Shared windowing, preprocessing, and I/O for EQCCT P/S branches.
 
-    _annotate_args = WaveformModel._annotate_args.copy()
-    _annotate_args["*_threshold"] = (
-        "Detection threshold for phase probability curve",
-        0.3,
-    )
-    _annotate_args["blinding"] = (
-        "Number of prediction samples to discard on each side of each window prediction",
-        (500, 500),
-    )
-    _annotate_args["stacking"] = (
-        "Stacking method for overlapping windows (only for window prediction models). "
-        "Options are 'max' and 'avg'. ",
-        "max",
-    )
-    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 3000)
+    Expects 6000-sample (60 s at 100 Hz) three-component windows. Subclasses supply
+    the PyTorch backbone and phase label list (:class:`EQCCTP` for P, :class:`EQCCTS`
+    for S).
+    """
 
     def __init__(
         self,
@@ -383,15 +342,10 @@ class _EQCCTBranchWaveform(WaveformModel):
         citation: str,
         sampling_rate: float = 100,
         norm: str = "peak",
+        norm_amp_per_comp: bool = False,
+        norm_detrend: bool = False,
         **kwargs,
     ):
-        for option in ("norm_amp_per_comp", "norm_detrend"):
-            if option in kwargs:
-                setattr(self, option, kwargs[option])
-                del kwargs[option]
-            else:
-                setattr(self, option, False)
-
         super().__init__(
             citation=citation,
             output_type="array",
@@ -403,12 +357,16 @@ class _EQCCTBranchWaveform(WaveformModel):
         )
 
         self.norm = norm
+        self.norm_amp_per_comp = norm_amp_per_comp
+        self.norm_detrend = norm_detrend
         self._eqcct_backbone = backbone
 
     def forward(self, x):
         """
-        :param x: Tensor-shaped batch (batch, 3, in_samples) as produced by SeisBench.
-        :return: Probabilities (batch, n_labels, in_samples).
+        Run the EQCCT backbone on a SeisBench-formatted batch.
+
+        :param x: Tensor of shape ``(batch, 3, in_samples)``.
+        :return: Phase probability curves of shape ``(batch, n_labels, in_samples)``.
         """
         if x.ndim != 3:
             raise ValueError(f"Expected 3D input (B, 3, T), got shape {tuple(x.shape)}")
@@ -424,6 +382,13 @@ class _EQCCTBranchWaveform(WaveformModel):
     def annotate_batch_pre(
         self, batch: torch.Tensor, argdict: dict[str, Any]
     ) -> torch.Tensor:
+        """
+        EQCCT preprocessing applied to each window before inference.
+
+        Removes the per-window mean, optionally detrends and peak/std-normalizes the
+        waveforms, then applies a short cosine taper to the first and last six samples
+        of each trace.
+        """
         batch = batch - batch.mean(axis=-1, keepdims=True)
         if self.norm_detrend:
             batch = sbu.torch_detrend(batch)
@@ -439,7 +404,16 @@ class _EQCCTBranchWaveform(WaveformModel):
                 batch = batch / (peak + 1e-10)
 
         tap = 0.5 * (
-            1 + torch.cos(torch.linspace(np.pi, 2 * np.pi, 6, device=batch.device))
+            1
+            + torch.cos(
+                torch.linspace(
+                    np.pi,
+                    2 * np.pi,
+                    6,
+                    device=batch.device,
+                    dtype=batch.dtype,
+                )
+            )
         )
         batch[:, :, :6] *= tap
         batch[:, :, -6:] *= tap.flip(dims=(0,))
@@ -449,6 +423,13 @@ class _EQCCTBranchWaveform(WaveformModel):
     def annotate_batch_post(
         self, batch: torch.Tensor, piggyback: Any, argdict: dict[str, Any]
     ) -> torch.Tensor:
+        """
+        Transpose model outputs to SeisBench channel layout and blind edge samples.
+
+        Samples at the beginning and end of each prediction (see ``blinding`` in
+        :py:func:`annotate` / :py:func:`classify`) are set to NaN before stacking
+        overlapping windows.
+        """
         batch = torch.transpose(batch, -1, -2)
         prenan, postnan = argdict.get(
             "blinding", self._annotate_args.get("blinding")[1]
@@ -460,15 +441,21 @@ class _EQCCTBranchWaveform(WaveformModel):
         return batch
 
     def classify_aggregate(self, annotations, argdict) -> sbu.ClassifyOutput:
+        """
+        Convert stacked probability annotations into discrete phase picks.
+
+        Uses the phase-specific threshold from ``argdict`` (for example
+        ``P_threshold`` or ``S_threshold``).
+        """
         picks = sbu.PickList()
         for phase in self.labels:
             if phase == "N":
                 continue
+            threshold_key = f"{phase}_threshold"
+            default_threshold = self._annotate_args.get(threshold_key, (None, 0.3))[1]
             picks += self.picks_from_annotations(
                 annotations.select(channel=f"{self.__class__.__name__}_{phase}"),
-                argdict.get(
-                    f"{phase}_threshold", self._annotate_args.get("*_threshold")[1]
-                ),
+                argdict.get(threshold_key, default_threshold),
                 phase,
             )
         picks = sbu.PickList(sorted(picks))
@@ -494,61 +481,132 @@ class _EQCCTBranchWaveform(WaveformModel):
 
 class EQCCTP(_EQCCTBranchWaveform):
     """
-    EQCCT **P-phase** probability model (6000 samples @ 100 Hz, 3 components).
+    The EQCCT P-wave phase picker from Saad et al. (2023).
+
+    EQCCT uses separate compact convolutional-transformer models for P and S picking.
+    This class wraps the P-branch architecture for SeisBench :py:func:`annotate` and
+    :py:func:`classify` on 6000-sample (60 s) three-component windows at 100 Hz.
+
+    By instantiating the model with ``from_pretrained("original")``, the PyTorch weights
+    converted from the institutional TensorFlow EQCCT P-branch checkpoint can be loaded.
 
     .. document_args:: seisbench.models EQCCTP
 
-    :param sampling_rate: Target sampling rate in Hz (default 100).
-    :param norm: \"peak\" or \"std\" for amplitude normalization (default \"peak\").
-    :param kwargs: Passed to :class:`~seisbench.models.base.WaveformModel`.
+    :param sampling_rate: Target sampling rate in Hz, by default 100.
+                          Incoming traces are resampled automatically when this differs.
+    :param norm: Data normalization strategy, either ``"peak"`` or ``"std"``, by default
+                 ``"peak"``.
+    :param norm_amp_per_comp: If True, normalize each component independently by its peak
+                              amplitude. Defaults to False.
+    :param norm_detrend: If True, apply linear detrending before normalization.
+                         Defaults to False.
+    :param kwargs: Keyword arguments passed to the constructor of
+                   :py:class:`~seisbench.models.base.WaveformModel`.
     """
+
+    _annotate_args = WaveformModel._annotate_args.copy()
+    _annotate_args["blinding"] = (
+        "Number of prediction samples to discard on each side of each window prediction",
+        (500, 500),
+    )
+    _annotate_args["P_threshold"] = (
+        "Detection threshold for P-phase probability curve",
+        0.5,
+    )
+    _annotate_args["stacking"] = (
+        "Stacking method for overlapping windows (only for window prediction models). "
+        "Options are 'max' and 'avg'. ",
+        "max",
+    )
+    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 3000)
 
     @classmethod
     def _model_path(cls):
-        return _eqcct_weights_directory("eqcct")
+        return Path(seisbench.cache_model_root) / "eqcct"
 
-    def __init__(self, sampling_rate=100, norm="peak", **kwargs):
-        citation = (
-            "EQCCT P-branch (Convolutional-Convolutional-Transformer) phase picker, "
-            "PyTorch implementation compatible with institutional EQCCT TensorFlow weights."
-        )
+    def __init__(
+        self,
+        sampling_rate=100,
+        norm="peak",
+        norm_amp_per_comp=False,
+        norm_detrend=False,
+        **kwargs,
+    ):
         super().__init__(
             EQCCTModelP(),
             ["P"],
-            citation,
+            _EQCCT_CITATION,
             sampling_rate=sampling_rate,
             norm=norm,
+            norm_amp_per_comp=norm_amp_per_comp,
+            norm_detrend=norm_detrend,
             **kwargs,
         )
 
 
 class EQCCTS(_EQCCTBranchWaveform):
     """
-    EQCCT **S-phase** probability model (6000 samples @ 100 Hz, 3 components).
+    The EQCCT S-wave phase picker from Saad et al. (2023).
 
-    Use a **separate** S-branch checkpoint (not the P weights).
+    EQCCT uses separate compact convolutional-transformer models for P and S picking.
+    This class wraps the deeper S-branch architecture (with additional convolutional
+    stems around each transformer block) for SeisBench :py:func:`annotate` and
+    :py:func:`classify` on 6000-sample (60 s) three-component windows at 100 Hz.
+
+    Use a **separate** S-branch checkpoint; do not load P-branch weights into this model.
+
+    By instantiating the model with ``from_pretrained("original")``, the PyTorch weights
+    converted from the institutional TensorFlow EQCCT S-branch checkpoint can be loaded.
 
     .. document_args:: seisbench.models EQCCTS
 
-    :param sampling_rate: Target sampling rate in Hz (default 100).
-    :param norm: \"peak\" or \"std\" for amplitude normalization (default \"peak\").
-    :param kwargs: Passed to :class:`~seisbench.models.base.WaveformModel`.
+    :param sampling_rate: Target sampling rate in Hz, by default 100.
+                          Incoming traces are resampled automatically when this differs.
+    :param norm: Data normalization strategy, either ``"peak"`` or ``"std"``, by default
+                 ``"peak"``.
+    :param norm_amp_per_comp: If True, normalize each component independently by its peak
+                              amplitude. Defaults to False.
+    :param norm_detrend: If True, apply linear detrending before normalization.
+                         Defaults to False.
+    :param kwargs: Keyword arguments passed to the constructor of
+                   :py:class:`~seisbench.models.base.WaveformModel`.
     """
+
+    _annotate_args = WaveformModel._annotate_args.copy()
+    _annotate_args["blinding"] = (
+        "Number of prediction samples to discard on each side of each window prediction",
+        (500, 500),
+    )
+    _annotate_args["S_threshold"] = (
+        "Detection threshold for S-phase probability curve",
+        0.5,
+    )
+    _annotate_args["stacking"] = (
+        "Stacking method for overlapping windows (only for window prediction models). "
+        "Options are 'max' and 'avg'. ",
+        "max",
+    )
+    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 3000)
 
     @classmethod
     def _model_path(cls):
-        return _eqcct_weights_directory("eqccts")
+        return Path(seisbench.cache_model_root) / "eqccts"
 
-    def __init__(self, sampling_rate=100, norm="peak", **kwargs):
-        citation = (
-            "EQCCT S-branch (Convolutional-Convolutional-Transformer) phase picker, "
-            "PyTorch implementation compatible with institutional EQCCT TensorFlow weights."
-        )
+    def __init__(
+        self,
+        sampling_rate=100,
+        norm="peak",
+        norm_amp_per_comp=False,
+        norm_detrend=False,
+        **kwargs,
+    ):
         super().__init__(
             EQCCTModelS(),
             ["S"],
-            citation,
+            _EQCCT_CITATION,
             sampling_rate=sampling_rate,
             norm=norm,
+            norm_amp_per_comp=norm_amp_per_comp,
+            norm_detrend=norm_detrend,
             **kwargs,
         )

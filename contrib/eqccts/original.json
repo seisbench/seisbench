@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "docstring": "EQCCT S-branch — institutional PyTorch checkpoint in SeisBench format (6000 samples, 100 Hz, ZNE, peak norm). Pair with original.pt in ``contrib/eqccts/`` or ``<cache_model_root>/eqccts/`` after export.",
+  "docstring": "EQCCT S-branch (Saad et al., 2023) — institutional PyTorch checkpoint in SeisBench format (6000 samples, 100 Hz, ZNE, peak norm). Pair with original.pt in ``contrib/eqccts/`` or ``<cache_model_root>/eqccts/`` after export.",
   "model_args": {
     "sampling_rate": 100,
     "norm": "peak",
@@ -11,6 +11,6 @@
     "batch_size": 256,
     "overlap": 3000,
     "stacking": "max",
-    "S_threshold": 0.3
+    "S_threshold": 0.5
   }
 }
