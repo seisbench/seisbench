@@ -10,7 +10,6 @@ Pretrained weights are stored under ``<cache_model_root>/eqcct/`` and
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -18,7 +17,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import seisbench
 import seisbench.util as sbu
 from .base import WaveformModel
 
@@ -105,7 +103,9 @@ class PatchEncoder(nn.Module):
 
     def forward(self, x):
         positions = (
-            torch.arange(x.size(1), device=x.device).unsqueeze(0).expand(x.size(0), -1)
+            torch.arange(x.size(1), device=x.device, dtype=x.dtype)
+            .unsqueeze(0)
+            .expand(x.size(0), -1)
         )
         x = self.projection(x) + self.position_embedding(positions)
         return x
@@ -335,13 +335,29 @@ class _EQCCTBranchWaveform(WaveformModel):
     for S).
     """
 
+    _annotate_args = WaveformModel._annotate_args.copy()
+    _annotate_args["blinding"] = (
+        "Number of prediction samples to discard on each side of each window prediction",
+        (500, 500),
+    )
+    _annotate_args["S_threshold"] = (
+        "Detection threshold for S-phase probability curve",
+        0.5,
+    )
+    _annotate_args["stacking"] = (
+        "Stacking method for overlapping windows (only for window prediction models). "
+        "Options are 'max' and 'avg'. ",
+        "max",
+    )
+    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 0.5)
+
     def __init__(
         self,
         backbone: nn.Module,
         labels: list[str],
         citation: str,
         sampling_rate: float = 100,
-        norm: str = "peak",
+        norm: str = "std",
         norm_amp_per_comp: bool = False,
         norm_detrend: bool = False,
         **kwargs,
@@ -495,7 +511,7 @@ class EQCCTP(_EQCCTBranchWaveform):
     :param sampling_rate: Target sampling rate in Hz, by default 100.
                           Incoming traces are resampled automatically when this differs.
     :param norm: Data normalization strategy, either ``"peak"`` or ``"std"``, by default
-                 ``"peak"``.
+                 ``"std"``.
     :param norm_amp_per_comp: If True, normalize each component independently by its peak
                               amplitude. Defaults to False.
     :param norm_detrend: If True, apply linear detrending before normalization.
@@ -504,30 +520,10 @@ class EQCCTP(_EQCCTBranchWaveform):
                    :py:class:`~seisbench.models.base.WaveformModel`.
     """
 
-    _annotate_args = WaveformModel._annotate_args.copy()
-    _annotate_args["blinding"] = (
-        "Number of prediction samples to discard on each side of each window prediction",
-        (500, 500),
-    )
-    _annotate_args["P_threshold"] = (
-        "Detection threshold for P-phase probability curve",
-        0.5,
-    )
-    _annotate_args["stacking"] = (
-        "Stacking method for overlapping windows (only for window prediction models). "
-        "Options are 'max' and 'avg'. ",
-        "max",
-    )
-    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 3000)
-
-    @classmethod
-    def _model_path(cls):
-        return Path(seisbench.cache_model_root) / "eqcct"
-
     def __init__(
         self,
         sampling_rate=100,
-        norm="peak",
+        norm="std",
         norm_amp_per_comp=False,
         norm_detrend=False,
         **kwargs,
@@ -563,7 +559,7 @@ class EQCCTS(_EQCCTBranchWaveform):
     :param sampling_rate: Target sampling rate in Hz, by default 100.
                           Incoming traces are resampled automatically when this differs.
     :param norm: Data normalization strategy, either ``"peak"`` or ``"std"``, by default
-                 ``"peak"``.
+                 ``"std"``.
     :param norm_amp_per_comp: If True, normalize each component independently by its peak
                               amplitude. Defaults to False.
     :param norm_detrend: If True, apply linear detrending before normalization.
@@ -572,30 +568,10 @@ class EQCCTS(_EQCCTBranchWaveform):
                    :py:class:`~seisbench.models.base.WaveformModel`.
     """
 
-    _annotate_args = WaveformModel._annotate_args.copy()
-    _annotate_args["blinding"] = (
-        "Number of prediction samples to discard on each side of each window prediction",
-        (500, 500),
-    )
-    _annotate_args["S_threshold"] = (
-        "Detection threshold for S-phase probability curve",
-        0.5,
-    )
-    _annotate_args["stacking"] = (
-        "Stacking method for overlapping windows (only for window prediction models). "
-        "Options are 'max' and 'avg'. ",
-        "max",
-    )
-    _annotate_args["overlap"] = (_annotate_args["overlap"][0], 3000)
-
-    @classmethod
-    def _model_path(cls):
-        return Path(seisbench.cache_model_root) / "eqccts"
-
     def __init__(
         self,
         sampling_rate=100,
-        norm="peak",
+        norm="std",
         norm_amp_per_comp=False,
         norm_detrend=False,
         **kwargs,
