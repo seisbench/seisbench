@@ -12,7 +12,7 @@ from .das_base import DASBenchmarkDataset, DASDataWriter
 
 
 class MLSubDAS(DASBenchmarkDataset):
-    chunk_count = 25
+    chunk_count = 13
     chunk_size = 100
     min_total_labels = 500
     min_phase_labels = 250
@@ -45,7 +45,13 @@ class MLSubDAS(DASBenchmarkDataset):
         return [f"{i:02d}" for i in range(cls.chunk_count)]
 
     def _download_dataset(
-        self, files: list[Path], chunk: str, base_path: Path = None, **kwargs
+        self,
+        files: list[Path],
+        chunk: str,
+        base_path: Path = None,
+        selection_path: Path = None,
+        catalog_path: Path = None,
+        **kwargs,
     ):
         """
         Converts dataset from local files.
@@ -53,8 +59,18 @@ class MLSubDAS(DASBenchmarkDataset):
         """
         if base_path is None:
             raise ValueError("`base_path` must be provided for conversion from source.")
+        if selection_path is None:
+            raise ValueError(
+                "`selection_path` must be provided for conversion from source."
+            )
+        if catalog_path is None:
+            raise ValueError(
+                "`catalog_path` must be provided for conversion from source."
+            )
+
         entries = self._scan_files(base_path)
         entries = entries[entries["total_labels"] >= self.min_total_labels]
+        entries = self._subselect_events(entries, selection_path)
 
         chunk_idx = int(chunk)
         entries = entries[
@@ -62,6 +78,11 @@ class MLSubDAS(DASBenchmarkDataset):
         ]
 
         data_key = "data"
+
+        catalog = pd.read_parquet(catalog_path)
+        catalog_dict = {
+            row["file_name"]: row.to_dict() for _, row in catalog.iterrows()
+        }
 
         with DASDataWriter(
             self.path, chunk, files[0], files[1], strict=False
@@ -86,10 +107,13 @@ class MLSubDAS(DASBenchmarkDataset):
                 data = self._preprocess_data(data)
                 annotations = self._convert_annotations(metadata, data.shape[1], entry)
 
-                # TODO: Get event metadata
                 record_metadata = self._get_record_metadata(entry)
+                event_metadata = catalog_dict.get(entry["file"])
+                del event_metadata["file_name"]
 
-                writer.add_record(record_metadata, data, annotations)
+                writer.add_record(
+                    {**record_metadata, **event_metadata}, data, annotations
+                )
 
     @staticmethod
     def _scan_files(base_path: Path) -> pd.DataFrame:
@@ -145,6 +169,12 @@ class MLSubDAS(DASBenchmarkDataset):
         entries["total_labels"] = entries["p_labels"] + entries["s_labels"]
 
         return entries
+
+    @staticmethod
+    def _subselect_events(entries: pd.DataFrame, selection_path: Path) -> pd.DataFrame:
+        with open(selection_path) as f:
+            selected = set(f.read().split("\n"))
+        return entries[entries["file"].isin(selected)].copy()
 
     @staticmethod
     def _convert_annotations(
