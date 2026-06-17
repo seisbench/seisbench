@@ -12,6 +12,10 @@ from .das_base import DASBenchmarkDataset, DASDataWriter
 
 
 class MLSubDAS(DASBenchmarkDataset):
+    """
+    MLSubDAS dataset by Xiao et al. (2026)
+    """
+
     chunk_count = 13
     chunk_size = 100
     min_total_labels = 500
@@ -25,9 +29,10 @@ class MLSubDAS(DASBenchmarkDataset):
             "using it for training or evaluation."
         )
         citation = (
-            "Xiao, H., van den Ende, M., Tilmann, F., Rivet, D., Loureiro, A., Tsuji, T., ... & "
-            "Denolle, M. (2025). DeepSubDAS: An Earthquake Phase Picker from Submarine Distributed "
-            "Acoustic Sensing Data."
+            "Xiao, H., Tilmann, F., van den Ende, M., Rivet, D., Loureiro, A., Tsuji, T., ... & Denolle, M. A. (2026). "
+            "DeepSubDAS: an earthquake phase picker from submarine distributed acoustic sensing data. "
+            "Geophysical Journal International, 245(2), ggag061."
+            "https://doi.org/10.1093/gji/ggag061"
         )
         license = "CC BY 4.0"
         super().__init__(
