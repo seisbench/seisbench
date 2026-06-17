@@ -30,13 +30,11 @@ class MLSubDAS(DASBenchmarkDataset):
             "Acoustic Sensing Data."
         )
         license = "CC BY 4.0"
-        # TODO: Remove compile_from_source argument
-        # TODO: Enable repository lookup
         super().__init__(
             citation=citation,
             license=license,
-            compile_from_source=True,
-            repository_lookup=False,
+            compile_from_source=False,
+            repository_lookup=True,
             **kwargs,
         )
 
