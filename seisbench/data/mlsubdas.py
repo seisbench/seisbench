@@ -109,7 +109,7 @@ class MLSubDAS(DASBenchmarkDataset):
 
                 record_metadata = self._get_record_metadata(entry)
                 event_metadata = catalog_dict.get(
-                    entry["file"], {"file_name", "just_so_the_next_line_doesnt_fail"}
+                    entry["file"], {"file_name": "just_so_the_next_line_doesnt_fail"}
                 )
                 del event_metadata["file_name"]
 
