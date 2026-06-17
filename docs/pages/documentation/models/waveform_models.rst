@@ -72,6 +72,19 @@ EQTP
     :undoc-members:
     :show-inheritance:
 
+EQCCT
+-----------------------------------
+
+.. autoclass:: seisbench.models.eqcct.EQCCTP
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: seisbench.models.eqcct.EQCCTS
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 GPD
 -----------------------------------
 

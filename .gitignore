@@ -134,3 +134,4 @@ dmypy.json
 # Pycharm settings
 .idea/
 /test_data
+*.pt
