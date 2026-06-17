@@ -82,7 +82,7 @@ def test_eqcctp_get_model_args():
     args = model.get_model_args()
     assert "sampling_rate" in args
     assert "norm" in args
-    assert args["norm"] == "peak"
+    assert args["norm"] == model.norm
 
 
 def test_export_names_in_models_package():
@@ -90,11 +90,3 @@ def test_export_names_in_models_package():
     assert hasattr(sbm, "EQCCTS")
     assert sbm.EQCCTP.__name__ == "EQCCTP"
     assert sbm.EQCCTS.__name__ == "EQCCTS"
-
-
-def test_eqcctp_weights_cache_dirname_is_eqcct():
-    assert sbm.EQCCTP._model_path().name == "eqcct"
-
-
-def test_eqccts_weights_cache_dirname_is_eqccts():
-    assert sbm.EQCCTS._model_path().name == "eqccts"

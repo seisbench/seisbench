@@ -103,9 +103,7 @@ class PatchEncoder(nn.Module):
 
     def forward(self, x):
         positions = (
-            torch.arange(x.size(1), device=x.device, dtype=x.dtype)
-            .unsqueeze(0)
-            .expand(x.size(0), -1)
+            torch.arange(x.size(1), device=x.device).unsqueeze(0).expand(x.size(0), -1)
         )
         x = self.projection(x) + self.position_embedding(positions)
         return x
