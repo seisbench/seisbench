@@ -13,7 +13,8 @@ from .augmentation import (
     RealNoise,
     RotateHorizontalComponents,
 )
-from .generator import GenericGenerator, GroupGenerator, SteeredGenerator
+from .das_windowing import FixedDASWindow
+from .generator import DASGenerator, GenericGenerator, GroupGenerator, SteeredGenerator
 from .labeling import (
     PolarityLabeller,
     DetectionLabeller,
@@ -41,8 +42,10 @@ __all__ = [
     "ChangeDtype",
     "ChannelDropout",
     "Copy",
+    "DASGenerator",
     "Filter",
     "FilterKeys",
+    "FixedDASWindow",
     "GaussianNoise",
     "Normalize",
     "NullAugmentation",
