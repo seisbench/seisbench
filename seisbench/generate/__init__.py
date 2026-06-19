@@ -13,6 +13,7 @@ from .augmentation import (
     RealNoise,
     RotateHorizontalComponents,
 )
+from .das_labeling import ProbabilisticDASLabeller
 from .das_windowing import FixedDASWindow, RandomDASWindow
 from .generator import DASGenerator, GenericGenerator, GroupGenerator, SteeredGenerator
 from .labeling import (
@@ -59,6 +60,7 @@ __all__ = [
     "SteeredGenerator",
     "DetectionLabeller",
     "PickLabeller",
+    "ProbabilisticDASLabeller",
     "ProbabilisticLabeller",
     "ProbabilisticPointLabeller",
     "StandardLabeller",
