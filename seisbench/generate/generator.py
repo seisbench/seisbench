@@ -1,4 +1,11 @@
+from __future__ import annotations
+
 from torch.utils.data import Dataset
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import seisbench.data as sbd
+    import pandas as pd
 
 
 class GenericGenerator(Dataset):
@@ -28,10 +35,11 @@ class GenericGenerator(Dataset):
     This allows in particular none-sequential augmentation sequences.
 
     :param dataset: The underlying SeisBench data set.
-    :type dataset: seisbench.data.WaveformDataset or seisbench.data.MultiWaveformDataset
     """
 
-    def __init__(self, dataset):
+    def __init__(
+        self, dataset: sbd.WaveformDataset | sbd.MultiWaveformDataset | sbd.DASDataset
+    ):
         self._augmentations = []
         self.dataset = dataset
         super().__init__()
@@ -126,13 +134,15 @@ class SteeredGenerator(GenericGenerator):
         `pytorch Sampler <https://pytorch.org/docs/stable/data.html#data-loading-order-and-sampler>`_.
 
     :param dataset: The underlying SeisBench data set
-    :type dataset: seisbench.data.WaveformDataset or seisbench.data.MultiWaveformDataset
     :param metadata: The additional information as pandas dataframe.
                      Each row corresponds to one sample from the generator.
-    :type metadata: pandas.DataFrame
     """
 
-    def __init__(self, dataset, metadata):
+    def __init__(
+        self,
+        dataset: sbd.WaveformDataset | sbd.MultiWaveformDataset,
+        metadata: pd.DataFrame,
+    ):
         self.metadata = metadata
         super().__init__(dataset)
 
@@ -162,7 +172,7 @@ class GroupGenerator(GenericGenerator):
     always loads groups into the state dict. The `grouping` parameter of the underlying dataset needs to be set.
     """
 
-    def __init__(self, dataset):
+    def __init__(self, dataset: sbd.WaveformDataset | sbd.MultiWaveformDataset):
         if dataset.grouping is None:
             raise ValueError("Grouping needs to be set in dataset.")
 
@@ -173,3 +183,24 @@ class GroupGenerator(GenericGenerator):
 
     def _populate_state_dict(self, idx):
         return {"X": self.dataset.get_group_samples(idx)}
+
+
+class DASGenerator(GenericGenerator):
+    """
+    This data generator is designed explicitly for DAS datasets. It uses the same internal representation in the
+    state dict, making most of the augmentations that are not specific to time series directly applicable, for example,
+    :py:class:`~seisbench.generate.augmentation.Normalize` or :py:class:`~seisbench.generate.augmentation.ChangeDtype`.
+    As the ``get_sample`` function of DAS datasets returns an additional entry for the annotations, these are written to
+    the ``__annotations__`` key in the metadata and should be read from their in the augmentations. Note that the
+    metadata will be deleted before returning a sample. Therefore, if required, the labels need to be written to their
+    own output key.
+    """
+
+    def __init__(self, dataset: sbd.DASDataset):
+        super().__init__(dataset=dataset)
+
+    def _populate_state_dict(self, idx: int):
+        metadata, record, annotations = self.dataset.get_sample(idx)
+        metadata["__annotations__"] = annotations
+
+        return {"X": (record, metadata)}

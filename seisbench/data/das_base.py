@@ -245,6 +245,11 @@ class DASDataset:
                 "Can only add DASDataset and MultiDASDataset to DASDataset."
             )
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state["_data_pointers"] = {}  # Data pointers can't be pickled
+        return state
+
 
 class MultiDASDataset:
     """
