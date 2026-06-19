@@ -199,7 +199,7 @@ class RandomDASWindow(FixedDASWindow):
             full_annotations = np.concatenate(list(annotations.values())).astype(float)
             # Remove annotations outside the active window
             full_annotations[
-                (full_annotations < 0) | (full_annotations > self.shape[0])
+                (full_annotations < 0) | (full_annotations > record.shape[0])
             ] = np.nan
             cand = np.flatnonzero(~np.isnan(full_annotations))
 
