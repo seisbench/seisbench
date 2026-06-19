@@ -75,6 +75,15 @@ class MLSubDAS(DASBenchmarkDataset):
         entries = entries[entries["total_labels"] >= self.min_total_labels]
         entries = self._subselect_events(entries, selection_path)
 
+        n_train = int(0.7 * len(entries))
+        n_dev = int(0.1 * len(entries))
+        n_test = len(entries) - n_train - n_dev
+        split = ["train"] * n_train + ["dev"] * n_dev + ["test"] * n_test
+        np.random.seed(42)
+        np.random.shuffle(split)
+
+        entries["split"] = split
+
         chunk_idx = int(chunk)
         entries = entries[
             chunk_idx * self.chunk_size : (chunk_idx + 1) * self.chunk_size
@@ -252,6 +261,7 @@ class MLSubDAS(DASBenchmarkDataset):
             "record_s_labels": entry["s_labels"]
             if entry["s_labels"] >= MLSubDAS.min_phase_labels
             else 0,
+            "split": entry["split"],
         }
         cable = {}
         if entry["folder"] == "das_alaska":
