@@ -167,3 +167,57 @@ class FixedDASWindow:
             )
 
         return p0, shape
+
+
+class RandomDASWindow(FixedDASWindow):
+    """
+    Extracts a random window from the record.
+
+    :param contains_annotation: If true, the output window is guaranteed to contain at least one sample with an
+                                annotation, as long as the input has at least one such sample.
+    """
+
+    def __init__(
+        self, shape: tuple[int, ...], contains_annotation: bool = False, **kwargs
+    ):
+        self.contains_annotation = contains_annotation
+        super().__init__(shape=shape, **kwargs)
+
+    def __call__(
+        self,
+        state_dict: dict[str, Any],
+    ):
+        record, metadata = state_dict[self.key[0]]
+
+        p0 = (
+            np.random.randint(1 + max(0, record.shape[0] - self.shape[0])),
+            np.random.randint(1 + max(0, record.shape[1] - self.shape[1])),
+        )
+
+        if self.contains_annotation:
+            annotations = metadata["__annotations__"]
+            full_annotations = np.concatenate(list(annotations.values())).astype(float)
+            # Remove annotations outside the active window
+            full_annotations[
+                (full_annotations < 0) | (full_annotations > self.shape[0])
+            ] = np.nan
+            cand = np.flatnonzero(~np.isnan(full_annotations))
+
+            if len(cand) > 0:
+                idx = np.random.choice(cand)
+
+                px = int(full_annotations[idx])
+                py = idx % record.shape[1]
+
+                p0 = (
+                    np.random.randint(
+                        max(0, px - self.shape[0] + 1),
+                        1 + max(0, min(px, record.shape[0] - self.shape[0])),
+                    ),
+                    np.random.randint(
+                        max(0, py - self.shape[1] + 1),
+                        1 + max(0, min(py, record.shape[1] - self.shape[1])),
+                    ),
+                )
+
+        super().__call__(state_dict, p0=p0)

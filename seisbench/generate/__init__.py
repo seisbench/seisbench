@@ -13,7 +13,7 @@ from .augmentation import (
     RealNoise,
     RotateHorizontalComponents,
 )
-from .das_windowing import FixedDASWindow
+from .das_windowing import FixedDASWindow, RandomDASWindow
 from .generator import DASGenerator, GenericGenerator, GroupGenerator, SteeredGenerator
 from .labeling import (
     PolarityLabeller,
@@ -51,6 +51,7 @@ __all__ = [
     "NullAugmentation",
     "OneOf",
     "RandomArrayRotation",
+    "RandomDASWindow",
     "RealNoise",
     "RotateHorizontalComponents",
     "GenericGenerator",

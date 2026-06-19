@@ -166,3 +166,56 @@ def test_das_windowing(strategy, ps0, ps1):
                 res_annotiation[res_p0y : res_p0y + shape_y]
                 == annotation[true_p0y : true_p0y + shape_y] - p0[0]
             )
+
+
+@pytest.mark.parametrize("strategy", ["fail", "pad", "move", "variable"])
+@pytest.mark.parametrize("contains_annotation", [True, False])
+def test_random_das_window(strategy, contains_annotation):
+    np.random.seed(42)
+    record = np.random.rand(500, 600)
+    annotation1 = np.random.randint(0, 500, 600)
+    annotation2 = np.random.randint(0, 500, 600)
+    base_state_dict = {
+        "X": (
+            record,
+            {"__annotations__": {"P": annotation1, "S": annotation2}},
+        ),
+    }
+
+    window = sbg.RandomDASWindow(
+        shape=(100, 200),
+        strategy=strategy,
+        contains_annotation=contains_annotation,
+    )
+
+    for _ in range(100):
+        state_dict = copy.deepcopy(base_state_dict)
+        window(state_dict)
+        assert state_dict["X"][0].shape == window.shape
+
+
+@pytest.mark.parametrize("strategy", ["fail", "pad", "move", "variable"])
+def test_random_das_window_empty_annotations(strategy):
+    np.random.seed(42)
+    record = np.random.rand(500, 600)
+    annotation1 = np.random.randint(0, 500, 600) * np.nan  # Not valid
+    annotation2 = np.random.randint(0, 500, 600) + 1000  # Out of range
+    annotation3 = np.random.randint(0, 500, 600) - 1000  # Out of range
+    base_state_dict = {
+        "X": (
+            record,
+            {"__annotations__": {"P": annotation1, "S": annotation2, "T": annotation3}},
+        ),
+    }
+
+    window = sbg.RandomDASWindow(
+        shape=(100, 200),
+        strategy=strategy,
+        contains_annotation=True,
+    )
+
+    for _ in range(100):
+        state_dict = copy.deepcopy(base_state_dict)
+        # Key point is that it does not crash
+        window(state_dict)
+        assert state_dict["X"][0].shape == window.shape
