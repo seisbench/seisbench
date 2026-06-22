@@ -317,9 +317,9 @@ class _DKPNFeatureExtractor:
         self.eps = 1e-10
 
     def matrix_cfs(self, waveforms, sampling_rate):
-        waveforms = waveforms.astype(np.float64, copy=True)
-        waveforms = waveforms - np.mean(waveforms, axis=1, keepdims=True)
-        waveforms = waveforms / (np.std(waveforms, axis=1, keepdims=True) + self.eps)
+        waveforms = waveforms.astype(np.float64, copy=False)
+        waveforms -= np.mean(waveforms, axis=1, keepdims=True)
+        waveforms /= np.std(waveforms, axis=1, keepdims=True) + self.eps
 
         cf_waveforms = []
         band_data = []
