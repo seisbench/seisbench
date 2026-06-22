@@ -4,8 +4,9 @@ import numpy as np
 import scipy.signal
 
 import seisbench.data.base
-from seisbench.models.dkpn import _DKPNFeatureExtractor
 from seisbench.models.dkpn import DKPN
+from seisbench.models.dkpn import _DKPNFeatureExtractor
+
 
 class DKPNPreProcessor:
     """
@@ -41,7 +42,7 @@ class DKPNPreProcessor:
         key="X",
         **kwargs,
     ):
-        unknown = set(kwargs) - set(_DKPNFeatureExtractor.default_args)
+        unknown = set(kwargs) - set(DKPN._feature_arg_names)
         if unknown:
             raise ValueError(f"Unknown DKPN preprocessing arguments: {sorted(unknown)}")
 
@@ -54,7 +55,7 @@ class DKPNPreProcessor:
         self.component_order = component_order
         self.flexible_horizontal_components = flexible_horizontal_components
         self.feature_kwargs = {
-            **_DKPNFeatureExtractor.default_args,
+            **DKPN._feature_default_args(),
             **kwargs,
         }
 

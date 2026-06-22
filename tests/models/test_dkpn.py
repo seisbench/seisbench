@@ -70,6 +70,7 @@ def test_dkpn_constructor_and_forward():
     assert model.sampling_rate == 100
     assert model.in_samples == 3001
     assert model.component_order == "ZNEIM"
+    assert model.default_args == {}
 
     x = torch.randn(2, 5, 3001)
     y = model(x)
@@ -77,6 +78,28 @@ def test_dkpn_constructor_and_forward():
     np.testing.assert_allclose(
         y.sum(dim=1).detach().numpy(), np.ones((2, 3001)), rtol=1e-5
     )
+
+
+def test_dkpn_defaults_are_defined_through_annotate_args():
+    model = sbm.DKPN()
+
+    assert model.default_args == {}
+    assert model._annotate_args["*_threshold"][1] == 0.2
+    assert model._annotate_args["blinding"][1] == (250, 250)
+    assert model._annotate_args["overlap"][1] == 1500
+    assert model._feature_default_args() == {
+        "fp_stabilization": 4,
+        "t_long": 4,
+        "freqmin": 0.5,
+        "corner": 1,
+        "perc_taper": 0.1,
+        "mode": "rms",
+        "clip": -999,
+        "log": True,
+        "normalize": False,
+        "polarization_win_len": 1,
+        "use_amax_only": False,
+    }
 
 
 def test_dkpn_from_pretrained_uses_seisbench_cache(tmp_path):
@@ -102,17 +125,7 @@ def test_dkpn_from_pretrained_uses_seisbench_cache(tmp_path):
     assert model.in_channels == 5
     assert model.classes == 3
     assert model.sampling_rate == 100
-
-    for key in [
-        "P_threshold",
-        "S_threshold",
-        "blinding",
-        "t_long",
-        "freqmin",
-        "corner",
-        "mode",
-    ]:
-        assert key in model.default_args
+    assert model.default_args == {}
 
     for name, parameter in model_orig.state_dict().items():
         torch.testing.assert_close(model.state_dict()[name], parameter)
@@ -121,6 +134,30 @@ def test_dkpn_from_pretrained_uses_seisbench_cache(tmp_path):
     x = torch.randn(1, 5, 3001)
     y = model(x)
     assert y.shape == (1, 3, 3001)
+
+
+def test_dkpn_from_pretrained_preserves_metadata_default_args(tmp_path):
+    default_args = {
+        "P_threshold": 0.11,
+        "S_threshold": 0.12,
+        "blinding": (12, 34),
+        "fp_stabilization": 3,
+        "t_long": 5,
+    }
+    model_orig = sbm.DKPN(default_args=default_args)
+    model_orig.save(tmp_path / "test", version_str="1")
+
+    with patch("seisbench.models.DKPN._model_path") as model_path:
+        model_path.return_value = tmp_path
+        model = sbm.DKPN.from_pretrained(
+            "test", version_str="1", update=False, wait_for_file=True
+        )
+
+    assert model.default_args["P_threshold"] == 0.11
+    assert model.default_args["S_threshold"] == 0.12
+    assert tuple(model.default_args["blinding"]) == (12, 34)
+    assert model.default_args["fp_stabilization"] == 3
+    assert model.default_args["t_long"] == 5
 
 
 def test_dkpn_preprocessor_creates_feature_stream():
@@ -160,6 +197,9 @@ def test_dkpn_batch_pre_rejects_raw_three_component_batches():
 
 
 def test_dkpn_generator_preprocessor_creates_feature_tensor_and_shifts_metadata():
+    processor = sbg.DKPNPreProcessor(output_samples=3001)
+    assert processor.feature_kwargs == sbm.DKPN._feature_default_args()
+
     state_dict = {
         "X": (
             _waveforms(n_samples=3401),
@@ -172,7 +212,7 @@ def test_dkpn_generator_preprocessor_creates_feature_tensor_and_shifts_metadata(
         )
     }
 
-    sbg.DKPNPreProcessor(output_samples=3001)(state_dict)
+    processor(state_dict)
 
     features, metadata = state_dict["X"]
     assert features.shape == (5, 3001)
@@ -350,3 +390,14 @@ def test_dkpn_annotate_batch_post_blinding(pre, post):
     if post:
         assert np.isnan(blinded[:, -post:]).all()
     assert np.isfinite(blinded[:, pre : 1000 - post]).all()
+
+
+def test_dkpn_annotate_batch_post_uses_default_blinding():
+    model = sbm.DKPN()
+    pred = torch.ones((2, 3, 1000))
+
+    blinded = model.annotate_batch_post(pred, None, argdict={}).numpy()
+
+    assert np.isnan(blinded[:, :250]).all()
+    assert np.isnan(blinded[:, -250:]).all()
+    assert np.isfinite(blinded[:, 250:750]).all()

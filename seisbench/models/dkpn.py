@@ -38,26 +38,33 @@ class DKPN(PhaseNet):
 
     _feature_component_order = "ZNEIM"
     _raw_component_order = "ZNE"
-
-    _dkpn_defaults = {
-        "overlap": 1500,
-        "P_threshold": 0.2,
-        "S_threshold": 0.2,
-        "fp_stabilization": 4,
-        "t_long": 4,
-        "freqmin": 0.5,
-        "corner": 1,
-        "perc_taper": 0.1,
-        "mode": "rms",
-        "clip": -999,
-        "log": True,
-        "normalize": False,
-        "polarization_win_len": 1,
-        "use_amax_only": False,
-        "blinding": (250, 250),
-    }
+    _feature_arg_names = (
+        "fp_stabilization",
+        "t_long",
+        "freqmin",
+        "corner",
+        "perc_taper",
+        "mode",
+        "clip",
+        "log",
+        "normalize",
+        "polarization_win_len",
+        "use_amax_only",
+    )
 
     _annotate_args = PhaseNet._annotate_args.copy()
+    _annotate_args["*_threshold"] = (
+        PhaseNet._annotate_args["*_threshold"][0],
+        0.2,
+    )
+    _annotate_args["blinding"] = (
+        PhaseNet._annotate_args["blinding"][0],
+        (250, 250),
+    )
+    _annotate_args["overlap"] = (
+        PhaseNet._annotate_args["overlap"][0],
+        1500,
+    )
     _annotate_args["fp_stabilization"] = (
         "Length of the initial stabilization interval used during DKPN training",
         4,
@@ -124,11 +131,6 @@ class DKPN(PhaseNet):
             "doi:10.26443/seismica.v3i1.1164"
         )
 
-        if default_args is None:
-            default_args = self._dkpn_defaults.copy()
-        else:
-            default_args = {**self._dkpn_defaults, **default_args}
-
         super().__init__(
             in_channels=in_channels,
             classes=classes,
@@ -177,6 +179,18 @@ class DKPN(PhaseNet):
 
         return feature_stream
 
+    @classmethod
+    def _feature_default_args(cls):
+        return {key: cls._annotate_args[key][1] for key in cls._feature_arg_names}
+
+    @classmethod
+    def _feature_args(cls, argdict):
+        feature_args = cls._feature_default_args()
+        feature_args.update(
+            {key: argdict[key] for key in cls._feature_arg_names if key in argdict}
+        )
+        return feature_args
+
     @staticmethod
     def _raw_component_dict(flexible_horizontal_components):
         comp_dict = {"Z": 0, "N": 1, "E": 2}
@@ -208,11 +222,7 @@ class DKPN(PhaseNet):
             return None
 
         waveforms, start_time, sampling_rate = self._group_to_array(traces_by_comp)
-        params = {
-            key: argdict.get(key, default)
-            for key, default in _DKPNFeatureExtractor.default_args.items()
-        }
-        extractor = _DKPNFeatureExtractor(**params)
+        extractor = _DKPNFeatureExtractor(**self._feature_args(argdict))
         features = extractor.matrix_cfs(waveforms, sampling_rate=sampling_rate)
 
         out = obspy.Stream()
@@ -296,23 +306,17 @@ class DKPN(PhaseNet):
 
 
 class _DKPNFeatureExtractor:
-    default_args = {
-        "fp_stabilization": 4,
-        "t_long": 4,
-        "freqmin": 0.5,
-        "corner": 1,
-        "perc_taper": 0.1,
-        "mode": "rms",
-        "clip": -999,
-        "log": True,
-        "normalize": False,
-        "polarization_win_len": 1,
-        "use_amax_only": False,
-    }
-
     def __init__(self, **kwargs):
-        values = {**self.default_args, **kwargs}
-        self.__dict__.update(values)
+        expected = set(DKPN._feature_arg_names)
+        missing = expected - set(kwargs)
+        if missing:
+            raise ValueError(f"Missing DKPN feature arguments: {sorted(missing)}")
+
+        unknown = set(kwargs) - expected
+        if unknown:
+            raise ValueError(f"Unknown DKPN feature arguments: {sorted(unknown)}")
+
+        self.__dict__.update(kwargs)
         self.eps = 1e-10
 
     def matrix_cfs(self, waveforms, sampling_rate):
