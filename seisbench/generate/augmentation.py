@@ -4,7 +4,8 @@ import numpy as np
 import scipy.signal
 
 import seisbench.data.base
-
+from seisbench.models.dkpn import _DKPNFeatureExtractor
+from seisbench.models.dkpn import DKPN
 
 class DKPNPreProcessor:
     """
@@ -40,8 +41,6 @@ class DKPNPreProcessor:
         key="X",
         **kwargs,
     ):
-        from seisbench.models.dkpn import _DKPNFeatureExtractor
-
         unknown = set(kwargs) - set(_DKPNFeatureExtractor.default_args)
         if unknown:
             raise ValueError(f"Unknown DKPN preprocessing arguments: {sorted(unknown)}")
@@ -66,8 +65,6 @@ class DKPNPreProcessor:
         sampling_rate = self._sampling_rate(metadata)
         component_order = self._component_order(x, metadata)
         waveforms = self._ordered_waveforms(x, component_order)
-
-        from seisbench.models.dkpn import _DKPNFeatureExtractor
 
         extractor = _DKPNFeatureExtractor(**self.feature_kwargs)
         features = extractor.matrix_cfs(waveforms, sampling_rate=sampling_rate)
@@ -126,8 +123,6 @@ class DKPNPreProcessor:
     def _ordered_waveforms(self, x, component_order):
         if x.shape[0] != len(component_order):
             x = x.T
-
-        from seisbench.models.dkpn import DKPN
 
         raw_comp_dict = DKPN._raw_component_dict(self.flexible_horizontal_components)
         out = np.zeros((3, x.shape[-1]), dtype=np.float64)
