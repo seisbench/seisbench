@@ -25,25 +25,54 @@ You can easily create models, load pretrained models or train models on any data
 `generate` contains tools for building data generation pipelines.
 They bridge the gap between `data` and `models`.
 
-The easiest way of getting started is through our colab notebooks.
-
-| Examples                                         |                                                                                                                                                                                                         |
-|--------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Dataset basics                                   | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01a_dataset_basics.ipynb)                  |
-| Model API                                        | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01b_model_api.ipynb)                       |
-| Generator Pipelines                              | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01c_generator_pipelines.ipynb)             |
-| Applying DAS models                              | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/04a_das_models.ipynb)                       |
-| Applied picking                                  | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02a_deploy_model_on_streams_example.ipynb) |
-| Using DeepDenoiser                               | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02b_deep_denoiser.ipynb)                   |
-| Depth phases and earthquake depth                | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02c_depth_phases.ipynb)                    |
-| Training PhaseNet (advanced)                     | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03a_training_phasenet.ipynb)               |
-| Training DeepSubDAS (advanced)                   | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/04b_training_deepsubdas.ipynb)               |
-| Creating a dataset (advanced)                    | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03b_creating_a_dataset.ipynb)              |
-| Training Denoiser (advanced)                     | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03e_training_denoiser.ipynb)               |
-| Building an event catalog with GaMMA (advanced)  | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03c_catalog_seisbench_gamma.ipynb)         |
-| Building an event catalog with PyOcto (advanced) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03d_catalog_seisbench_pyocto.ipynb)        |
-
+The easiest way of getting started is through our Colab notebooks.
+Just click on the "Open in Colab" link to run them in your browser.
 Alternatively, you can clone the repository and run the same [examples](https://github.com/seisbench/seisbench/tree/main/examples) locally.
+
+*Note:* If an example notebooks has been added very recently, it might rely on functionality that is not yet part of a numbered version.
+To run it nonetheless, you can replace the installation line with `pip install "seisbench[das] @ git+https://github.com/seisbench/seisbench"` to use the latest development branch.
+
+### Basic examples
+
+These examples introduce you to the key modules of SeisBench.
+
+| Examples              |                                                                                                                                                                                                         |
+|-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Dataset basics        | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01a_dataset_basics.ipynb)                  |
+| Model API             | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01b_model_api.ipynb)                       |
+| Generator Pipelines   | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/01c_generator_pipelines.ipynb)             |
+
+### Advanced topics
+
+This section covers topics like training models, creating datasets or building earthquake catalogs.
+
+| Examples                              |                                                                                                                                                                                                         |
+|---------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Applied picking                       | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02a_deploy_model_on_streams_example.ipynb) |
+| Training PhaseNet                     | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03a_training_phasenet.ipynb)               |
+| Creating a dataset                    | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03b_creating_a_dataset.ipynb)              |
+| Building an event catalog with GaMMA  | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03c_catalog_seisbench_gamma.ipynb)         |
+| Building an event catalog with PyOcto | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03d_catalog_seisbench_pyocto.ipynb)        |
+
+### Using SeisBench for DAS data
+
+These tutorials introduce how to use SeisBench to train and apply models for distributed acoustic sensing (DAS) data.
+
+| Examples                 |                                                                                                                                                                                                         |
+|--------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Applying DAS models      | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/04a_das_models.ipynb)                       |
+| Training DeepSubDAS      | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/04b_training_deepsubdas.ipynb)               |
+
+### Miscellaneous
+
+A collection of notebooks for miscellaneous topics, such as denoising or depth estimation.
+
+| Examples                          |                                                                                                                                                                                                         |
+|-----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Using DeepDenoiser                | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02b_deep_denoiser.ipynb)                   |
+| Training Denoiser                 | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03e_training_denoiser.ipynb)               |
+| Depth phases and earthquake depth | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02c_depth_phases.ipynb)                    |
+
 
 For more detailed information on Seisbench check out the [SeisBench documentation](https://seisbench.readthedocs.io/).
 
@@ -64,6 +93,8 @@ For this approach, clone the repository, switch to the repository root and run:
 pip install .
 ```
 which will install SeisBench in your current python environment.
+
+If you want to run SeisBench on DAS data, make sure to pass the `[das]` argument, i.e., `pip install seisbench[das]`.
 
 ### CPU only installation
 
