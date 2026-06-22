@@ -272,24 +272,6 @@ class DKPN(PhaseNet):
 
         return batch
 
-    def _parse_metadata(self):
-        super()._parse_metadata()
-
-        legacy_feature_args = {}
-        for key in self._feature_arg_names:
-            if key in self.default_args:
-                legacy_feature_args[key] = self.default_args.pop(key)
-
-        model_args = self._weights_metadata.get("model_args", {})
-        for key, value in legacy_feature_args.items():
-            if key in model_args and model_args[key] != value:
-                raise ValueError(
-                    f"Conflicting DKPN feature parameter '{key}' found in "
-                    "both model_args and legacy default_args metadata."
-                )
-
-        self._set_feature_args(legacy_feature_args)
-
     def get_model_args(self):
         model_args = super().get_model_args()
         for key in [
