@@ -5,6 +5,7 @@ import scipy.signal
 
 import seisbench.data.base
 from seisbench.models.dkpn import DKPN
+from seisbench.models.dkpn import _DKPN_FEATURE_DEFAULTS
 from seisbench.models.dkpn import _DKPNFeatureExtractor
 
 
@@ -31,7 +32,7 @@ class DKPNPreProcessor:
                 If key is a single string, the corresponding entry in state dict
                 is modified. Otherwise, a 2-tuple is expected.
     :type key: str, tuple[str, str]
-    :param kwargs: DKPN characteristic-function parameters.
+    :param kwargs: DKPN feature-generation parameters for training pipelines.
     """
 
     def __init__(
@@ -42,7 +43,7 @@ class DKPNPreProcessor:
         key="X",
         **kwargs,
     ):
-        unknown = set(kwargs) - set(DKPN._feature_arg_names)
+        unknown = set(kwargs) - set(_DKPN_FEATURE_DEFAULTS)
         if unknown:
             raise ValueError(f"Unknown DKPN preprocessing arguments: {sorted(unknown)}")
 
@@ -55,7 +56,7 @@ class DKPNPreProcessor:
         self.component_order = component_order
         self.flexible_horizontal_components = flexible_horizontal_components
         self.feature_kwargs = {
-            **DKPN._feature_default_args(),
+            **_DKPN_FEATURE_DEFAULTS,
             **kwargs,
         }
 

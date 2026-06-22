@@ -15,6 +15,27 @@ from .base import GroupingHelper
 from .phasenet import PhaseNet
 
 
+_DKPN_ANNOTATE_DEFAULTS = {
+    "*_threshold": 0.2,
+    "overlap": 1500,
+    "blinding": (250, 250),
+}
+
+_DKPN_FEATURE_DEFAULTS = {
+    "fp_stabilization": 4,
+    "t_long": 4,
+    "freqmin": 0.5,
+    "corner": 1,
+    "perc_taper": 0.1,
+    "mode": "rms",
+    "clip": -999,
+    "log": True,
+    "normalize": False,
+    "polarization_win_len": 1,
+    "use_amax_only": False,
+}
+
+
 class DKPN(PhaseNet):
     """
     Domain-Knowledge PhaseNet.
@@ -28,6 +49,11 @@ class DKPN(PhaseNet):
     ``forward`` expect precomputed five-channel DKPN features;
     generator training pipelines should use
     :py:class:`seisbench.generate.DKPNPreProcessor`.
+    DKPN feature-generation parameters are model configuration and
+    should be set through the constructor or weight metadata. Per-call
+    ``annotate`` and ``classify`` keyword arguments are reserved for
+    runtime inference options such as thresholds, overlap, blinding,
+    batch size, and component handling.
 
     The DKPN reference implementation was released under the MIT
     license by Matteo Bagagli, Anthony Lomax, Sonja Gaviano, and the
@@ -38,79 +64,20 @@ class DKPN(PhaseNet):
 
     _feature_component_order = "ZNEIM"
     _raw_component_order = "ZNE"
-    _feature_arg_names = (
-        "fp_stabilization",
-        "t_long",
-        "freqmin",
-        "corner",
-        "perc_taper",
-        "mode",
-        "clip",
-        "log",
-        "normalize",
-        "polarization_win_len",
-        "use_amax_only",
-    )
+    _feature_arg_names = tuple(_DKPN_FEATURE_DEFAULTS)
 
     _annotate_args = PhaseNet._annotate_args.copy()
     _annotate_args["*_threshold"] = (
         PhaseNet._annotate_args["*_threshold"][0],
-        0.2,
+        _DKPN_ANNOTATE_DEFAULTS["*_threshold"],
     )
     _annotate_args["blinding"] = (
         PhaseNet._annotate_args["blinding"][0],
-        (250, 250),
+        _DKPN_ANNOTATE_DEFAULTS["blinding"],
     )
     _annotate_args["overlap"] = (
         PhaseNet._annotate_args["overlap"][0],
-        1500,
-    )
-    _annotate_args["fp_stabilization"] = (
-        "Length of the initial stabilization interval used during DKPN training",
-        4,
-    )
-    _annotate_args["t_long"] = (
-        "Long-window length in seconds for DKPN frequency-band "
-        "characteristic functions",
-        4,
-    )
-    _annotate_args["freqmin"] = (
-        "Minimum frequency for DKPN octave-band characteristic functions",
-        0.5,
-    )
-    _annotate_args["corner"] = (
-        "Number of corners for the DKPN bandpass filters",
-        1,
-    )
-    _annotate_args["perc_taper"] = (
-        "Reference DKPN taper parameter, retained for metadata compatibility",
-        0.1,
-    )
-    _annotate_args["mode"] = (
-        "Statistic used for DKPN characteristic functions; currently "
-        "only 'rms' is supported",
-        "rms",
-    )
-    _annotate_args["clip"] = (
-        "Upper clipping value for DKPN characteristic functions; "
-        "values <= 0 disable clipping",
-        -999,
-    )
-    _annotate_args["log"] = (
-        "If true, apply log10 transform to DKPN characteristic functions and modulus",
-        True,
-    )
-    _annotate_args["normalize"] = (
-        "If true, peak-normalize DKPN characteristic functions and modulus",
-        False,
-    )
-    _annotate_args["polarization_win_len"] = (
-        "Reference DKPN metadata key for polarization window length",
-        1,
-    )
-    _annotate_args["use_amax_only"] = (
-        "If true, compute incidence/modulus from the globally strongest frequency band",
-        False,
+        _DKPN_ANNOTATE_DEFAULTS["overlap"],
     )
 
     def __init__(
@@ -120,6 +87,17 @@ class DKPN(PhaseNet):
         phases="PSN",
         sampling_rate=100,
         component_order="ZNEIM",
+        fp_stabilization=_DKPN_FEATURE_DEFAULTS["fp_stabilization"],
+        t_long=_DKPN_FEATURE_DEFAULTS["t_long"],
+        freqmin=_DKPN_FEATURE_DEFAULTS["freqmin"],
+        corner=_DKPN_FEATURE_DEFAULTS["corner"],
+        perc_taper=_DKPN_FEATURE_DEFAULTS["perc_taper"],
+        mode=_DKPN_FEATURE_DEFAULTS["mode"],
+        clip=_DKPN_FEATURE_DEFAULTS["clip"],
+        log=_DKPN_FEATURE_DEFAULTS["log"],
+        normalize=_DKPN_FEATURE_DEFAULTS["normalize"],
+        polarization_win_len=_DKPN_FEATURE_DEFAULTS["polarization_win_len"],
+        use_amax_only=_DKPN_FEATURE_DEFAULTS["use_amax_only"],
         default_args=None,
         **kwargs,
     ):
@@ -141,6 +119,21 @@ class DKPN(PhaseNet):
             **kwargs,
         )
         self._citation = citation
+        self._set_feature_args(
+            {
+                "fp_stabilization": fp_stabilization,
+                "t_long": t_long,
+                "freqmin": freqmin,
+                "corner": corner,
+                "perc_taper": perc_taper,
+                "mode": mode,
+                "clip": clip,
+                "log": log,
+                "normalize": normalize,
+                "polarization_win_len": polarization_win_len,
+                "use_amax_only": use_amax_only,
+            }
+        )
 
     def annotate_stream_pre(self, stream, argdict):
         super().annotate_stream_pre(stream, argdict)
@@ -173,7 +166,7 @@ class DKPN(PhaseNet):
 
         feature_stream = obspy.Stream()
         for group in groups:
-            converted = self._convert_group_to_features(group, raw_comp_dict, argdict)
+            converted = self._convert_group_to_features(group, raw_comp_dict)
             if converted is not None:
                 feature_stream += converted
 
@@ -181,15 +174,18 @@ class DKPN(PhaseNet):
 
     @classmethod
     def _feature_default_args(cls):
-        return {key: cls._annotate_args[key][1] for key in cls._feature_arg_names}
+        return _DKPN_FEATURE_DEFAULTS.copy()
 
-    @classmethod
-    def _feature_args(cls, argdict):
-        feature_args = cls._feature_default_args()
-        feature_args.update(
-            {key: argdict[key] for key in cls._feature_arg_names if key in argdict}
-        )
-        return feature_args
+    def _feature_args(self):
+        return {key: getattr(self, key) for key in self._feature_arg_names}
+
+    def _set_feature_args(self, feature_args):
+        unknown = set(feature_args) - set(self._feature_arg_names)
+        if unknown:
+            raise ValueError(f"Unknown DKPN feature arguments: {sorted(unknown)}")
+
+        for key, value in feature_args.items():
+            setattr(self, key, value)
 
     @staticmethod
     def _raw_component_dict(flexible_horizontal_components):
@@ -199,7 +195,7 @@ class DKPN(PhaseNet):
             comp_dict["2"] = comp_dict["E"]
         return comp_dict
 
-    def _convert_group_to_features(self, group, raw_comp_dict, argdict):
+    def _convert_group_to_features(self, group, raw_comp_dict):
         traces_by_comp = {}
         for trace in group:
             component = trace.id[-1]
@@ -222,7 +218,7 @@ class DKPN(PhaseNet):
             return None
 
         waveforms, start_time, sampling_rate = self._group_to_array(traces_by_comp)
-        extractor = _DKPNFeatureExtractor(**self._feature_args(argdict))
+        extractor = _DKPNFeatureExtractor(**self._feature_args())
         features = extractor.matrix_cfs(waveforms, sampling_rate=sampling_rate)
 
         out = obspy.Stream()
@@ -276,6 +272,24 @@ class DKPN(PhaseNet):
 
         return batch
 
+    def _parse_metadata(self):
+        super()._parse_metadata()
+
+        legacy_feature_args = {}
+        for key in self._feature_arg_names:
+            if key in self.default_args:
+                legacy_feature_args[key] = self.default_args.pop(key)
+
+        model_args = self._weights_metadata.get("model_args", {})
+        for key, value in legacy_feature_args.items():
+            if key in model_args and model_args[key] != value:
+                raise ValueError(
+                    f"Conflicting DKPN feature parameter '{key}' found in "
+                    "both model_args and legacy default_args metadata."
+                )
+
+        self._set_feature_args(legacy_feature_args)
+
     def get_model_args(self):
         model_args = super().get_model_args()
         for key in [
@@ -301,6 +315,7 @@ class DKPN(PhaseNet):
         model_args["classes"] = self.classes
         model_args["phases"] = self.labels
         model_args["sampling_rate"] = self.sampling_rate
+        model_args.update(self._feature_args())
 
         return model_args
 

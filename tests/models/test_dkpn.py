@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+import json
 import numpy as np
 import obspy
 import pytest
@@ -71,6 +72,9 @@ def test_dkpn_constructor_and_forward():
     assert model.in_samples == 3001
     assert model.component_order == "ZNEIM"
     assert model.default_args == {}
+    assert model.fp_stabilization == 4
+    assert model.t_long == 4
+    assert model.freqmin == 0.5
 
     x = torch.randn(2, 5, 3001)
     y = model(x)
@@ -80,14 +84,14 @@ def test_dkpn_constructor_and_forward():
     )
 
 
-def test_dkpn_defaults_are_defined_through_annotate_args():
+def test_dkpn_runtime_and_feature_defaults_are_split():
     model = sbm.DKPN()
 
     assert model.default_args == {}
     assert model._annotate_args["*_threshold"][1] == 0.2
     assert model._annotate_args["blinding"][1] == (250, 250)
     assert model._annotate_args["overlap"][1] == 1500
-    assert model._feature_default_args() == {
+    feature_defaults = {
         "fp_stabilization": 4,
         "t_long": 4,
         "freqmin": 0.5,
@@ -100,6 +104,11 @@ def test_dkpn_defaults_are_defined_through_annotate_args():
         "polarization_win_len": 1,
         "use_amax_only": False,
     }
+    assert model._feature_default_args() == feature_defaults
+
+    for key, value in feature_defaults.items():
+        assert key not in model._annotate_args
+        assert getattr(model, key) == value
 
 
 def test_dkpn_from_pretrained_uses_seisbench_cache(tmp_path):
@@ -136,15 +145,13 @@ def test_dkpn_from_pretrained_uses_seisbench_cache(tmp_path):
     assert y.shape == (1, 3, 3001)
 
 
-def test_dkpn_from_pretrained_preserves_metadata_default_args(tmp_path):
+def test_dkpn_from_pretrained_preserves_runtime_and_model_args(tmp_path):
     default_args = {
         "P_threshold": 0.11,
         "S_threshold": 0.12,
         "blinding": (12, 34),
-        "fp_stabilization": 3,
-        "t_long": 5,
     }
-    model_orig = sbm.DKPN(default_args=default_args)
+    model_orig = sbm.DKPN(default_args=default_args, fp_stabilization=3, t_long=5)
     model_orig.save(tmp_path / "test", version_str="1")
 
     with patch("seisbench.models.DKPN._model_path") as model_path:
@@ -156,8 +163,80 @@ def test_dkpn_from_pretrained_preserves_metadata_default_args(tmp_path):
     assert model.default_args["P_threshold"] == 0.11
     assert model.default_args["S_threshold"] == 0.12
     assert tuple(model.default_args["blinding"]) == (12, 34)
-    assert model.default_args["fp_stabilization"] == 3
-    assert model.default_args["t_long"] == 5
+    assert "fp_stabilization" not in model.default_args
+    assert "t_long" not in model.default_args
+    assert model.fp_stabilization == 3
+    assert model.t_long == 5
+    assert model.get_model_args()["fp_stabilization"] == 3
+    assert model.get_model_args()["t_long"] == 5
+
+
+def test_dkpn_legacy_metadata_default_args_migrate_to_feature_args(tmp_path):
+    model_orig = sbm.DKPN()
+    model_orig.save(tmp_path / "test", version_str="1")
+
+    metadata_path = tmp_path / "test.json.v1"
+    metadata = json.loads(metadata_path.read_text())
+    for key in model_orig._feature_arg_names:
+        metadata["model_args"].pop(key, None)
+    metadata["default_args"] = {
+        "P_threshold": 0.11,
+        "S_threshold": 0.12,
+        "blinding": [12, 34],
+        "fp_stabilization": 3,
+        "t_long": 5,
+    }
+    metadata_path.write_text(json.dumps(metadata))
+
+    with patch("seisbench.models.DKPN._model_path") as model_path:
+        model_path.return_value = tmp_path
+        model = sbm.DKPN.from_pretrained(
+            "test", version_str="1", update=False, wait_for_file=True
+        )
+
+    assert model.default_args["P_threshold"] == 0.11
+    assert model.default_args["S_threshold"] == 0.12
+    assert tuple(model.default_args["blinding"]) == (12, 34)
+    assert "fp_stabilization" not in model.default_args
+    assert "t_long" not in model.default_args
+    assert model.fp_stabilization == 3
+    assert model.t_long == 5
+
+
+def test_dkpn_legacy_metadata_conflicting_feature_args_fail(tmp_path):
+    model_orig = sbm.DKPN(t_long=6)
+    model_orig.save(tmp_path / "test", version_str="1")
+
+    metadata_path = tmp_path / "test.json.v1"
+    metadata = json.loads(metadata_path.read_text())
+    metadata["default_args"] = {"t_long": 5}
+    metadata_path.write_text(json.dumps(metadata))
+
+    with patch("seisbench.models.DKPN._model_path") as model_path:
+        model_path.return_value = tmp_path
+        with pytest.raises(ValueError, match="Conflicting DKPN feature parameter"):
+            sbm.DKPN.from_pretrained(
+                "test", version_str="1", update=False, wait_for_file=True
+            )
+
+
+def test_dkpn_custom_feature_args_are_used_in_stream_preprocessing():
+    model = sbm.DKPN(t_long=5, freqmin=1.0)
+    stream = _stream()
+
+    with patch("seisbench.models.dkpn._DKPNFeatureExtractor") as extractor_cls:
+        extractor = extractor_cls.return_value
+        extractor.matrix_cfs.return_value = np.zeros(
+            (5, stream[0].stats.npts), dtype=np.float32
+        )
+
+        features = model.annotate_stream_pre(stream, {})
+
+    assert len(features) == 5
+    assert extractor_cls.call_args.kwargs["t_long"] == 5
+    assert extractor_cls.call_args.kwargs["freqmin"] == 1.0
+    assert model.get_model_args()["t_long"] == 5
+    assert model.get_model_args()["freqmin"] == 1.0
 
 
 def test_dkpn_preprocessor_creates_feature_stream():
