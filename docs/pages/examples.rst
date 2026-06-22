@@ -108,6 +108,20 @@ Training ML models on seismic data
 
 Get started with training deep learning routines (PhaseNet) on a benchmark seismic dataset in SeisBench.
 
+.. _training_dkpn:
+
+Training DKPN models
+--------------------
+.. raw:: html
+
+    <embed>
+        <a href="https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03f_training_dkpn.ipynb">
+            <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
+        </a>
+    </embed>
+
+Train DKPN with its domain-knowledge preprocessing on a benchmark seismic dataset in SeisBench.
+
 .. _training_denoiser:
 
 Training Denoiser models
