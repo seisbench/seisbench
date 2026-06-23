@@ -143,7 +143,7 @@ class WaveformDataset:
                         "trace_dt_s": float,
                         "trace_component_order": str,
                     },
-                )
+                ).copy()  # Copy avoids pandas warnings about fragmented metadata
             tmp_metadata["trace_chunk"] = chunk
             if tmp_metadata.get("source_origin_time") is not None:
                 tmp_metadata.source_origin_time = pd.to_datetime(

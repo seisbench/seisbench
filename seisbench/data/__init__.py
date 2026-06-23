@@ -27,6 +27,7 @@ from .dummy import (
     ChunkedDummyDataset,
     DummyDataset,
 )
+from .esm import ESM25GoodMP, ESM25BadCV, ESM25GoodCV, ESM25SpectraMP
 from .ethz import ETHZ
 from .eqsdenoiser import EQSDenoiserEvents, EQSDenoiserNoise, EQSDenoiserCombined
 from .geofon import GEOFON
@@ -93,6 +94,10 @@ __all__ = [
     "CWANoise",
     "ChunkedDummyDataset",
     "DummyDataset",
+    "ESM25BadCV",
+    "ESM25GoodCV",
+    "ESM25GoodMP",
+    "ESM25SpectraMP",
     "ETHZ",
     "EQSDenoiserEvents",
     "EQSDenoiserNoise",

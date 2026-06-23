@@ -51,6 +51,15 @@ CWA dataset
     :undoc-members:
     :show-inheritance:
 
+ESM25 dataset
+-----------------------------------
+
+.. automodule:: seisbench.data.esm
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+
 ETHZ dataset
 -----------------------------------
 .. automodule:: seisbench.data.ethz

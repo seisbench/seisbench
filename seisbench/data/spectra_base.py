@@ -15,7 +15,7 @@ class SpectrumDataset(WaveformDataset):
     for all samples.
     """
 
-    def __init__(self, path, *, sampling_rate: None = None, **kwargs):
+    def __init__(self, path=None, *, sampling_rate: None = None, **kwargs):
         if sampling_rate is not None:
             raise ValueError(
                 "Spectrum datasets do not support sampling rates. Parameter 'sampling_rate' must be None."
