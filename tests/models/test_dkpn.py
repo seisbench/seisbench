@@ -12,6 +12,8 @@ import seisbench.generate as sbg
 import seisbench.models as sbm
 import seisbench.util as sbu
 
+from seisbench.util.dkpn_shared import _feature_arg_names
+
 
 def _waveforms(components="ZNE", n_samples=3401, sampling_rate=100.0):
     t = np.arange(n_samples) / sampling_rate
@@ -155,7 +157,7 @@ def test_dkpn_from_pretrained_preserves_runtime_and_model_args(tmp_path):
     model_orig.save(tmp_path / "test", version_str="1")
 
     metadata = json.loads((tmp_path / "test.json.v1").read_text())
-    for key in model_orig._feature_arg_names:
+    for key in _feature_arg_names:
         assert key in metadata["model_args"]
         assert key not in metadata["default_args"]
     assert metadata["model_args"]["fp_stabilization"] == 3

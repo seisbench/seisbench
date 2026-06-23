@@ -1,13 +1,20 @@
 import copy
+from typing import TYPE_CHECKING
 
 import numpy as np
 import scipy.signal
 
-import seisbench.data.base
-from seisbench.models.dkpn import DKPN
-from seisbench.models.dkpn import _DKPN_FEATURE_DEFAULTS
-from seisbench.models.dkpn import _DKPNFeatureExtractor
-from seisbench.models.dkpn import _dkpn_stabilization_samples
+from .generator import GenericGenerator
+from seisbench.util.dkpn_shared import (
+    _DKPN_FEATURE_DEFAULTS,
+    _dkpn_stabilization_samples,
+    _DKPNFeatureExtractor,
+    _raw_component_dict,
+    _raw_component_order,
+)
+
+if TYPE_CHECKING:
+    import seisbench.data.base
 
 
 class DKPNPreProcessor:
@@ -130,7 +137,7 @@ class DKPNPreProcessor:
         if x.shape[0] != len(component_order):
             x = x.T
 
-        raw_comp_dict = DKPN._raw_component_dict(self.flexible_horizontal_components)
+        raw_comp_dict = _raw_component_dict(self.flexible_horizontal_components)
         out = np.zeros((3, x.shape[-1]), dtype=np.float64)
         seen = set()
 
@@ -142,15 +149,13 @@ class DKPNPreProcessor:
             if output_idx in seen:
                 raise ValueError(
                     "DKPNPreProcessor received multiple components mapping to "
-                    f"'{DKPN._raw_component_order[output_idx]}'."
+                    f"'{_raw_component_order[output_idx]}'."
                 )
 
             out[output_idx] = x[input_idx]
             seen.add(output_idx)
 
-        missing = [
-            DKPN._raw_component_order[idx] for idx in range(3) if idx not in seen
-        ]
+        missing = [_raw_component_order[idx] for idx in range(3) if idx not in seen]
         if missing:
             raise ValueError(
                 "DKPNPreProcessor requires complete ZNE input components. "
@@ -976,7 +981,7 @@ class RealNoise:
         self.noise_dataset = noise_dataset
         self.scale = scale
         self.scaling_type = scaling_type.lower()
-        self.noise_generator = seisbench.generate.GenericGenerator(noise_dataset)
+        self.noise_generator = GenericGenerator(noise_dataset)
         self.metadata_thresholds = metadata_thresholds
         self.noise_samples = len(noise_dataset)
 
