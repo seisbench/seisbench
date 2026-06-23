@@ -183,6 +183,27 @@ For more information see: https://scweb.cwa.gov.tw/en-US
     Seismological Research Letters 2024.
     doi: https://doi.org/10.1785/0220230393
 
+ESM25
+-----
+
+.. figure::  _static/esm_mapplot.png
+   :align:   center
+
+The ESM25 dataset contains waveforms and spectra from the European Strong Motion database.
+It exists in four different versions:
+
+ * Low quality automatically processed waveforms (:py:class:`~seisbench.data.esm.ESM25BadCV`)
+ * High quality automatically processed waveforms (:py:class:`~seisbench.data.esm.ESM25GoodCV`)
+ * High quality manually processed waveforms (:py:class:`~seisbench.data.esm.ESM25GoodMP`)
+ * High quality manually processed spectra (:py:class:`~seisbench.data.esm.ESM25SpectraMP`)
+
+.. admonition:: Citation
+
+    Cianetti S., Mascandola C., Faenza L., Felicetta C., Russo E., Jozinović D., Münchmeyer J.,
+    Luzi L., Michelini A. (2026). ESM25: A Machine-Learning-Ready Snapshot of the European Engineering
+    Strong-Motion Database. Istituto Nazionale di Geofisica e Vulcanologia (INGV).
+    https://doi.org/10.13127/ai/esm25
+
 ETHZ
 -----
 

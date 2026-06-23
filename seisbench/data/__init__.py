@@ -27,6 +27,7 @@ from .dummy import (
     ChunkedDummyDataset,
     DummyDataset,
 )
+from .esm import ESM25GoodMP, ESM25BadCV, ESM25GoodCV, ESM25SpectraMP
 from .ethz import ETHZ
 from .eqsdenoiser import EQSDenoiserEvents, EQSDenoiserNoise, EQSDenoiserCombined
 from .geofon import GEOFON
@@ -62,6 +63,7 @@ from .scedc import (
     Ross2018JGRFM,
     Ross2018JGRPick,
 )
+from .spectra_base import SpectrumDataset, SpectrumBenchmarkDataset
 from .stead import STEAD
 from .txed import TXED
 from .vcseis import VCSEIS
@@ -93,6 +95,10 @@ __all__ = [
     "CWANoise",
     "ChunkedDummyDataset",
     "DummyDataset",
+    "ESM25BadCV",
+    "ESM25GoodCV",
+    "ESM25GoodMP",
+    "ESM25SpectraMP",
     "ETHZ",
     "EQSDenoiserEvents",
     "EQSDenoiserNoise",
@@ -119,6 +125,8 @@ __all__ = [
     "PNWExotic",
     "PNWNoise",
     "SCEDC",
+    "SpectrumDataset",
+    "SpectrumBenchmarkDataset",
     "Meier2019JGR",
     "Ross2018GPD",
     "Ross2018JGRFM",

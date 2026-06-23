@@ -9,6 +9,14 @@ General and WaveformDataset
     :undoc-members:
     :show-inheritance:
 
+SpectrumDataset
+---------------
+.. automodule:: seisbench.data.spectra_base
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+
 DASDataset
 ----------
 
