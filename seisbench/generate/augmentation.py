@@ -7,6 +7,7 @@ import seisbench.data.base
 from seisbench.models.dkpn import DKPN
 from seisbench.models.dkpn import _DKPN_FEATURE_DEFAULTS
 from seisbench.models.dkpn import _DKPNFeatureExtractor
+from seisbench.models.dkpn import _dkpn_stabilization_samples
 
 
 class DKPNPreProcessor:
@@ -18,6 +19,9 @@ class DKPNPreProcessor:
     incidence, and modulus. It does not apply DKPN's final batch/window
     normalization; use :py:meth:`seisbench.models.dkpn.DKPN.annotate_batch_pre`
     for that step.
+    If ``output_samples`` is set, the returned features start after the
+    DKPN stabilization interval. If ``output_samples`` is ``None``, the
+    full untrimmed feature sequence is returned.
 
     :param output_samples: If provided, crop the feature matrix to this length
                            after removing the DKPN stabilization interval.
@@ -72,8 +76,8 @@ class DKPNPreProcessor:
         features = extractor.matrix_cfs(waveforms, sampling_rate=sampling_rate)
 
         if self.output_samples is not None:
-            crop_start = int(
-                round(self.feature_kwargs["fp_stabilization"] * sampling_rate)
+            crop_start = _dkpn_stabilization_samples(
+                self.feature_kwargs["fp_stabilization"], sampling_rate
             )
             crop_end = crop_start + self.output_samples
             if features.shape[-1] < crop_end:

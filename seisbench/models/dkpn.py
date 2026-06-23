@@ -36,6 +36,10 @@ _DKPN_FEATURE_DEFAULTS = {
 }
 
 
+def _dkpn_stabilization_samples(fp_stabilization, sampling_rate):
+    return int(round(float(fp_stabilization) * float(sampling_rate)))
+
+
 class DKPN(PhaseNet):
     """
     Domain-Knowledge PhaseNet.
@@ -54,6 +58,9 @@ class DKPN(PhaseNet):
     ``annotate`` and ``classify`` keyword arguments are reserved for
     runtime inference options such as thresholds, overlap, blinding,
     batch size, and component handling.
+    Stream inference removes the initial DKPN feature stabilization
+    interval before windowing, matching training generators that use
+    ``DKPNPreProcessor(output_samples=model.in_samples)``.
 
     The DKPN reference implementation was released under the MIT
     license by Matteo Bagagli, Anthony Lomax, Sonja Gaviano, and the
@@ -144,8 +151,8 @@ class DKPN(PhaseNet):
         features = self._extract_feature_stream(stream, argdict)
         if len(features) == 0:
             seisbench.logger.warning(
-                "DKPN preprocessing did not find any complete "
-                "3-component waveform groups."
+                "DKPN preprocessing did not find any complete 3-component "
+                "waveform groups with enough samples after stabilization."
             )
 
         stream.traces = features.traces
@@ -156,7 +163,12 @@ class DKPN(PhaseNet):
             argdict, "flexible_horizontal_components"
         )
         raw_comp_dict = self._raw_component_dict(flexible)
-        min_length_s = (self.in_samples - 1) / stream[0].stats.sampling_rate
+        sampling_rate = stream[0].stats.sampling_rate
+        stabilization_samples = _dkpn_stabilization_samples(
+            self.fp_stabilization, sampling_rate
+        )
+        min_samples = self.in_samples + stabilization_samples
+        min_length_s = (min_samples - 1) / sampling_rate
         groups = GroupingHelper("instrument").group_stream(
             stream,
             strict=True,
@@ -220,6 +232,19 @@ class DKPN(PhaseNet):
         waveforms, start_time, sampling_rate = self._group_to_array(traces_by_comp)
         extractor = _DKPNFeatureExtractor(**self._feature_args())
         features = extractor.matrix_cfs(waveforms, sampling_rate=sampling_rate)
+        stabilization_samples = _dkpn_stabilization_samples(
+            self.fp_stabilization, sampling_rate
+        )
+        features = features[:, stabilization_samples:]
+
+        if features.shape[-1] < self.in_samples:
+            seisbench.logger.warning(
+                "DKPN preprocessing skipped a waveform group that is too "
+                "short after removing the stabilization interval."
+            )
+            return None
+
+        start_time = start_time + stabilization_samples / sampling_rate
 
         out = obspy.Stream()
         for idx, component in enumerate(self._feature_component_order):
@@ -230,7 +255,9 @@ class DKPN(PhaseNet):
             stats.starttime = start_time
             stats.sampling_rate = sampling_rate
             stats.channel = f"CF{component}"
-            out += Trace(data=features[idx].copy(), header=stats)
+            trace = Trace(data=features[idx].copy(), header=stats)
+            trace.stats.npts = features.shape[-1]
+            out += trace
 
         return out
 

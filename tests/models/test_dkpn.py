@@ -25,7 +25,7 @@ def _waveforms(components="ZNE", n_samples=3401, sampling_rate=100.0):
     return np.stack([values[component] for component in components]).astype(np.float64)
 
 
-def _stream(components="ZNE", n_samples=3201, sampling_rate=100.0):
+def _stream(components="ZNE", n_samples=3401, sampling_rate=100.0):
     start = obspy.UTCDateTime(2020, 1, 1)
     waveforms = _waveforms(components, n_samples, sampling_rate)
 
@@ -186,6 +186,8 @@ def test_dkpn_from_pretrained_preserves_runtime_and_model_args(tmp_path):
 def test_dkpn_custom_feature_args_are_used_in_stream_preprocessing():
     model = sbm.DKPN(t_long=5, freqmin=1.0)
     stream = _stream()
+    original_npts = stream[0].stats.npts
+    stabilization_samples = 400
 
     with patch("seisbench.models.dkpn._DKPNFeatureExtractor") as extractor_cls:
         extractor = extractor_cls.return_value
@@ -196,6 +198,9 @@ def test_dkpn_custom_feature_args_are_used_in_stream_preprocessing():
         features = model.annotate_stream_pre(stream, {})
 
     assert len(features) == 5
+    assert all(
+        trace.stats.npts == original_npts - stabilization_samples for trace in features
+    )
     assert extractor_cls.call_args.kwargs["t_long"] == 5
     assert extractor_cls.call_args.kwargs["freqmin"] == 1.0
     assert model.get_model_args()["t_long"] == 5
@@ -204,8 +209,10 @@ def test_dkpn_custom_feature_args_are_used_in_stream_preprocessing():
 
 def test_dkpn_preprocessor_creates_feature_stream():
     model = sbm.DKPN()
+    stream = _stream()
+    start_time = stream[0].stats.starttime
 
-    features = model.annotate_stream_pre(_stream(), model.default_args.copy())
+    features = model.annotate_stream_pre(stream, model.default_args.copy())
 
     assert len(features) == 5
     assert [trace.stats.channel for trace in features] == [
@@ -216,6 +223,11 @@ def test_dkpn_preprocessor_creates_feature_stream():
         "CFM",
     ]
     assert [trace.id[-1] for trace in features] == list("ZNEIM")
+    assert all(trace.stats.npts == model.in_samples for trace in features)
+    assert all(
+        trace.stats.starttime == start_time + model.fp_stabilization
+        for trace in features
+    )
     assert all(trace.data.dtype == np.float32 for trace in features)
     assert np.isfinite(np.stack([trace.data for trace in features])).all()
 
@@ -312,7 +324,7 @@ def test_dkpn_stream_and_generator_preprocessors_match():
             },
         )
     }
-    sbg.DKPNPreProcessor()(state_dict)
+    sbg.DKPNPreProcessor(output_samples=model.in_samples)(state_dict)
     features, _ = state_dict["X"]
 
     stream_features = np.stack([trace.data for trace in feature_stream])
@@ -406,6 +418,19 @@ def test_dkpn_accepts_flexible_horizontal_components():
         "CFI",
         "CFM",
     ]
+    assert all(trace.stats.npts == model.in_samples for trace in features)
+
+
+def test_dkpn_skips_streams_too_short_after_stabilization(caplog):
+    model = sbm.DKPN()
+
+    with caplog.at_level("WARNING"):
+        features = model.annotate_stream_pre(
+            _stream(n_samples=model.in_samples), model.default_args.copy()
+        )
+
+    assert len(features) == 0
+    assert "enough samples after stabilization" in caplog.text
 
 
 def test_dkpn_skips_incomplete_component_groups(caplog):
