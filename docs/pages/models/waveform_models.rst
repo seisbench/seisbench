@@ -53,6 +53,8 @@ method. For a more in-depth explanation, see the :ref:`examples`.
 +--------------------------------------------------------------+-------------------------------------------+
 | :py:class:`~seisbench.models.dpp.DPP`                        | Phase Picking                             |
 +--------------------------------------------------------------+-------------------------------------------+
+| :py:class:`~seisbench.models.dkpn.DKPN`                      | Phase Picking                             |
++--------------------------------------------------------------+-------------------------------------------+
 | :py:class:`~seisbench.models.depthphase.DepthPhaseNet`       | Depth estimation from depth phases        |
 +--------------------------------------------------------------+-------------------------------------------+
 | :py:class:`~seisbench.models.depthphase.DepthPhaseTEAM`      | Depth estimation from depth phases        |

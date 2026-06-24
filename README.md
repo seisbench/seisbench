@@ -67,11 +67,12 @@ These tutorials introduce how to use SeisBench to train and apply models for dis
 
 A collection of notebooks for miscellaneous topics, such as denoising or depth estimation.
 
-| Examples                          |                                                                                                                                                                                                         |
-|-----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Using DeepDenoiser                | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02b_deep_denoiser.ipynb)                   |
-| Training Denoiser                 | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03e_training_denoiser.ipynb)               |
-| Depth phases and earthquake depth | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02c_depth_phases.ipynb)                    |
+| Examples                          |                                                                                                                                                                                                      |
+|-----------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Training DKPN                     | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03f_training_dkpn.ipynb)                |
+| Using DeepDenoiser                | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02b_deep_denoiser.ipynb)                |
+| Training Denoiser                 | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/03e_training_denoiser.ipynb)            |
+| Depth phases and earthquake depth | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/seisbench/seisbench/blob/main/examples/02c_depth_phases.ipynb)                 |
 
 
 For more detailed information on Seisbench check out the [SeisBench documentation](https://seisbench.readthedocs.io/).

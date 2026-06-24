@@ -18,6 +18,7 @@ from .deepdenoiser import DeepDenoiser
 from .deepsubdas import DeepSubDAS
 from .depthphase import DepthFinder, DepthPhaseModel, DepthPhaseNet, DepthPhaseTEAM
 from .dpp import DeepPhasePick, DPPDetector, DPPPicker
+from .dkpn import DKPN
 from .eqcct import EQCCTP, EQCCTS
 from .eqtransformer import EQTransformer
 from .gpd import GPD
@@ -55,6 +56,7 @@ __all__ = [
     "DepthPhaseNet",
     "DepthPhaseTEAM",
     "DeepPhasePick",
+    "DKPN",
     "DPPDetector",
     "DPPPicker",
     "EQCCTP",
