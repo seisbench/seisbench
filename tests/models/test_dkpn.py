@@ -48,7 +48,7 @@ def _stream(components="ZNE", n_samples=3401, sampling_rate=100.0):
     return stream
 
 
-class _WaveformDataset:
+class _WaveformDatasetMock:
     def __init__(self, n_examples=2):
         self.n_examples = n_examples
 
@@ -335,7 +335,7 @@ def test_dkpn_stream_and_generator_preprocessors_match():
 
 def test_dkpn_generator_training_batch_and_backward_step():
     model = sbm.DKPN()
-    generator = sbg.GenericGenerator(_WaveformDataset())
+    generator = sbg.GenericGenerator(_WaveformDatasetMock())
     generator.add_augmentations(
         [
             sbg.DKPNPreProcessor(output_samples=model.in_samples),

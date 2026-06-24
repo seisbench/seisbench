@@ -73,7 +73,8 @@ class DKPNPreProcessor:
 
     def __call__(self, state_dict):
         x, metadata = state_dict[self.key[0]]
-        metadata = copy.deepcopy(metadata)
+        if self.key[0] != self.key[1]:
+            metadata = copy.deepcopy(metadata)
 
         sampling_rate = self._sampling_rate(metadata)
         component_order = self._component_order(x, metadata)
