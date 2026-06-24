@@ -44,6 +44,12 @@ class DKPN(PhaseNet):
     interval before windowing, matching training generators that use
     ``DKPNPreProcessor(output_samples=model.in_samples)``.
 
+    .. hint ::
+
+        A larger set of pretrained weights with the different training strategies
+        evaluated in the manuscript is available at
+        https://doi.org/10.5281/zenodo.20820943 .
+
     The DKPN reference implementation was released under the MIT
     license by Matteo Bagagli, Anthony Lomax, Sonja Gaviano, and the
     SOME project.
