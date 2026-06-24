@@ -67,6 +67,10 @@ method. For a more in-depth explanation, see the :ref:`examples`.
 +--------------------------------------------------------------+-------------------------------------------+
 | :py:class:`~seisbench.models.eqtp.EQTP`                      | Phase Picking/Polarity Picking            |
 +--------------------------------------------------------------+-------------------------------------------+
+| :py:class:`~seisbench.models.eqcct.EQCCTP`                   | Phase Picking                             |
++--------------------------------------------------------------+-------------------------------------------+
+| :py:class:`~seisbench.models.eqcct.EQCCTS`                   | Phase Picking                             |
++--------------------------------------------------------------+-------------------------------------------+
 | :py:class:`~seisbench.models.gpd.GPD`                        | Phase Picking                             |
 +--------------------------------------------------------------+-------------------------------------------+
 | :py:class:`~seisbench.models.lfe_detect.LFEDetect`           | Phase Picking (Low-frequency earthquakes) |
