@@ -1,14 +1,12 @@
-from pathlib import Path
-
 import pandas as pd
 import numpy as np
 
 import seisbench.data as sbd
 
 
-def test_spectrum_dataset():
+def test_spectrum_dataset(data_dir):
     data = sbd.SpectrumDataset(
-        Path(__file__).parent / "../examples/esm_spectrum_example/",
+        data_dir / "esm_spectrum_example/",
         component_order=(
             "acc_mp_u",
             "acc_mp_v",
