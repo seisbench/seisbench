@@ -1,13 +1,18 @@
+from __future__ import annotations
+
 import copy
 import re
 from abc import ABC, abstractmethod
-from typing import Union
+from typing import Union, TYPE_CHECKING
 
 import numpy as np
 from scipy.signal import stft
 
 import seisbench
 from seisbench import config
+
+if TYPE_CHECKING:
+    import seisbench.data as sbd
 
 
 class SupervisedLabeller(ABC):
@@ -872,7 +877,7 @@ class STFTDenoiserLabeller:
 
     def __init__(
         self,
-        noise_dataset: seisbench.data.WaveformDataset,
+        noise_dataset: sbd.WaveformDataset,
         scale: tuple[float, float] = (0, 1),
         scaling_type: str = "peak",
         component: str = "ZNE",
