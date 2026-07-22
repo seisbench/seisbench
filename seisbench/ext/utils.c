@@ -48,7 +48,7 @@ static PyObject *stack_windows(PyObject *self, PyObject *args, PyObject *kwds) {
     return NULL;
   }
   if (PyArray_TYPE(windows) != NPY_FLOAT32) {
-    PyErr_SetString(PyExc_ValueError, "pred_windows must be of type float64");
+    PyErr_SetString(PyExc_ValueError, "pred_windows must be of type float32");
     return NULL;
   }
 
