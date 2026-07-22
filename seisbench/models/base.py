@@ -1929,7 +1929,7 @@ class WaveformModel(SeisBenchModel, ABC):
 
         stacked_data = stack_windows(
             windows=data,
-            offsets=np.round(np.array(offsets) * pred_sample_factor).astype(int),
+            offsets=np.round(np.array(offsets) * pred_sample_factor).astype(np.intp),
             method=stack_method,
         )
 
