@@ -18,7 +18,7 @@ static PyObject *stack_windows(PyObject *self, PyObject *args, PyObject *kwds) {
                                    &offsets_py, &method))
     return NULL;
 
-  if (strcmp(method, "max") == 0 && strcmp(method, "avg") == 0) {
+  if (strcmp(method, "max") != 0 && strcmp(method, "avg") != 0) {
     PyErr_SetString(PyExc_ValueError, "method must be either 'max' or 'avg'");
     return NULL;
   }
@@ -81,6 +81,10 @@ static PyObject *stack_windows(PyObject *self, PyObject *args, PyObject *kwds) {
   // Determine size of output array
   npy_intp size_out = -1;
   for (npy_intp i = 0; i < n_windows; i++) {
+    if (offsets_data[i] < 0) {
+      PyErr_SetString(PyExc_ValueError, "Offsets must be non-negative");
+      return NULL;
+    }
     size_out = size_out >= offsets_data[i] ? size_out : offsets_data[i];
   }
   size_out += window_samples;
@@ -89,6 +93,9 @@ static PyObject *stack_windows(PyObject *self, PyObject *args, PyObject *kwds) {
   npy_intp out_dims[2] = {size_out, n_channels};
   PyArrayObject *result =
       (PyArrayObject *)PyArray_ZEROS(2, out_dims, NPY_FLOAT32, 0);
+  if (result == NULL) {
+    return NULL;
+  }
 
   float *result_data = (float *)PyArray_DATA(result);
 
@@ -120,6 +127,12 @@ static PyObject *stack_windows(PyObject *self, PyObject *args, PyObject *kwds) {
   } else if (!strcmp(method, "avg")) {
     npy_intp *sample_count =
         (npy_intp *)calloc(size_out * n_channels, sizeof(npy_intp));
+    if (sample_count == NULL) {
+      Py_BLOCK_THREADS;
+      Py_DECREF(result);
+      PyErr_NoMemory();
+      return NULL;
+    }
     for (i_win = 0; i_win < n_windows; i_win++) {
       offset = offsets_data[i_win];
       offset_sample = i_win * window_samples * n_channels;
