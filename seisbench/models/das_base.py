@@ -249,12 +249,12 @@ class VirtualTransformedDataArray:
     @property
     def dx(self) -> float:
         channel_coords = self.coords[self.channel_coord_name]
-        return float((channel_coords[1] - channel_coords[0]).values)
+        return float(channel_coords[1].data - channel_coords[0].data)
 
     @property
     def dt(self) -> float:
         time_coords = self.coords["time"]
-        return (time_coords[1] - time_coords[0]) / np.timedelta64(1, "s")
+        return (time_coords[1].data - time_coords[0].data) / np.timedelta64(1, "s")
 
     @property
     def filter_sos(self) -> Optional[np.ndarray]:
@@ -331,7 +331,7 @@ class VirtualTransformedDataArray:
 
         # Check that the coordinates are uniformly spaced
         for key in "time", self.channel_coord_name:
-            if self.data.coords[key].isinterp():
+            if isinstance(self.data.coords[key], xdas.InterpCoordinate):
                 simplified_coords = self.data.coords[
                     key
                 ].simplify()  # Simplify but with zero tolerance
@@ -343,7 +343,7 @@ class VirtualTransformedDataArray:
                         f"Alternatively, you can splice the array into multiple subarrays with uniformly spaced"
                         f"coordinates and pass each one individually to the model."
                     )
-            elif self.data.coords[key].isdense():
+            elif isinstance(self.data.coords[key], xdas.DenseCoordinate):
                 diffs = np.diff(self.data.coords[key].data)
                 if np.issubdtype(self.data.coords[key].data.dtype, np.datetime64):
                     atol = np.timedelta64(10, "us")
@@ -759,8 +759,8 @@ class DASPickingCallback(DASAnnotateCallback):
 
     def _translate_coords(self, idx: float, coord_name: str) -> float | np.datetime64:
         coord = self._output_coords[coord_name]
-        v0 = coord.get_value(int(idx))
-        v1 = coord.get_value(min(int(idx) + 1, len(coord) - 1))
+        v0 = coord[int(idx)]
+        v1 = coord[min(int(idx) + 1, len(coord) - 1)]
 
         return v0 + (v1 - v0) * (idx - int(idx))
 
@@ -1667,14 +1667,16 @@ class DASModel(SeisBenchModel, ABC):
             resample_samples = (1, 1)
         else:
             time_coords = data.coords["time"]
-            data_dt = (time_coords[1] - time_coords[0]) / np.timedelta64(1, "s")
+            data_dt = (time_coords[1].data - time_coords[0].data) / np.timedelta64(
+                1, "s"
+            )
             resample_samples = self._find_range(data_dt, *self.dt_range)
 
         if self.dx_range is None:
             resample_channels = (1, 1)
         else:
             channel_coords = data.coords[channel_coord_name]
-            data_dx = float((channel_coords[1] - channel_coords[0]).values)
+            data_dx = float(channel_coords[1].data - channel_coords[0].data)
             resample_channels = self._find_range(data_dx, *self.dx_range)
 
         return resample_samples, resample_channels

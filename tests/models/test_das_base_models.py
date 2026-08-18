@@ -310,9 +310,9 @@ def test_validate_data(axis):
         data={
             "tie_indices": [0, 50, len(da.coords[axis]) - 1],
             "tie_values": [
-                da.coords[axis].get_value(0),
-                da.coords[axis].get_value(50),
-                da.coords[axis].get_value(len(da.coords[axis]) - 1),
+                da.coords[axis][0].data,
+                da.coords[axis][50].data,
+                da.coords[axis][len(da.coords[axis]) - 1].data,
             ],
         },
         dim=axis,
@@ -326,9 +326,9 @@ def test_validate_data(axis):
         data={
             "tie_indices": [0, 50, len(da.coords[axis]) - 1],
             "tie_values": [
-                da.coords[axis].get_value(0),
-                da.coords[axis].get_value(51),
-                da.coords[axis].get_value(len(da.coords[axis]) - 1),
+                da.coords[axis][0].data,
+                da.coords[axis][51].data,
+                da.coords[axis][len(da.coords[axis]) - 1].data,
             ],
         },
         dim=axis,
