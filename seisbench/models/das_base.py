@@ -735,10 +735,13 @@ class DASPickingCallback(DASAnnotateCallback):
             threshold = self._thresholds[key]
             ann = annotations[key]
 
+            b0, b1 = self.blinding
+            b1 = max(0, ann.shape[0] - b1)
+
             for channel_idx in range(ann.shape[1]):
                 if (ann[:, channel_idx] > threshold).any():
                     peaks, peak_properties = scipy.signal.find_peaks(
-                        ann[self.blinding[0] : -self.blinding[1], channel_idx],
+                        ann[b0:b1, channel_idx],
                         height=threshold,
                         distance=min_separation_samples,
                     )
@@ -759,8 +762,8 @@ class DASPickingCallback(DASAnnotateCallback):
 
     def _translate_coords(self, idx: float, coord_name: str) -> float | np.datetime64:
         coord = self._output_coords[coord_name]
-        v0 = coord[int(idx)]
-        v1 = coord[min(int(idx) + 1, len(coord) - 1)]
+        v0 = coord[int(idx)].data
+        v1 = coord[min(int(idx) + 1, len(coord) - 1)].data
 
         return v0 + (v1 - v0) * (idx - int(idx))
 
