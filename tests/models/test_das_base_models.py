@@ -2,6 +2,7 @@ import gc
 import numpy as np
 import pytest
 import time
+import torch
 import xdas
 from xdas import Coordinate, DataArray
 from scipy.signal import resample_poly, sosfilt_zi, sosfilt
@@ -101,7 +102,7 @@ def test_get_n_patches():
 
 
 class DemoModel(sbm.DASModel):
-    def __init__(self):
+    def __init__(self, randomize: bool = False):
         patching_structure = sbm.PatchingStructure(
             in_samples=100,
             in_channels=90,
@@ -110,13 +111,17 @@ class DemoModel(sbm.DASModel):
             range_samples=(0, 100),
             range_channels=(0, 90),
         )
+        self.randomize = randomize
         super().__init__(
             patching_structure=patching_structure,
             annotate_keys=["x"],
         )
 
     def forward(self, x, argdict=None):
-        return {"x": x}
+        if self.randomize:
+            return {"x": torch.rand_like(x)}
+        else:
+            return {"x": x}
 
 
 class DemoCallback(sbm.DASAnnotateCallback):
@@ -593,7 +598,7 @@ def test_inmemory_collection_callback(
 @pytest.mark.parametrize("overlap", [0.0, 0.5])
 def test_writer_callback(tmp_path, stacking, overlap):
     model = DemoModel()
-    callback = sbm.WriterCallback(tmp_path)
+    callback = sbm.WriterCallback(tmp_path, stacking=stacking)
 
     n_samples = 500
     n_channels = 300
@@ -623,6 +628,46 @@ def test_writer_callback(tmp_path, stacking, overlap):
     annotations = xdas.open_mfdataarray(str(tmp_path) + "/x/*")
 
     assert np.allclose(da.data, annotations.data)
+
+
+@pytest.mark.parametrize("overlap", [0.0, 0.5])
+@pytest.mark.parametrize("blinding", [(0, 0), (10, 10)])
+@pytest.mark.parametrize("min_time_separation", [1.0, 2.0])
+def test_picking_callback(tmp_path, overlap, blinding, min_time_separation):
+    model = DemoModel(randomize=True)
+    callback = sbm.DASPickingCallback(
+        thresholds={"x": 0.5},
+        blinding=blinding,
+        min_time_separation=min_time_separation,
+    )
+
+    n_samples = 1000
+    n_channels = 300
+
+    data = np.random.rand(n_samples, n_channels).astype(np.float32)
+    channel_coords = xdas.Coordinate(
+        {
+            "tie_indices": [0, n_channels - 1],
+            "tie_values": [0, 1e4],
+        }
+    )
+    time_coords = xdas.Coordinate(
+        {
+            "tie_indices": [0, n_samples - 1],
+            "tie_values": [
+                np.datetime64("2023-01-01T00:00:00", "us"),
+                np.datetime64("2023-01-01T00:00:30", "us"),
+            ],
+        }
+    )
+
+    da = xdas.DataArray(
+        data=data, coords={"time": time_coords, "channel": channel_coords}
+    )
+
+    model.annotate(da, callback, overlap_samples=overlap, overlap_channels=overlap)
+
+    assert len(callback.get_results_dataframe()) > 0
 
 
 # Heavily parametrized to cover different parameter combinations
