@@ -83,6 +83,8 @@ method. For a more in-depth explanation, see the :ref:`examples`.
 +--------------------------------------------------------------+-------------------------------------------+
 | :py:class:`~seisbench.models.pickblue.PickBlue`              | Earthquake Detection/Phase Picking        |
 +--------------------------------------------------------------+-------------------------------------------+
+| :py:class:`~seisbench.models.seist.SeisT`                    | Earthquake Detection/Phase Picking        |
++--------------------------------------------------------------+-------------------------------------------+
 | :py:class:`~seisbench.models.skynet.Skynet`                  | Phase Picking                             |
 +--------------------------------------------------------------+-------------------------------------------+
 | :py:class:`~seisbench.models.phasenet.VariableLengthPhaseNet`| Phase Picking                             |

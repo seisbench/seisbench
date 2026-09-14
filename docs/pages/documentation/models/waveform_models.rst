@@ -133,6 +133,14 @@ PickBlue
     :undoc-members:
     :show-inheritance:
 
+SeisT
+-----------------------------------
+
+.. autoclass:: seisbench.models.seist.SeisT
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Skynet
 -----------------------------------
 
