@@ -24,6 +24,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from obspy.signal.trigger import trigger_onset
 from packaging import version
+from tqdm import tqdm
 
 import seisbench
 import seisbench.util as util
@@ -1167,6 +1168,7 @@ class WaveformModel(SeisBenchModel, ABC):
     # Optional arguments for annotate/classify: key -> (documentation, default_value)
     _annotate_args = {
         "batch_size": ("Batch size for the model", 256),
+        "pbar": ("Show progress bar over the groups of traces", False),
         "overlap": (
             "Overlap between prediction windows. Values between 0 and 1 are treated as fractions of the window length. "
             "Values above 1 a sample counts. (only for window prediction models)",
@@ -1397,6 +1399,7 @@ class WaveformModel(SeisBenchModel, ABC):
             min_length_s=(self.in_samples - 1) / sampling_rate,
             comp_dict=comp_dict,
         )
+        n_groups = len(groups)
 
         try:
             train_mode = self.training
@@ -1423,9 +1426,19 @@ class WaveformModel(SeisBenchModel, ABC):
 
             annotations = self._iter_prediction_streams(predictions)
 
+            if self._argdict_get_with_default(argdict, "pbar"):
+                pbar = tqdm(total=n_groups)
+            else:
+                pbar = None
+
             output = obspy.Stream()
             async for st in annotations:
                 output += st
+                if pbar is not None:
+                    pbar.update(1)
+
+            if pbar is not None:
+                pbar.close()
         finally:
             if train_mode:
                 self.train()

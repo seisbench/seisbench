@@ -1027,6 +1027,34 @@ def test_annotate_phasenetlight():
     assert output.creator == model.name
 
 
+def test_annotate_progress_bar(monkeypatch):
+    # The bar counts finished groups of traces and stays off unless asked for
+    model = seisbench.models.PhaseNetLight(sampling_rate=400)
+    stream = obspy.read()
+
+    totals = []
+
+    class DummyPbar:
+        def __init__(self, total=None):
+            totals.append(total)
+            self.updates = 0
+
+        def update(self, n=1):
+            self.updates += n
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(seisbench.models.base, "tqdm", DummyPbar)
+
+    model.annotate(stream)
+    assert totals == []
+
+    annotations = model.annotate(stream, pbar=True)
+    assert len(annotations) > 0
+    assert totals == [1]
+
+
 @pytest.mark.parametrize("filter_factor", [1, 2])
 def test_annotate_phasenet(filter_factor):
     # Tests that the annotate/classify functions run without crashes and annotate produces an output
