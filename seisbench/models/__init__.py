@@ -27,6 +27,7 @@ from .obstransformer import OBSTransformer
 from .phasenet import PhaseNet, PhaseNetLight, VariableLengthPhaseNet
 from .pickblue import PickBlue
 from .seisdae import SeisDAE
+from .seist import SeisT
 from .skynet import Skynet
 from .team import PhaseTEAM
 from .eqtp import EQTP
@@ -70,6 +71,7 @@ __all__ = [
     "VariableLengthPhaseNet",
     "PickBlue",
     "SeisDAE",
+    "SeisT",
     "Skynet",
     "PhaseTEAM",
     "EQTP",
