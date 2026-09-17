@@ -7,7 +7,8 @@ import seisbench.models as sbm
 
 @pytest.mark.parametrize("model", [sbm.PhaseNet, sbm.EQTransformer])
 @pytest.mark.parametrize("blinding", [(0, 0), (100, 100)])
-def test_das_wrapper_annotate(model, blinding):
+@pytest.mark.parametrize("transpose", [False, True])
+def test_das_wrapper_annotate(model, blinding, transpose):
     model_3c = model(sampling_rate=100)
     model = sbm.DASWaveformModelWrapper(model_3c)
 
@@ -34,6 +35,8 @@ def test_das_wrapper_annotate(model, blinding):
     da = xdas.DataArray(
         data=data, coords={"time": time_coords, "channel": channel_coords}
     )
+    if transpose:
+        da = da.transpose("channel", "time")
 
     callback = sbm.InMemoryCollectionCallback()
 
