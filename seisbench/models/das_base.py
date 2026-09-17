@@ -272,9 +272,10 @@ class VirtualTransformedDataArray:
         resample_samples: tuple[int, int],
         resample_channels: tuple[int, int],
     ) -> tuple[float, float]:
+        shape = data.shape if data.dims[0] == "time" else data.shape[::-1]
         return (
-            data.shape[0] * resample_samples[0] // resample_samples[1],
-            data.shape[1] * resample_channels[0] // resample_channels[1],
+            shape[0] * resample_samples[0] // resample_samples[1],
+            shape[1] * resample_channels[0] // resample_channels[1],
         )
 
     def __len__(self) -> int:
