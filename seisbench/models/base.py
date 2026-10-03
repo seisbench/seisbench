@@ -1199,6 +1199,13 @@ class WaveformModel(SeisBenchModel, ABC):
             "distribution issues",
             True,
         ),
+        "autocast": (
+            "Run the model forward pass in mixed precision using torch.autocast with the given dtype, "
+            "e.g., 'float16' or 'bfloat16'. This can substantially speed up inference on GPUs with tensor cores, "
+            "at the cost of small deviations in the predictions. Preprocessing and postprocessing stay in "
+            "float32. If None, the model runs in full precision.",
+            None,
+        ),
     }
 
     _stack_options = {
@@ -1368,6 +1375,8 @@ class WaveformModel(SeisBenchModel, ABC):
         # Kwargs overwrite default args
         argdict = self.default_args.copy()
         argdict.update(kwargs)
+        # Validate before starting the pipeline workers
+        self._get_autocast_dtype(argdict)
 
         if copy:
             stream = stream.copy()
@@ -1926,6 +1935,7 @@ class WaveformModel(SeisBenchModel, ABC):
         else:
             fragments = np.array(data, dtype=np.float32)
         fragments = torch.as_tensor(fragments, dtype=torch.float32, device=self.device)
+        autocast_dtype = self._get_autocast_dtype(argdict)
 
         with torch.no_grad():
             preprocessed = self.annotate_batch_pre(fragments, argdict=argdict)
@@ -1936,7 +1946,13 @@ class WaveformModel(SeisBenchModel, ABC):
             else:
                 piggyback = None
 
-            predictions = self(preprocessed)
+            if autocast_dtype is None:
+                predictions = self(preprocessed)
+            else:
+                with torch.autocast(device_type=self.device.type, dtype=autocast_dtype):
+                    predictions = self(preprocessed)
+                predictions = self._recursive_to_float32(predictions)
+
             predictions = self.annotate_batch_post(
                 predictions,
                 piggyback=piggyback,
@@ -2132,6 +2148,41 @@ class WaveformModel(SeisBenchModel, ABC):
         :return: Postprocessed predictions
         """
         return batch
+
+    def _get_autocast_dtype(self, argdict: dict) -> torch.dtype | None:
+        """
+        Resolves the ``autocast`` annotate argument to a torch dtype.
+
+        :param argdict: Dictionary of arguments
+        :return: Floating point torch dtype or None if autocast is disabled
+        """
+        dtype = self._argdict_get_with_default(argdict, "autocast")
+        if dtype is None:
+            return None
+        if isinstance(dtype, str):
+            dtype = getattr(torch, dtype, None)
+        if not isinstance(dtype, torch.dtype) or not dtype.is_floating_point:
+            raise ValueError(
+                f"Invalid autocast dtype '{self._argdict_get_with_default(argdict, 'autocast')}'. "
+                f"Use a floating point dtype such as 'float16' or 'bfloat16', or None."
+            )
+        return dtype
+
+    def _recursive_to_float32(self, x: torch.Tensor | list | tuple | Any):
+        """
+        Recursively casts floating point torch.Tensor objects to float32 while preserving any overarching
+        tuple or list structure. Used to undo the reduced precision of autocast outputs.
+        :param x:
+        :return:
+        """
+        if isinstance(x, torch.Tensor):
+            return x.float() if x.is_floating_point() else x
+        elif isinstance(x, list):
+            return [self._recursive_to_float32(y) for y in x]
+        elif isinstance(x, tuple):
+            return tuple(self._recursive_to_float32(y) for y in x)
+        else:
+            return x
 
     def _recursive_torch_to_numpy(self, x: torch.Tensor | list | tuple | np.ndarray):
         """

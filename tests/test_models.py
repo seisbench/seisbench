@@ -1260,6 +1260,44 @@ def test_iter_queue_worker_chain_failure():
     asyncio.run(run())
 
 
+@pytest.mark.parametrize(
+    "device,dtype,atol",
+    [
+        ("cpu", "bfloat16", 0.1),
+        ("cpu", torch.bfloat16, 0.1),
+        pytest.param(
+            "cuda",
+            "float16",
+            0.01,
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="CUDA not available"
+            ),
+        ),
+    ],
+)
+def test_annotate_autocast(device, dtype, atol):
+    # Tests that mixed precision annotations are float32 and close to full precision
+    model = seisbench.models.PhaseNet(sampling_rate=400).to(device)
+    stream = obspy.read()
+
+    reference = model.annotate(stream)
+    annotations = model.annotate(stream, autocast=dtype)
+
+    assert len(annotations) == len(reference) > 0
+    for trace, ref in zip(annotations, reference):
+        assert trace.id == ref.id
+        assert trace.stats.starttime == ref.stats.starttime
+        assert trace.data.dtype == np.float32
+        np.testing.assert_allclose(trace.data, ref.data, atol=atol)
+
+
+@pytest.mark.parametrize("dtype", ["int8", "not_a_dtype", torch.int32])
+def test_annotate_autocast_invalid(dtype):
+    model = seisbench.models.PhaseNet(sampling_rate=400)
+    with pytest.raises(ValueError, match="Invalid autocast dtype"):
+        model.annotate(obspy.read(), autocast=dtype)
+
+
 @pytest.mark.parametrize("output_activation", ["sigmoid", "softmax"])
 @pytest.mark.parametrize("norm", ["std", "peak"])
 @pytest.mark.parametrize("in_samples", [1337, 3001, 6000])
