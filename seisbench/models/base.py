@@ -1970,7 +1970,9 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         data = [window.data for window in segments]
         if self.allow_padding:
-            fragments = seisbench.util.pad_packed_sequence(data)
+            fragments = seisbench.util.pad_packed_sequence(data).astype(
+                np.float32, copy=False
+            )
         else:
             fragments = np.array(data, dtype=np.float32)
         fragments = torch.as_tensor(fragments, dtype=torch.float32, device=self.device)
