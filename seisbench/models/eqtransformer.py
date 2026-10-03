@@ -418,8 +418,9 @@ class Encoder(nn.Module):
         for conv, pool, padding in zip(self.convs, self.pools, self.paddings):
             x = torch.relu(conv(x))
             if padding != 0:
-                # Only pad right, use -1e10 as negative infinity
-                x = F.pad(x, (0, padding), "constant", -1e10)
+                # Only pad right, use the lowest finite value as negative infinity.
+                # A fixed constant like -1e10 overflows in float16 (autocast).
+                x = F.pad(x, (0, padding), "constant", torch.finfo(x.dtype).min)
             x = pool(x)
 
         return x

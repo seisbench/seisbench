@@ -1201,9 +1201,12 @@ class WaveformModel(SeisBenchModel, ABC):
         ),
         "autocast": (
             "Run the model forward pass in mixed precision using torch.autocast with the given dtype, "
-            "e.g., 'float16' or 'bfloat16'. This can substantially speed up inference on GPUs with tensor cores, "
-            "at the cost of small deviations in the predictions. Preprocessing and postprocessing stay in "
-            "float32. If None, the model runs in full precision.",
+            "either 'float16' or 'bfloat16'. Preprocessing and postprocessing stay in float32. "
+            "Predictions deviate slightly from full precision, more so for models predicting waveforms, "
+            "e.g., denoisers. Whether this speeds up inference depends on the model, the hardware and the "
+            "torch/cuDNN versions, and not every model or device supports every dtype, e.g., LSTM-based "
+            "models may fail on CPU. Can be combined with compiling the model, e.g., ``model.compile()``. "
+            "If None, the model runs in full precision.",
             None,
         ),
     }
@@ -1375,8 +1378,8 @@ class WaveformModel(SeisBenchModel, ABC):
         # Kwargs overwrite default args
         argdict = self.default_args.copy()
         argdict.update(kwargs)
-        # Validate before starting the pipeline workers
-        self._get_autocast_dtype(argdict)
+        # Validate and resolve once, before starting the pipeline workers
+        argdict["autocast"] = self._get_autocast_dtype(argdict)
 
         if copy:
             stream = stream.copy()
@@ -1949,7 +1952,9 @@ class WaveformModel(SeisBenchModel, ABC):
             if autocast_dtype is None:
                 predictions = self(preprocessed)
             else:
-                with torch.autocast(device_type=self.device.type, dtype=autocast_dtype):
+                # self.device is the string "cpu" for models without parameters
+                device_type = torch.device(self.device).type
+                with torch.autocast(device_type=device_type, dtype=autocast_dtype):
                     predictions = self(preprocessed)
                 predictions = self._recursive_to_float32(predictions)
 
@@ -2149,29 +2154,35 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         return batch
 
+    _autocast_dtypes = {
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+    }
+
     def _get_autocast_dtype(self, argdict: dict) -> torch.dtype | None:
         """
         Resolves the ``autocast`` annotate argument to a torch dtype.
 
         :param argdict: Dictionary of arguments
-        :return: Floating point torch dtype or None if autocast is disabled
+        :return: torch.float16, torch.bfloat16 or None if autocast is disabled
         """
-        dtype = self._argdict_get_with_default(argdict, "autocast")
-        if dtype is None:
+        value = self._argdict_get_with_default(argdict, "autocast")
+        if value is None:
             return None
-        if isinstance(dtype, str):
-            dtype = getattr(torch, dtype, None)
-        if not isinstance(dtype, torch.dtype) or not dtype.is_floating_point:
+        dtype = (
+            self._autocast_dtypes.get(value, value) if isinstance(value, str) else value
+        )
+        if dtype not in self._autocast_dtypes.values():
             raise ValueError(
-                f"Invalid autocast dtype '{self._argdict_get_with_default(argdict, 'autocast')}'. "
-                f"Use a floating point dtype such as 'float16' or 'bfloat16', or None."
+                f"Invalid autocast dtype '{value}'. "
+                f"Use one of {list(self._autocast_dtypes)} or None."
             )
         return dtype
 
-    def _recursive_to_float32(self, x: torch.Tensor | list | tuple | Any):
+    def _recursive_to_float32(self, x: torch.Tensor | list | tuple | dict | Any):
         """
         Recursively casts floating point torch.Tensor objects to float32 while preserving any overarching
-        tuple or list structure. Used to undo the reduced precision of autocast outputs.
+        tuple, named tuple, list or dict structure. Used to undo the reduced precision of autocast outputs.
         :param x:
         :return:
         """
@@ -2179,8 +2190,12 @@ class WaveformModel(SeisBenchModel, ABC):
             return x.float() if x.is_floating_point() else x
         elif isinstance(x, list):
             return [self._recursive_to_float32(y) for y in x]
+        elif isinstance(x, tuple) and hasattr(x, "_fields"):  # Named tuple
+            return type(x)(*(self._recursive_to_float32(y) for y in x))
         elif isinstance(x, tuple):
             return tuple(self._recursive_to_float32(y) for y in x)
+        elif isinstance(x, dict):
+            return {k: self._recursive_to_float32(v) for k, v in x.items()}
         else:
             return x
 

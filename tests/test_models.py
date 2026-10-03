@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import inspect
+from collections import namedtuple
 import logging
 import time
 from pathlib import Path
@@ -1291,11 +1292,76 @@ def test_annotate_autocast(device, dtype, atol):
         np.testing.assert_allclose(trace.data, ref.data, atol=atol)
 
 
-@pytest.mark.parametrize("dtype", ["int8", "not_a_dtype", torch.int32])
+@pytest.mark.parametrize(
+    "dtype", ["int8", "not_a_dtype", "float32", "half", torch.int32, torch.float64]
+)
 def test_annotate_autocast_invalid(dtype):
     model = seisbench.models.PhaseNet(sampling_rate=400)
     with pytest.raises(ValueError, match="Invalid autocast dtype"):
         model.annotate(obspy.read(), autocast=dtype)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+@pytest.mark.parametrize("dtype", ["float16", "bfloat16"])
+def test_annotate_autocast_tuple_output(dtype):
+    # EQTransformer returns a tuple of outputs and pads with a large negative
+    # value internally, which must not overflow in float16
+    model = seisbench.models.EQTransformer(sampling_rate=400).to("cuda")
+    stream = obspy.read()
+
+    reference = model.annotate(stream)
+    annotations = model.annotate(stream, autocast=dtype)
+
+    assert len(annotations) == len(reference) > 0
+    for trace, ref in zip(annotations, reference):
+        assert trace.data.dtype == np.float32
+        np.testing.assert_allclose(trace.data, ref.data, atol=0.05)
+
+
+class ParameterlessWaveformModel(seisbench.models.WaveformModel):
+    def __init__(self):
+        super().__init__(
+            component_order="ZNE",
+            sampling_rate=100,
+            output_type="array",
+            in_samples=1000,
+            pred_sample=(0, 1000),
+            labels="ZNE",
+        )
+
+    def forward(self, x):
+        return x.abs()
+
+    def annotate_batch_post(self, batch, piggyback, argdict):
+        return torch.transpose(batch, -1, -2)
+
+
+def test_annotate_autocast_parameterless_model():
+    # Models without parameters report their device as the string "cpu"
+    model = ParameterlessWaveformModel()
+    stream = obspy.read()
+
+    annotations = model.annotate(stream, autocast="bfloat16")
+    assert len(annotations) == 3
+    assert all(trace.data.dtype == np.float32 for trace in annotations)
+
+
+def test_recursive_to_float32():
+    model = ParameterlessWaveformModel()
+    half = torch.ones(2, dtype=torch.float16)
+    integer = torch.ones(2, dtype=torch.int64)
+    Output = namedtuple("Output", ["a", "b"])
+
+    out = model._recursive_to_float32(
+        {"x": [half, (half, integer)], "y": Output(half, integer), "z": "label"}
+    )
+    assert out["x"][0].dtype == torch.float32
+    assert out["x"][1][0].dtype == torch.float32
+    assert out["x"][1][1].dtype == torch.int64
+    assert isinstance(out["y"], Output)
+    assert out["y"].a.dtype == torch.float32
+    assert out["y"].b.dtype == torch.int64
+    assert out["z"] == "label"
 
 
 @pytest.mark.parametrize("output_activation", ["sigmoid", "softmax"])
