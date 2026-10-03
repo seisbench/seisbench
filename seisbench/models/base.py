@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import math
 import os
@@ -39,6 +40,7 @@ from .utils import (
     PredictionSegment,
     PredictionsStacked,
     TraceSegment,
+    iter_queue_worker,
 )
 
 if in_notebook():
@@ -1432,10 +1434,11 @@ class WaveformModel(SeisBenchModel, ABC):
                 pbar = None
 
             output = obspy.Stream()
-            async for st in annotations:
-                output += st
-                if pbar is not None:
-                    pbar.update(1)
+            async with contextlib.aclosing(annotations):
+                async for st in annotations:
+                    output += st
+                    if pbar is not None:
+                        pbar.update(1)
 
             if pbar is not None:
                 pbar.close()
@@ -1444,7 +1447,7 @@ class WaveformModel(SeisBenchModel, ABC):
                 self.train()
         return output
 
-    async def _iter_groups(
+    def _iter_groups(
         self,
         traces: list[list[obspy.Trace]],
         argdict: dict,
@@ -1456,24 +1459,15 @@ class WaveformModel(SeisBenchModel, ABC):
         :param argdict: Argument dictionary
         :return: Async generator of GroupedTraceData
         """
-        out = asyncio.Queue()
 
-        async def worker():
+        async def worker(out: asyncio.Queue) -> None:
             for stream in traces:
                 await out.put(self.stream_to_array(stream, argdict))
                 # await asyncio.sleep(0)  # Yield control to event loop
-            await out.put(None)
 
-        task = asyncio.create_task(worker())
+        return iter_queue_worker(worker)
 
-        while True:
-            elem = await out.get()
-            if elem is None:
-                break
-            yield elem
-        await task
-
-    async def _iter_predictions(
+    def _iter_predictions(
         self,
         traces: AsyncGenerator[list[TraceSegment]],
         argdict: dict,
@@ -1486,9 +1480,8 @@ class WaveformModel(SeisBenchModel, ABC):
         :return: Async generator of list of PredictionSegment
         """
         out_buffer: dict[tuple[Key, int], list[PredictionSegment]] = defaultdict(list)
-        out_queue = asyncio.Queue()
 
-        async def worker() -> None:
+        async def worker(out_queue: asyncio.Queue) -> None:
             async for segment in traces:
                 preds = await asyncio.to_thread(
                     self._predict_windows,
@@ -1503,15 +1496,7 @@ class WaveformModel(SeisBenchModel, ABC):
                         await out_queue.put(out_buffer.pop(buffer_key))
                 # await asyncio.sleep(0)  # Yield control to event loop
 
-            await out_queue.put(None)
-
-        task = asyncio.create_task(worker())
-        while True:
-            out = await out_queue.get()
-            if out is None:
-                break
-            yield out
-        await task
+        return iter_queue_worker(worker, traces)
 
     def _get_overlap(self, in_samples: int, argdict: dict) -> int:
         overlap = self._argdict_get_with_default(argdict, "overlap")
@@ -1529,10 +1514,11 @@ class WaveformModel(SeisBenchModel, ABC):
         :param predictions: Async generator of PredictionsStacked
         :return: Async generator of obspy streams
         """
-        async for prediction in predictions:
-            yield self._predictions_to_stream(prediction)
+        async with contextlib.aclosing(predictions):
+            async for prediction in predictions:
+                yield self._predictions_to_stream(prediction)
 
-    async def _iter_fragments_point(
+    def _iter_fragments_point(
         self,
         groups: AsyncGenerator[GroupedTraceData],
         argdict,
@@ -1543,12 +1529,10 @@ class WaveformModel(SeisBenchModel, ABC):
         :param argdict: Argument dictionary
         :return: Async generator of list of TraceSegment
         """
-        out_queue = asyncio.Queue()
-
         buffer: dict[int, list[TraceSegment]] = defaultdict(list)
         batch_size = self._argdict_get_with_default(argdict, "batch_size")
 
-        async def drain_buffer(force: bool = False) -> None:
+        async def drain_buffer(out_queue: asyncio.Queue, force: bool = False) -> None:
             if not any(len(v) >= batch_size for v in buffer.values()) and not force:
                 return
 
@@ -1560,26 +1544,19 @@ class WaveformModel(SeisBenchModel, ABC):
                     buffer[n_samples] = buffer[n_samples][batch_size:]
                     await out_queue.put(output_elem)
 
-        async def worker():
+        async def worker(out_queue: asyncio.Queue) -> None:
             async for group in groups:
                 blocks = self._cut_fragments_point(group, argdict)
                 for n_samples, grouped_blocks in groupby(
                     blocks, key=lambda blk: blk.n_samples
                 ):
                     buffer[n_samples].extend(list(grouped_blocks))
-                await drain_buffer()
+                await drain_buffer(out_queue)
                 # await asyncio.sleep(0)  # Yield control to event loop
 
-            await drain_buffer(force=True)
-            await out_queue.put(None)
+            await drain_buffer(out_queue, force=True)
 
-        task = asyncio.create_task(worker())
-        while True:
-            ret = await out_queue.get()
-            if ret is None:
-                break
-            yield ret
-        await task
+        return iter_queue_worker(worker, groups)
 
     def _cut_fragments_point(
         self, group: GroupedTraceData, argdict
@@ -1618,7 +1595,7 @@ class WaveformModel(SeisBenchModel, ABC):
             for offset in offsets
         ]
 
-    async def _iter_reassemble_predictions_point(
+    def _iter_reassemble_predictions_point(
         self,
         prediction_segments: AsyncGenerator[list[PredictionSegment]],
         argdict,
@@ -1631,9 +1608,7 @@ class WaveformModel(SeisBenchModel, ABC):
         :return: Async generator of PredictionsStacked
         """
 
-        out_queue = asyncio.Queue()
-
-        async def worker():
+        async def worker(out_queue: asyncio.Queue) -> None:
             async for segment in prediction_segments:
                 out = await asyncio.to_thread(
                     self._reassemble_blocks_point, segment, argdict
@@ -1641,15 +1616,7 @@ class WaveformModel(SeisBenchModel, ABC):
                 await out_queue.put(out)
                 # await asyncio.sleep(0)  # Yield control to event loop
 
-            await out_queue.put(None)
-
-        task = asyncio.create_task(worker())
-        while True:
-            ret = await out_queue.get()
-            if ret is None:
-                break
-            yield ret
-        await task
+        return iter_queue_worker(worker, prediction_segments)
 
     def _reassemble_blocks_point(
         self,
@@ -1677,7 +1644,7 @@ class WaveformModel(SeisBenchModel, ABC):
             stations=meta.stations,
         )
 
-    async def _iter_fragments_array(
+    def _iter_fragments_array(
         self,
         groups: AsyncGenerator[GroupedTraceData],
         argdict: dict,
@@ -1686,9 +1653,7 @@ class WaveformModel(SeisBenchModel, ABC):
         buffer: dict[int, list[TraceSegment]] = defaultdict(list)
         batch_size = self._argdict_get_with_default(argdict, "batch_size")
 
-        out_queue: asyncio.Queue[list[TraceSegment] | None] = asyncio.Queue()
-
-        async def drain_buffer(force: bool = False) -> None:
+        async def drain_buffer(out_queue: asyncio.Queue, force: bool = False) -> None:
             if not any(len(v) >= batch_size for v in buffer.values()) and not force:
                 return
 
@@ -1700,26 +1665,19 @@ class WaveformModel(SeisBenchModel, ABC):
                     buffer[n_samples] = buffer[n_samples][batch_size:]
                     await out_queue.put(output_elem)
 
-        async def worker() -> None:
+        async def worker(out_queue: asyncio.Queue) -> None:
             async for group in groups:
                 blocks = self._cut_fragments_array(group, argdict)
                 for n_samples, grouped_blocks in groupby(
                     blocks, key=lambda blk: blk.n_samples
                 ):
                     buffer[n_samples].extend(list(grouped_blocks))
-                await drain_buffer()
+                await drain_buffer(out_queue)
                 # await asyncio.sleep(0)  # Yield control to event loop
 
-            await drain_buffer(force=True)
-            await out_queue.put(None)
+            await drain_buffer(out_queue, force=True)
 
-        task = asyncio.create_task(worker())
-        while True:
-            ret = await out_queue.get()
-            if ret is None:
-                break
-            yield ret
-        await task
+        return iter_queue_worker(worker, groups)
 
     def _get_in_pred_samples(
         self,
@@ -1781,7 +1739,7 @@ class WaveformModel(SeisBenchModel, ABC):
             for offset in offsets
         ]
 
-    async def _iter_reassemble_predictions(
+    def _iter_reassemble_predictions(
         self,
         prediction_segments: AsyncGenerator[list[PredictionSegment]],
         argdict: dict,
@@ -1789,9 +1747,8 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         Wrapper with queue IO functionality around :py:func:`_reassemble_blocks_array`
         """
-        out_queue = asyncio.Queue()
 
-        async def worker() -> None:
+        async def worker(out_queue: asyncio.Queue) -> None:
             async for segment in prediction_segments:
                 # ret = await asyncio.to_thread(
                 #     self._stack_predictions_array,
@@ -1812,15 +1769,8 @@ class WaveformModel(SeisBenchModel, ABC):
 
                 await out_queue.put(ret)
                 # await asyncio.sleep(0)  # Yield control to event loop
-            await out_queue.put(None)
 
-        task = asyncio.create_task(worker())
-        while True:
-            elem = await out_queue.get()
-            if elem is None:
-                break
-            yield elem
-        await task
+        return iter_queue_worker(worker, prediction_segments)
 
     def _stack_predictions_array(
         self,

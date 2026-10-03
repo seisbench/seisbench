@@ -1088,6 +1088,43 @@ def test_annotate_overlap():
         assert (t1.data == t2.data).all()
 
 
+@pytest.mark.parametrize(
+    "model_name,method",
+    [
+        ("PhaseNet", "stream_to_array"),
+        ("PhaseNet", "_cut_fragments_array"),
+        ("PhaseNet", "annotate_batch_pre"),
+        ("PhaseNet", "_stack_predictions_array_ext"),
+        ("PhaseNet", "_predictions_to_stream"),
+        ("GPD", "_cut_fragments_point"),
+        ("GPD", "annotate_batch_pre"),
+        ("GPD", "_reassemble_blocks_point"),
+    ],
+)
+def test_annotate_pipeline_exception(model_name, method):
+    # An exception in any stage of the annotate pipeline must propagate instead of
+    # deadlocking, and must not leave pipeline tasks running
+    sampling_rate = 400 if model_name == "PhaseNet" else 100
+    model = getattr(seisbench.models, model_name)(sampling_rate=sampling_rate)
+    stream = obspy.Stream()
+    for i in range(10):  # Multiple stations, so work is still in flight on failure
+        station = obspy.read()
+        for trace in station:
+            trace.stats.station = f"S{i:02d}"
+        stream += station
+
+    async def run():
+        with pytest.raises(RuntimeError, match="stage failed"):
+            await asyncio.wait_for(model.annotate_async(stream), timeout=10)
+        for _ in range(10):  # Let cancelled tasks finish
+            await asyncio.sleep(0)
+        pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+        assert pending == []
+
+    with patch.object(model, method, side_effect=RuntimeError("stage failed")):
+        asyncio.run(run())
+
+
 @pytest.mark.parametrize("output_activation", ["sigmoid", "softmax"])
 @pytest.mark.parametrize("norm", ["std", "peak"])
 @pytest.mark.parametrize("in_samples", [1337, 3001, 6000])
