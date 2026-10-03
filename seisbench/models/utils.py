@@ -21,7 +21,9 @@ async def iter_queue_worker(
 
     Exceptions raised in the worker are re-raised in the consumer instead of leaving it
     waiting for the queue forever. If the consumer stops early, e.g., because a later
-    stage of the pipeline failed, the worker task is cancelled.
+    stage of the pipeline failed or the annotation was cancelled, the worker task is
+    cancelled and awaited, so the upstream pipeline is cleaned up before this
+    generator closes.
 
     :param worker: Coroutine function that receives the output queue
     :param source: Async generator consumed by the worker. It is closed when the worker
@@ -46,7 +48,10 @@ async def iter_queue_worker(
             yield elem
         await task  # Re-raises exceptions from the worker
     finally:
-        task.cancel()
+        task.cancel()  # No-op if the worker already finished
+        # Waiting retrieves the worker's exception if it was not re-raised above,
+        # e.g., when a later stage failed first
+        await asyncio.gather(task, return_exceptions=True)
 
 
 class GroupedTraceData(NamedTuple):

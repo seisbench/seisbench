@@ -1,6 +1,8 @@
 import asyncio
+import contextlib
 import inspect
 import logging
+import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -17,6 +19,7 @@ import seisbench.util as sbu
 from seisbench.models.base import ActivationLSTMCell, CustomLSTM
 from seisbench.models.team import AlphabeticFullGroupingHelper
 from seisbench.models.utils import (
+    iter_queue_worker,
     GroupedTraceData,
     PredictionSegment,
     PredictionsStacked,
@@ -1116,13 +1119,142 @@ def test_annotate_pipeline_exception(model_name, method):
     async def run():
         with pytest.raises(RuntimeError, match="stage failed"):
             await asyncio.wait_for(model.annotate_async(stream), timeout=10)
-        for _ in range(10):  # Let cancelled tasks finish
-            await asyncio.sleep(0)
-        pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-        assert pending == []
+        assert _pending_tasks() == []
 
     with patch.object(model, method, side_effect=RuntimeError("stage failed")):
         asyncio.run(run())
+
+
+def _pending_tasks() -> list[asyncio.Task]:
+    return [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+
+
+def _multi_station_stream(n_stations: int = 10) -> obspy.Stream:
+    stream = obspy.Stream()
+    for i in range(n_stations):
+        station = obspy.read()
+        for trace in station:
+            trace.stats.station = f"S{i:02d}"
+        stream += station
+    return stream
+
+
+def test_annotate_cancel():
+    # Cancelling annotate_async must cancel and clean up all pipeline stages
+    model = seisbench.models.PhaseNet(sampling_rate=400)
+    stream = _multi_station_stream()
+    predict_windows = model._predict_windows
+
+    def slow_predict_windows(*args, **kwargs):
+        time.sleep(0.02)
+        return predict_windows(*args, **kwargs)
+
+    async def run():
+        task = asyncio.create_task(model.annotate_async(stream, batch_size=8))
+        await asyncio.sleep(0.2)
+        assert not task.done()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert _pending_tasks() == []
+
+    with patch.object(model, "_predict_windows", side_effect=slow_predict_windows):
+        asyncio.run(run())
+
+
+def test_iter_queue_worker():
+    async def worker(queue):
+        for i in range(3):
+            await queue.put(i)
+
+    async def run():
+        return [x async for x in iter_queue_worker(worker)]
+
+    assert asyncio.run(run()) == [0, 1, 2]
+
+
+def test_iter_queue_worker_exception():
+    # Elements produced before the exception are yielded, then the exception is raised
+    async def worker(queue):
+        await queue.put(0)
+        await queue.put(1)
+        raise RuntimeError("worker failed")
+
+    async def run():
+        received = []
+        with pytest.raises(RuntimeError, match="worker failed"):
+            async for x in iter_queue_worker(worker):
+                received.append(x)
+        assert received == [0, 1]
+        assert _pending_tasks() == []
+
+    asyncio.run(run())
+
+
+def test_iter_queue_worker_early_close():
+    # Closing the consumer early cancels the worker and closes its source
+    events = []
+
+    async def source():
+        try:
+            i = 0
+            while True:
+                yield i
+                i += 1
+                await asyncio.sleep(0)
+        finally:
+            events.append("source closed")
+
+    async def worker(queue):
+        try:
+            async for x in upstream:
+                await queue.put(x)
+        except asyncio.CancelledError:
+            events.append("worker cancelled")
+            raise
+
+    upstream = source()
+
+    async def run():
+        async with contextlib.aclosing(iter_queue_worker(worker, upstream)) as items:
+            async for x in items:
+                if x == 3:
+                    break
+        assert sorted(events) == ["source closed", "worker cancelled"]
+        assert _pending_tasks() == []
+
+    asyncio.run(run())
+
+
+def test_iter_queue_worker_chain_failure():
+    # A failing stage cancels the stages before it and retrieves their exceptions
+    events = []
+
+    async def producer(queue):
+        try:
+            for i in range(1000):
+                await queue.put(i)
+                await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            events.append("producer cancelled")
+            raise
+
+    async def failing(queue):
+        async for x in upstream:
+            if x == 5:
+                raise RuntimeError("stage failed")
+            await queue.put(x)
+
+    upstream = iter_queue_worker(producer)
+
+    async def run():
+        with pytest.raises(RuntimeError, match="stage failed"):
+            async for _ in iter_queue_worker(failing, upstream):
+                pass
+        assert events == ["producer cancelled"]
+        assert _pending_tasks() == []
+
+    asyncio.run(run())
 
 
 @pytest.mark.parametrize("output_activation", ["sigmoid", "softmax"])
