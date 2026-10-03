@@ -266,6 +266,7 @@ def test_stream_to_arrays_instrument():
     assert grouped.start_time == t0
     assert grouped.stations == ["SB.TEST."]
     assert grouped.data.shape == (3, len(trace_z.data))
+    assert grouped.data.dtype == np.float32
     assert (grouped.data[0] == trace_z.data).all()
     assert (grouped.data[1] == trace_n.data).all()
     assert (grouped.data[2] == trace_e.data).all()
