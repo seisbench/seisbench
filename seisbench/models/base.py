@@ -1920,9 +1920,11 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         data = [window.data for window in segments]
         if self.allow_padding:
-            fragments = seisbench.util.pad_packed_sequence(data)
+            fragments = seisbench.util.pad_packed_sequence(data).astype(
+                np.float32, copy=False
+            )
         else:
-            fragments = np.array(data)
+            fragments = np.array(data, dtype=np.float32)
         fragments = torch.as_tensor(fragments, dtype=torch.float32, device=self.device)
 
         with torch.no_grad():
@@ -2351,7 +2353,7 @@ class WaveformModel(SeisBenchModel, ABC):
         :type stream: obspy.core.Stream
         :param argdict: Dictionary of arguments
         :return: output_times: Start times for each array
-        :return: output_data: Arrays with waveforms
+        :return: output_data: Arrays with waveforms (float32)
         """
         comp_dict, comp_order = self._build_comp_dict(
             traces,
@@ -2378,7 +2380,9 @@ class WaveformModel(SeisBenchModel, ABC):
         n_components = len(comp_order)
         n_samples = int((t_end - t_start) * sampling_rate) + 2  # avoid fractional error
 
-        data = np.zeros((n_stations, n_components, n_samples))
+        # float32 matches the model input dtype, avoiding a float64 copy of the
+        # whole stream and a second cast for every batch in _predict_windows
+        data = np.zeros((n_stations, n_components, n_samples), dtype=np.float32)
 
         t_offsets = []
         for trace in traces:

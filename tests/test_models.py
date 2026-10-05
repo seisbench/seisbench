@@ -269,12 +269,14 @@ def test_stream_to_arrays_instrument():
     assert grouped.start_time == t0
     assert grouped.stations == ["SB.TEST."]
     assert grouped.data.shape == (3, len(trace_z.data))
+    assert grouped.data.dtype == np.float32
     assert (grouped.data[0] == trace_z.data).all()
     assert (grouped.data[1] == trace_n.data).all()
     assert (grouped.data[2] == trace_e.data).all()
 
 
-def test_stream_to_arrays_channel():
+@pytest.mark.parametrize("dtype", [np.int32, np.float64])
+def test_stream_to_arrays_channel(dtype):
     t0 = UTCDateTime(0)
     stats_z = {
         "network": "SB",
@@ -285,13 +287,14 @@ def test_stream_to_arrays_channel():
     }
     dummy = DummyWaveformModel(grouping="channel")
 
-    trace_z = obspy.Trace(np.ones(1000), stats_z)
+    trace_z = obspy.Trace(np.ones(1000, dtype=dtype), stats_z)
 
     stream = obspy.Stream([trace_z])
     grouped = dummy.stream_to_array(stream, {})
     assert grouped.start_time == t0
     assert grouped.stations == ["SB.TEST..HHZ"]
     assert grouped.data.shape == (len(trace_z.data),)
+    assert grouped.data.dtype == np.float32
     assert (grouped.data == trace_z.data).all()
 
 
