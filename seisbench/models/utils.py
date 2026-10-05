@@ -1,11 +1,57 @@
 from __future__ import annotations
 
-from typing import Literal, NamedTuple
+import asyncio
+import contextlib
+from typing import Any, AsyncGenerator, Awaitable, Callable, Literal, NamedTuple
 
 import numpy as np
 import obspy
 
 Key = tuple[float, str]
+
+_QUEUE_DONE = object()
+
+
+async def iter_queue_worker(
+    worker: Callable[[asyncio.Queue], Awaitable[None]],
+    source: AsyncGenerator | None = None,
+) -> AsyncGenerator[Any]:
+    """
+    Runs ``worker`` as a task that puts its results into a queue and yields them in order.
+
+    Exceptions raised in the worker are re-raised in the consumer instead of leaving it
+    waiting for the queue forever. If the consumer stops early, e.g., because a later
+    stage of the pipeline failed or the annotation was cancelled, the worker task is
+    cancelled and awaited, so the upstream pipeline is cleaned up before this
+    generator closes.
+
+    :param worker: Coroutine function that receives the output queue
+    :param source: Async generator consumed by the worker. It is closed when the worker
+                   finishes, so that its own worker is cancelled if this worker fails.
+    :return: Async generator over the queue elements
+    """
+    queue = asyncio.Queue()
+
+    async def run() -> None:
+        try:
+            if source is None:
+                await worker(queue)
+            else:
+                async with contextlib.aclosing(source):
+                    await worker(queue)
+        finally:
+            queue.put_nowait(_QUEUE_DONE)
+
+    task = asyncio.create_task(run())
+    try:
+        while (elem := await queue.get()) is not _QUEUE_DONE:
+            yield elem
+        await task  # Re-raises exceptions from the worker
+    finally:
+        task.cancel()  # No-op if the worker already finished
+        # Waiting retrieves the worker's exception if it was not re-raised above,
+        # e.g., when a later stage failed first
+        await asyncio.gather(task, return_exceptions=True)
 
 
 class GroupedTraceData(NamedTuple):
