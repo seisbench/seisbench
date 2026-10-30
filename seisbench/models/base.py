@@ -1493,20 +1493,28 @@ class WaveformModel(SeisBenchModel, ABC):
         """
         out_buffer: dict[tuple[Key, int], list[PredictionSegment]] = defaultdict(list)
 
+        async def finish(out_queue: asyncio.Queue, launched: tuple) -> None:
+            preds = await asyncio.to_thread(self._finish_predict_windows, *launched)
+            for pred in preds:
+                out_buffer[pred.key, pred.n_windows].append(pred)
+            for buffer_key in list(out_buffer.keys()):
+                _, n_windows = buffer_key
+                if len(out_buffer[buffer_key]) == n_windows:
+                    await out_queue.put(out_buffer.pop(buffer_key))
+
         async def worker(out_queue: asyncio.Queue) -> None:
+            # Keeps two batches in flight: the next batch is gathered and queued
+            # on the device while the previous one is still being computed
+            pending = None
             async for segment in traces:
-                preds = await asyncio.to_thread(
-                    self._predict_windows,
-                    segment,
-                    argdict=argdict,
+                launched = await asyncio.to_thread(
+                    self._launch_predict_windows, segment, argdict
                 )
-                for pred in preds:
-                    out_buffer[pred.key, pred.n_windows].append(pred)
-                for buffer_key in list(out_buffer.keys()):
-                    _, n_windows = buffer_key
-                    if len(out_buffer[buffer_key]) == n_windows:
-                        await out_queue.put(out_buffer.pop(buffer_key))
-                # await asyncio.sleep(0)  # Yield control to event loop
+                if pending is not None:
+                    await finish(out_queue, pending)
+                pending = launched
+            if pending is not None:
+                await finish(out_queue, pending)
 
         return iter_queue_worker(worker, traces)
 
@@ -1930,14 +1938,38 @@ class WaveformModel(SeisBenchModel, ABC):
         :param argdict: Argument dictionary
         :return: List of PredictionSegment
         """
+        return self._finish_predict_windows(
+            *self._launch_predict_windows(segments, argdict)
+        )
+
+    def _launch_predict_windows(
+        self,
+        segments: list[TraceSegment],
+        argdict: dict,
+    ) -> tuple[list[TraceSegment], Any, torch.cuda.Event | None]:
+        """
+        Queues the prediction of a batch of windows on the device without waiting for it.
+        On CUDA, the input is staged in pinned memory and the predictions are copied back
+        asynchronously. Pass the result to :py:func:`_finish_predict_windows`.
+
+        :param segments: List of TraceSegment
+        :param argdict: Argument dictionary
+        :return: Segments, predictions as numpy arrays (not yet valid on CUDA) and the
+                 CUDA event marking their arrival, or None if they are valid already
+        """
+        device = torch.device(self.device)
+        is_cuda = device.type == "cuda"
         data = [window.data for window in segments]
         if self.allow_padding:
-            fragments = seisbench.util.pad_packed_sequence(data).astype(
-                np.float32, copy=False
+            fragments = torch.from_numpy(
+                seisbench.util.pad_packed_sequence(data).astype(np.float32, copy=False)
             )
         else:
-            fragments = np.array(data, dtype=np.float32)
-        fragments = torch.as_tensor(fragments, dtype=torch.float32, device=self.device)
+            fragments = torch.empty(
+                (len(data), *data[0].shape), dtype=torch.float32, pin_memory=is_cuda
+            )
+            np.stack(data, out=fragments.numpy())
+        fragments = fragments.to(device, non_blocking=is_cuda)
         autocast_dtype = self._get_autocast_dtype(argdict)
 
         with torch.no_grad():
@@ -1952,9 +1984,7 @@ class WaveformModel(SeisBenchModel, ABC):
             if autocast_dtype is None:
                 predictions = self(preprocessed)
             else:
-                # self.device is the string "cpu" for models without parameters
-                device_type = torch.device(self.device).type
-                with torch.autocast(device_type=device_type, dtype=autocast_dtype):
+                with torch.autocast(device_type=device.type, dtype=autocast_dtype):
                     predictions = self(preprocessed)
                 predictions = self._recursive_to_float32(predictions)
 
@@ -1964,11 +1994,26 @@ class WaveformModel(SeisBenchModel, ABC):
                 argdict=argdict,
             )
 
-        # torch is executing asynchroniously on the GPU
-        # explicit synchronisation is needed for correct profiling/timing
-        # if torch.cuda.is_available():
-        #     torch.cuda.synchronize()
-        predictions = self._recursive_torch_to_numpy(predictions)
+        predictions = self._recursive_torch_to_numpy(predictions, non_blocking=is_cuda)
+        event = None
+        if is_cuda:
+            event = torch.cuda.Event()
+            event.record(torch.cuda.current_stream(device))
+        return segments, predictions, event
+
+    def _finish_predict_windows(
+        self,
+        segments: list[TraceSegment],
+        predictions: Any,
+        event: torch.cuda.Event | None,
+    ) -> list[PredictionSegment]:
+        """
+        Waits for the predictions queued by :py:func:`_launch_predict_windows` and unbatches them.
+
+        :return: List of PredictionSegment
+        """
+        if event is not None:
+            event.synchronize()
         # Unbatch window predictions
         predictions = self._recursive_slice_pred(predictions)
         return [
@@ -2199,19 +2244,26 @@ class WaveformModel(SeisBenchModel, ABC):
         else:
             return x
 
-    def _recursive_torch_to_numpy(self, x: torch.Tensor | list | tuple | np.ndarray):
+    def _recursive_torch_to_numpy(
+        self, x: torch.Tensor | list | tuple | np.ndarray, non_blocking: bool = False
+    ):
         """
         Recursively converts torch.Tensor objects to numpy arrays while preserving any overarching tuple
         or list structure.
         :param x:
+        :param non_blocking: Copy CUDA tensors asynchronously into pinned memory. The arrays are only
+                             valid after synchronising with the current stream.
         :return:
         """
         if isinstance(x, torch.Tensor):
-            return x.cpu().numpy()
+            if non_blocking:
+                # A contiguous source keeps the device to host copy asynchronous
+                x = x.contiguous()
+            return x.to("cpu", non_blocking=non_blocking).numpy()
         elif isinstance(x, list):
-            return [self._recursive_torch_to_numpy(y) for y in x]
+            return [self._recursive_torch_to_numpy(y, non_blocking) for y in x]
         elif isinstance(x, tuple):
-            return tuple([self._recursive_torch_to_numpy(y) for y in x])
+            return tuple([self._recursive_torch_to_numpy(y, non_blocking) for y in x])
         elif isinstance(x, np.ndarray):
             return x
         else:
