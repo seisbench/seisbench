@@ -1995,10 +1995,7 @@ class WaveformModel(SeisBenchModel, ABC):
             )
 
         predictions = self._recursive_torch_to_numpy(predictions, non_blocking=is_cuda)
-        event = None
-        if is_cuda:
-            event = torch.cuda.Event()
-            event.record(torch.cuda.current_stream(device))
+        event = torch.cuda.current_stream(device).record_event() if is_cuda else None
         return segments, predictions, event
 
     def _finish_predict_windows(
