@@ -1381,38 +1381,45 @@ class WaveformModel(SeisBenchModel, ABC):
         # Validate and resolve once, before starting the pipeline workers
         argdict["autocast"] = self._get_autocast_dtype(argdict)
 
-        if copy:
-            stream = stream.copy()
-        stream.merge(-1)
+        def prepare_groups(stream):
+            if copy:
+                stream = stream.copy()
+            stream.merge(-1)
 
-        if len(stream) == 0:
+            if len(stream) == 0:
+                return None
+
+            # Preprocess stream, e.g., filter/resample
+            self.annotate_stream_pre(stream, argdict)
+
+            # Validate stream
+            stream = self.annotate_stream_validate(stream, argdict)
+
+            if len(stream) == 0:
+                return None
+
+            # Sampling rate of the data. Equal to self.sampling_rate is this is not None
+            sampling_rate = stream[0].stats.sampling_rate
+            argdict["sampling_rate"] = sampling_rate
+
+            # Group stream
+            strict = self._argdict_get_with_default(argdict, "strict")
+            flexible_horizontal_components = self._argdict_get_with_default(
+                argdict, "flexible_horizontal_components"
+            )
+            comp_dict, _ = self._build_comp_dict(stream, flexible_horizontal_components)
+            return self._grouping.group_stream(
+                stream,
+                strict=strict,
+                min_length_s=(self.in_samples - 1) / sampling_rate,
+                comp_dict=comp_dict,
+            )
+
+        # Copying, preprocessing and grouping the stream runs in a thread, so it
+        # doesn't block the event loop
+        groups = await asyncio.to_thread(prepare_groups, stream)
+        if groups is None:
             return obspy.Stream()
-
-        # Preprocess stream, e.g., filter/resample
-        self.annotate_stream_pre(stream, argdict)
-
-        # Validate stream
-        stream = self.annotate_stream_validate(stream, argdict)
-
-        if len(stream) == 0:
-            return obspy.Stream()
-
-        # Sampling rate of the data. Equal to self.sampling_rate is this is not None
-        sampling_rate = stream[0].stats.sampling_rate
-        argdict["sampling_rate"] = sampling_rate
-
-        # Group stream
-        strict = self._argdict_get_with_default(argdict, "strict")
-        flexible_horizontal_components = self._argdict_get_with_default(
-            argdict, "flexible_horizontal_components"
-        )
-        comp_dict, _ = self._build_comp_dict(stream, flexible_horizontal_components)
-        groups = self._grouping.group_stream(
-            stream,
-            strict=strict,
-            min_length_s=(self.in_samples - 1) / sampling_rate,
-            comp_dict=comp_dict,
-        )
         n_groups = len(groups)
 
         try:
@@ -1474,8 +1481,10 @@ class WaveformModel(SeisBenchModel, ABC):
 
         async def worker(out: asyncio.Queue) -> None:
             for stream in traces:
-                await out.put(self.stream_to_array(stream, argdict))
-                # await asyncio.sleep(0)  # Yield control to event loop
+                # In a thread, so it doesn't block the event loop
+                await out.put(
+                    await asyncio.to_thread(self.stream_to_array, stream, argdict)
+                )
 
         return iter_queue_worker(worker)
 
