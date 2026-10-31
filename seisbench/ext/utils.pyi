@@ -1,9 +1,9 @@
-from typing import Literal
+from typing import Literal, Sequence
 
 import numpy as np
 
 def stack_windows(
-    windows: np.ndarray,
+    windows: np.ndarray | Sequence[np.ndarray],
     offsets: np.ndarray,
     method: Literal["avg", "max"] = "avg",
 ) -> np.ndarray: ...

@@ -7,7 +7,7 @@ import pytest
 from matplotlib import pyplot as plt
 
 from seisbench import models
-from seisbench.ext.utils import get_edge_indices
+from seisbench.ext.utils import get_edge_indices, stack_windows
 from seisbench.models.base import _trim_nan, _trim_zeros
 from seisbench.models.utils import PredictionSegment, PredictionsStacked
 
@@ -125,6 +125,28 @@ def test_stacking(stacking, model_name):
         )
 
         np.testing.assert_allclose(res.data, res_ext.data, rtol=1e-5)
+
+
+@pytest.mark.parametrize("method", ["avg", "max"])
+def test_stack_windows_sequence(method):
+    # A sequence of strided window views stacks like a contiguous 3D array
+    rng = np.random.default_rng(42)
+    batch = rng.random((10, 3, 100), dtype=np.float32)
+    batch[:, :, :5] = np.nan
+    batch[2, 1, 50:60] = np.nan
+    windows = batch.transpose(0, 2, 1)  # (window, sample, channel), not contiguous
+    offsets = np.arange(10, dtype=np.intp) * 40
+
+    expected = stack_windows(np.ascontiguousarray(windows), offsets, method=method)
+    np.testing.assert_array_equal(
+        stack_windows(windows, offsets, method=method), expected
+    )
+    np.testing.assert_array_equal(
+        stack_windows(list(windows), offsets, method=method), expected
+    )
+
+    with pytest.raises(ValueError, match="same shape"):
+        stack_windows([windows[0], windows[1][:50]], offsets[:2], method=method)
 
 
 @pytest.mark.skip

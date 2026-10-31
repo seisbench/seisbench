@@ -1760,27 +1760,18 @@ class WaveformModel(SeisBenchModel, ABC):
         Wrapper with queue IO functionality around :py:func:`_reassemble_blocks_array`
         """
 
+        if self._grouping.grouping == "full":
+            # The external stacking option is not implemented for "full" grouping
+            stack = self._stack_predictions_array
+        else:
+            stack = self._stack_predictions_array_ext
+
         async def worker(out_queue: asyncio.Queue) -> None:
             async for segment in prediction_segments:
-                # ret = await asyncio.to_thread(
-                #     self._stack_predictions_array,
-                #     segment,
-                #     argdict,
-                # )
-                if self._grouping.grouping == "full":
-                    # The external stacking option is not implemented for "full" grouping
-                    ret = self._stack_predictions_array(
-                        segment,
-                        argdict,
-                    )
-                else:
-                    ret = self._stack_predictions_array_ext(
-                        segment,
-                        argdict,
-                    )
-
+                # Stacking runs in a thread, so it doesn't block the event loop
+                # and the other pipeline stages
+                ret = await asyncio.to_thread(stack, segment, argdict)
                 await out_queue.put(ret)
-                # await asyncio.sleep(0)  # Yield control to event loop
 
         return iter_queue_worker(worker, prediction_segments)
 
@@ -1898,12 +1889,13 @@ class WaveformModel(SeisBenchModel, ABC):
         pred_sample = meta.pred_sample
         pred_sample_factor = meta.n_samples / (pred_sample[1] - pred_sample[0])
 
-        data = np.array([pred.data for pred in predictions])
-        if data.ndim == 2:
-            data = data[..., np.newaxis]
+        # The windows are passed as views, stack_windows reads them without a copy
+        windows = [pred.data for pred in predictions]
+        if windows[0].ndim == 1:
+            windows = [window[:, np.newaxis] for window in windows]
 
         stacked_data = stack_windows(
-            windows=data,
+            windows=windows,
             offsets=np.round(np.array(offsets) * pred_sample_factor).astype(np.intp),
             method=stack_method,
         )
