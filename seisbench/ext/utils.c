@@ -7,9 +7,15 @@
 #include "numpy/arrayobject.h"
 #include "numpy/npy_math.h"
 
+typedef struct {
+  const char *data;
+  npy_intp sample_stride; // in bytes
+  npy_intp channel_stride; // in bytes
+} Window;
+
 static PyObject *stack_windows(PyObject *self, PyObject *args, PyObject *kwds) {
   PyObject *offsets_py, *windows_py;
-  PyArrayObject *offsets, *windows;
+  PyArrayObject *offsets;
   char *method = "avg";
 
   static char *kwlist[] = {"windows", "offsets", "method", NULL};
@@ -27,55 +33,103 @@ static PyObject *stack_windows(PyObject *self, PyObject *args, PyObject *kwds) {
     PyErr_SetString(PyExc_ValueError, "offsets is not a NumPy array");
     return NULL;
   }
-  if (!PyArray_Check(windows_py)) {
-    PyErr_SetString(PyExc_ValueError, "pred_windows is not a NumPy array");
-    return NULL;
-  }
-
-  // Convert input objects to NumPy arrays if they are not already
   offsets = (PyArrayObject *)offsets_py;
-  windows = (PyArrayObject *)windows_py;
 
-  // Check that arrays are C-contiguous
-  if (!PyArray_IS_C_CONTIGUOUS(offsets) || !PyArray_IS_C_CONTIGUOUS(windows)) {
+  if (!PyArray_IS_C_CONTIGUOUS(offsets)) {
     PyErr_SetString(PyExc_ValueError, "Arrays must be C-contiguous");
     return NULL;
   }
-
-  // Check data types
   if (PyArray_TYPE(offsets) != NPY_INTP) {
     PyErr_SetString(PyExc_ValueError, "Offsets array must be of type int");
     return NULL;
   }
-  if (PyArray_TYPE(windows) != NPY_FLOAT32) {
-    PyErr_SetString(PyExc_ValueError, "pred_windows must be of type float32");
-    return NULL;
-  }
-
-  // Dimension check
   if (PyArray_NDIM(offsets) != 1) {
     PyErr_SetString(PyExc_ValueError, "Offsets array must be 1-dimensional");
     return NULL;
   }
 
-  if (PyArray_NDIM(windows) != 3) {
-    PyErr_SetString(PyExc_ValueError, "Window array must be 3-dimensional");
-    return NULL;
+  // Windows are either a 3D array (window, sample, channel) or a sequence of
+  // 2D arrays (sample, channel). Both may be strided, e.g., views into a
+  // batch of predictions, so no copy is needed to gather them.
+  PyObject *windows_seq = NULL; // Keeps the sequence items alive
+  Window *windows = NULL;
+  PyArrayObject *result = NULL;
+  npy_intp n_windows, window_samples, n_channels;
+
+  if (PyArray_Check(windows_py)) {
+    PyArrayObject *array = (PyArrayObject *)windows_py;
+    if (PyArray_TYPE(array) != NPY_FLOAT32) {
+      PyErr_SetString(PyExc_ValueError, "pred_windows must be of type float32");
+      return NULL;
+    }
+    if (PyArray_NDIM(array) != 3) {
+      PyErr_SetString(PyExc_ValueError, "Window array must be 3-dimensional");
+      return NULL;
+    }
+    npy_intp *dims = PyArray_DIMS(array);
+    npy_intp *strides = PyArray_STRIDES(array);
+    n_windows = dims[0];
+    window_samples = dims[1];
+    n_channels = dims[2];
+    windows = (Window *)malloc((n_windows + 1) * sizeof(Window));
+    if (windows == NULL)
+      return PyErr_NoMemory();
+    for (npy_intp i = 0; i < n_windows; i++) {
+      windows[i].data = PyArray_BYTES(array) + i * strides[0];
+      windows[i].sample_stride = strides[1];
+      windows[i].channel_stride = strides[2];
+    }
+  } else {
+    windows_seq = PySequence_Fast(
+        windows_py, "windows must be a NumPy array or a sequence of arrays");
+    if (windows_seq == NULL)
+      return NULL;
+    n_windows = PySequence_Fast_GET_SIZE(windows_seq);
+    if (n_windows == 0) {
+      PyErr_SetString(PyExc_ValueError, "windows must not be empty");
+      goto fail;
+    }
+    windows = (Window *)malloc(n_windows * sizeof(Window));
+    if (windows == NULL) {
+      PyErr_NoMemory();
+      goto fail;
+    }
+    PyObject **items = PySequence_Fast_ITEMS(windows_seq);
+    for (npy_intp i = 0; i < n_windows; i++) {
+      if (!PyArray_Check(items[i])) {
+        PyErr_SetString(PyExc_ValueError, "windows must be NumPy arrays");
+        goto fail;
+      }
+      PyArrayObject *array = (PyArrayObject *)items[i];
+      if (PyArray_TYPE(array) != NPY_FLOAT32) {
+        PyErr_SetString(PyExc_ValueError, "pred_windows must be of type float32");
+        goto fail;
+      }
+      if (PyArray_NDIM(array) != 2) {
+        PyErr_SetString(PyExc_ValueError, "Windows must be 2-dimensional");
+        goto fail;
+      }
+      if (i == 0) {
+        window_samples = PyArray_DIM(array, 0);
+        n_channels = PyArray_DIM(array, 1);
+      } else if (PyArray_DIM(array, 0) != window_samples ||
+                 PyArray_DIM(array, 1) != n_channels) {
+        PyErr_SetString(PyExc_ValueError, "All windows must have the same shape");
+        goto fail;
+      }
+      windows[i].data = PyArray_BYTES(array);
+      windows[i].sample_stride = PyArray_STRIDE(array, 0);
+      windows[i].channel_stride = PyArray_STRIDE(array, 1);
+    }
   }
-  npy_intp *dims_windows = PyArray_DIMS(windows);
-  npy_intp n_windows = dims_windows[0];
-  npy_intp window_samples = dims_windows[1];
-  npy_intp n_channels = dims_windows[2];
 
   if (PyArray_SIZE(offsets) != n_windows) {
     PyErr_SetString(
         PyExc_ValueError,
         "Offsets array size must match the number of windows in pred_windows");
-    return NULL;
+    goto fail;
   }
 
-  // Get data pointers
-  float *windows_data = (float *)PyArray_DATA(windows);
   npy_intp *offsets_data = (npy_intp *)PyArray_DATA(offsets);
 
   // Determine size of output array
@@ -83,7 +137,7 @@ static PyObject *stack_windows(PyObject *self, PyObject *args, PyObject *kwds) {
   for (npy_intp i = 0; i < n_windows; i++) {
     if (offsets_data[i] < 0) {
       PyErr_SetString(PyExc_ValueError, "Offsets must be non-negative");
-      return NULL;
+      goto fail;
     }
     size_out = size_out >= offsets_data[i] ? size_out : offsets_data[i];
   }
@@ -91,16 +145,13 @@ static PyObject *stack_windows(PyObject *self, PyObject *args, PyObject *kwds) {
 
   // Create the output array
   npy_intp out_dims[2] = {size_out, n_channels};
-  PyArrayObject *result =
-      (PyArrayObject *)PyArray_ZEROS(2, out_dims, NPY_FLOAT32, 0);
-  if (result == NULL) {
-    return NULL;
-  }
+  result = (PyArrayObject *)PyArray_ZEROS(2, out_dims, NPY_FLOAT32, 0);
+  if (result == NULL)
+    goto fail;
 
   float *result_data = (float *)PyArray_DATA(result);
-
-  npy_intp i_win, i_sample, i_channel;
-  npy_intp offset, offset_sample, offset_res, offset_input;
+  npy_intp i_win, i_sample, i_channel, offset_res;
+  int no_memory = 0;
 
   Py_BEGIN_ALLOW_THREADS;
   if (!strcmp(method, "max")) {
@@ -108,62 +159,66 @@ static PyObject *stack_windows(PyObject *self, PyObject *args, PyObject *kwds) {
       result_data[i] = NAN;
     }
     for (i_win = 0; i_win < n_windows; i_win++) {
-      offset = offsets_data[i_win];
-      offset_sample = i_win * window_samples * n_channels;
-
+      Window win = windows[i_win];
       for (i_sample = 0; i_sample < window_samples; i_sample++) {
-        offset_res = (offset + i_sample) * n_channels;
-        offset_input = offset_sample + i_sample * n_channels;
-
+        offset_res = (offsets_data[i_win] + i_sample) * n_channels;
+        const char *sample = win.data + i_sample * win.sample_stride;
         for (i_channel = 0; i_channel < n_channels; i_channel++) {
+          float value = *(const float *)(sample + i_channel * win.channel_stride);
           // Maximum value arrangement
           result_data[offset_res + i_channel] =
-              fmaxf(windows_data[offset_input + i_channel],
-                    result_data[offset_res + i_channel]);
+              fmaxf(value, result_data[offset_res + i_channel]);
         }
       }
     }
-
   } else if (!strcmp(method, "avg")) {
     npy_intp *sample_count =
         (npy_intp *)calloc(size_out * n_channels, sizeof(npy_intp));
     if (sample_count == NULL) {
-      Py_BLOCK_THREADS;
-      Py_DECREF(result);
-      PyErr_NoMemory();
-      return NULL;
-    }
-    for (i_win = 0; i_win < n_windows; i_win++) {
-      offset = offsets_data[i_win];
-      offset_sample = i_win * window_samples * n_channels;
-
-      for (i_sample = 0; i_sample < window_samples; i_sample++) {
-        offset_res = (offset + i_sample) * n_channels;
-        offset_input = offset_sample + i_sample * n_channels;
-
-        for (i_channel = 0; i_channel < n_channels; i_channel++) {
-          if (isnan(windows_data[offset_input + i_channel])) {
-            continue;
+      no_memory = 1;
+    } else {
+      for (i_win = 0; i_win < n_windows; i_win++) {
+        Window win = windows[i_win];
+        for (i_sample = 0; i_sample < window_samples; i_sample++) {
+          offset_res = (offsets_data[i_win] + i_sample) * n_channels;
+          const char *sample = win.data + i_sample * win.sample_stride;
+          for (i_channel = 0; i_channel < n_channels; i_channel++) {
+            float value =
+                *(const float *)(sample + i_channel * win.channel_stride);
+            if (isnan(value)) {
+              continue;
+            }
+            result_data[offset_res + i_channel] += value;
+            sample_count[offset_res + i_channel]++;
           }
-          // Maximum value arrangement
-          result_data[offset_res + i_channel] +=
-              windows_data[offset_input + i_channel];
-          sample_count[offset_res + i_channel]++;
         }
       }
-    }
-    for (i_sample = 0; i_sample < size_out * n_channels; i_sample++) {
-      if (sample_count[i_sample] > 0) {
-        result_data[i_sample] /= sample_count[i_sample];
-      } else {
-        result_data[i_sample] = NAN;
+
+      for (i_sample = 0; i_sample < size_out * n_channels; i_sample++) {
+        if (sample_count[i_sample] > 0) {
+          result_data[i_sample] /= sample_count[i_sample];
+        } else {
+          result_data[i_sample] = NAN;
+        }
       }
+      free(sample_count);
     }
-    free(sample_count);
   }
   Py_END_ALLOW_THREADS;
 
+  free(windows);
+  Py_XDECREF(windows_seq);
+  if (no_memory) {
+    Py_DECREF(result);
+    return PyErr_NoMemory();
+  }
   return (PyObject *)result;
+
+fail:
+  free(windows);
+  Py_XDECREF(windows_seq);
+  Py_XDECREF(result);
+  return NULL;
 }
 
 static PyObject *get_edge_indices(PyObject *self, PyObject *args,
