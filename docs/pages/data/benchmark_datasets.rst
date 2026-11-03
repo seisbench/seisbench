@@ -124,6 +124,48 @@ site: https://huggingface.co/datasets/AI4EPS/CEED.
     arXiv preprint arXiv:2502.11500.
     https://arxiv.org/abs/2502.11500
 
+CRLBD
+--------
+
+.. figure::  _static/crlbd_dataset.png
+   :align:   center
+
+
+The Corinth Rift Laboratory Benchmark Dataset (CRLBD) predominantly contains
+recordings (in counts) from earthquakes within the CRL Near-Fault Observatory
+(NFO) in Central Greece, between June 2018 and December 2024, at local
+distances (>99% shorter than 100 km). Events are mostly weak and shallow,
+with magnitudes ranging from 0.0 to 5.1 (mean of 1.2) and depths between 1.7 and
+2.0 km (mean of 9.4 km).
+
+The dataset itself contains:
+
+    * 13,918 events
+    * 128 stations / 8 networks
+    * 224,573 recordings (each with a P pick label)
+    * 127,629 S pick labels
+    * 67,371 noise recordings
+
+For easier use, the dataset is split into the Events (:py:class:`~seisbench.data.crlbd.CRLBD`)
+and Noise (:py:class:`~seisbench.data.crlbd.CRLBDNoise`) subsets, while both can be accessed
+in a combined class with :py:class:`~seisbench.data.crlbd.CRLBDCombined`.
+
+.. warning::
+
+    Dataset size:
+
+    * Events waveforms **~31 GB**
+    * Events metadata **~249 MB**
+    * Noise waveforms **~9 GB**
+    * Noise metadata **~41 MB**
+
+.. admonition:: Citation
+
+    Spingos, I., Kapetanidis, V., Münchmeyer, J., Zymvragakis, A., Karakonstantis, A., Voulgaris, N., Kaviris, G.,2026.
+    The Corinth Rift laboratory benchmark dataset for deep-learning picking. Artificial Intelligence in Geosciences,
+    7(4), 100290. https://doi.org/10.1016/j.aiig.2026.100290
+
+
 CREW
 -----
 
@@ -522,7 +564,7 @@ The :py:class:`~seisbench.data.pisdl.PiSDL` benchmark dataset contains induced e
 area in Canada caused by hydraulic-fracturing-based fluid injection, geothermal induced earthquakes from Insheim
 (Germany), St. Gallen (Switzerland), Vendenheim (France), induced earthquakes due to coal mine flooding the in Ruhr area
 (Germany), and all available low magnitude events (M_L <= 2) from the Swiss Seismological Service (SED) between 2009 and
-2023. The dataset contains 142,001 three component earthquake waveforms.
+1.    The dataset contains 142,001 three component earthquake waveforms.
 
 The full dataset can be loaded by using ``sbd.PiSDL()``. Afterwards, sub datasets can be selected using the
 ``get_[region]_subset()`` functions.
