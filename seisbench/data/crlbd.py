@@ -41,7 +41,7 @@ class CRLBDBase(WaveformBenchmarkDataset, ABC):
             **kwargs,
         )
 
-    def _get_record_id(self) -> str:
+    def _get_record_id(self):
         doi_url = f"https://doi.org/{self.doi}"
         response = requests.head(doi_url, allow_redirects=True)
         response.raise_for_status()
