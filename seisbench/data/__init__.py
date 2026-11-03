@@ -15,6 +15,11 @@ from .base import (
 from .bohemia import BohemiaSaxony
 from .ceed import CEED
 from .crew import CREW
+from .crlbd import (
+    CRLBD,
+    CRLBDNoise,
+    CRLBDCombined,
+)
 from .cwa import CWA, CWANoise
 from .das_base import (
     DASDataset,
@@ -91,6 +96,9 @@ __all__ = [
     "AQ2009Counts",
     "CEED",
     "CREW",
+    "CRLBD",
+    "CRLBDNoise",
+    "CRLBDCombined",
     "CWA",
     "CWANoise",
     "ChunkedDummyDataset",
