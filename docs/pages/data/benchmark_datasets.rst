@@ -564,7 +564,7 @@ The :py:class:`~seisbench.data.pisdl.PiSDL` benchmark dataset contains induced e
 area in Canada caused by hydraulic-fracturing-based fluid injection, geothermal induced earthquakes from Insheim
 (Germany), St. Gallen (Switzerland), Vendenheim (France), induced earthquakes due to coal mine flooding the in Ruhr area
 (Germany), and all available low magnitude events (M_L <= 2) from the Swiss Seismological Service (SED) between 2009 and
-1.    The dataset contains 142,001 three component earthquake waveforms.
+2023. The dataset contains 142,001 three component earthquake waveforms.
 
 The full dataset can be loaded by using ``sbd.PiSDL()``. Afterwards, sub datasets can be selected using the
 ``get_[region]_subset()`` functions.
