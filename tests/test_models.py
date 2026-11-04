@@ -1147,9 +1147,9 @@ def test_annotate_cancel():
     # Cancelling annotate_async must cancel and clean up all pipeline stages
     model = seisbench.models.PhaseNet(sampling_rate=400)
     stream = _multi_station_stream()
-    predict_windows = model._predict_windows
+    predict_windows = model._launch_predict_windows
 
-    def slow_predict_windows(*args, **kwargs):
+    def slow_launch_predict_windows(*args, **kwargs):
         time.sleep(0.02)
         return predict_windows(*args, **kwargs)
 
@@ -1162,7 +1162,9 @@ def test_annotate_cancel():
             await task
         assert _pending_tasks() == []
 
-    with patch.object(model, "_predict_windows", side_effect=slow_predict_windows):
+    with patch.object(
+        model, "_launch_predict_windows", side_effect=slow_launch_predict_windows
+    ):
         asyncio.run(run())
 
 
