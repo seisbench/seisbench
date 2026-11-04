@@ -82,4 +82,4 @@ class EQSDenoiserCombined(MultiWaveformDataset):
     """
 
     def __init__(self, **kwargs):
-        super().__init__([EQSDenoiserEvents(**kwargs), EQSDenoiserEvents(**kwargs)])
+        super().__init__([EQSDenoiserEvents(**kwargs), EQSDenoiserNoise(**kwargs)])
