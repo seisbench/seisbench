@@ -1,6 +1,11 @@
+from typing import TYPE_CHECKING
 import re
 from types import SimpleNamespace
 from dataclasses import dataclass
+
+if TYPE_CHECKING:
+    import datetime
+    from obspy import UTCDateTime
 
 import numpy as np
 import pandas as pd
@@ -111,9 +116,9 @@ class PickList(list):
             pick_df.append(
                 {
                     "station": p.trace_id,
-                    "time": p.peak_time.datetime,
-                    "start_time": p.start_time.datetime,
-                    "end_time": p.end_time.datetime,
+                    "time": datetime_or_none(p.peak_time),
+                    "start_time": datetime_or_none(p.start_time),
+                    "end_time": datetime_or_none(p.end_time),
                     "probability": p.peak_value,
                     "phase": p.phase,
                     "polarity": p.polarity,
@@ -127,6 +132,13 @@ class PickList(list):
             pick_df.reset_index(inplace=True)
 
         return pick_df
+
+
+def datetime_or_none(t: None | UTCDateTime) -> None | datetime.datetime:
+    if t is None:
+        return None
+    else:
+        return t.datetime
 
 
 class DetectionList(PickList):
@@ -204,7 +216,7 @@ class Pick:
     def __init__(
         self,
         trace_id,
-        start_time,
+        start_time=None,
         end_time=None,
         peak_time=None,
         peak_value=None,

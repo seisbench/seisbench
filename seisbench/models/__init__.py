@@ -21,11 +21,13 @@ from .dpp import DeepPhasePick, DPPDetector, DPPPicker
 from .dkpn import DKPN
 from .eqcct import EQCCTP, EQCCTS
 from .eqtransformer import EQTransformer
+from .equipol import EquiPol
 from .gpd import GPD
 from .lfe_detect import LFEDetect
 from .obstransformer import OBSTransformer
 from .phasenet import PhaseNet, PhaseNetLight, VariableLengthPhaseNet
 from .pickblue import PickBlue
+from .rpnet import RPNet
 from .seisdae import SeisDAE
 from .seist import SeisT
 from .skynet import Skynet
@@ -63,6 +65,7 @@ __all__ = [
     "EQCCTP",
     "EQCCTS",
     "EQTransformer",
+    "EquiPol",
     "GPD",
     "LFEDetect",
     "OBSTransformer",
@@ -70,6 +73,7 @@ __all__ = [
     "PhaseNetLight",
     "VariableLengthPhaseNet",
     "PickBlue",
+    "RPNet",
     "SeisDAE",
     "SeisT",
     "Skynet",
