@@ -47,7 +47,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: pypa/cibuildwheel@v3.3.0
+      - uses: pypa/cibuildwheel@v4.3.5
         env:
           # Not building for Intel architectures on Mac OS because they are rare and caused trouble
           CIBW_ARCHS_MACOS: arm64
