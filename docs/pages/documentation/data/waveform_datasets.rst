@@ -43,6 +43,15 @@ CREW dataset
     :undoc-members:
     :show-inheritance:
 
+CRLBD dataset
+-----------------------------------
+
+.. automodule:: seisbench.data.crlbd
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+
 CWA dataset
 -----------------------------------
 
