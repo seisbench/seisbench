@@ -27,7 +27,7 @@ from seisbench.data.dlf import (
     is_away_from_events,
     split_events,
 )
-from seisbench.data.utils import FDSNSource
+from seisbench.data.multiclient import FDSNSource
 
 
 def test_is_quiet():

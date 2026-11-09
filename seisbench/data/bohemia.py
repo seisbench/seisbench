@@ -8,16 +8,17 @@ from collections import defaultdict
 from datetime import datetime
 from itertools import groupby
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 from urllib.parse import urljoin
 from zipfile import ZipFile
 
 import numpy as np
 from obspy import Inventory, UTCDateTime
 from obspy.clients.fdsn.header import URL_MAPPINGS
+from obspy.core.event.base import QuantityError, WaveformStreamID
 from obspy.core.event.catalog import Catalog, Event
 from obspy.core.event.origin import Pick
-from obspy.geodetics import degrees2kilometers
+from obspy.geodetics import degrees2kilometers, gps2dist_azimuth
 from obspy.io.nordic.core import read_nordic
 
 import seisbench
@@ -27,17 +28,12 @@ from seisbench.data.base import (
     TraceParameters,
     WaveformBenchmarkDataset,
 )
-from seisbench.data.utils import (
+from seisbench.data.multiclient import (
     FDSNSource,
     MultiClient,
-    backup_dataset,
     download_parallel,
     get_cached_inventory,
-    get_split,
-    get_trace_params,
     get_waveform_array,
-    station_key,
-    uncertainty,
 )
 from seisbench.util import download_http
 
@@ -234,7 +230,6 @@ Seismic Networks:
         trace_params = get_trace_params(
             waveform_id,
             inventory,
-            UTCDateTime(event_params["source_origin_time"]),
             event_params,
         )
 
@@ -324,7 +319,7 @@ Seismic Networks:
 
             jobs = []
             for event in catalog:
-                split = get_split(RNG)
+                split = get_split()
                 try:
                     event_params = get_event_params(event)
                 except ValueError as exc:
@@ -333,8 +328,8 @@ Seismic Networks:
                 event_params["split"] = split
 
                 # groupby only groups adjacent picks, so sort them by station first
-                picks = sorted(event.picks, key=station_key)
-                for _, pick_group in groupby(picks, key=station_key):
+                picks = sorted(event.picks, key=_station_key)
+                for _, pick_group in groupby(picks, key=_station_key):
                     pick_group = list(pick_group)
                     network = pick_group[0].waveform_id.network_code
                     try:
@@ -368,6 +363,15 @@ Seismic Networks:
                 writer.add_trace({**event_params, **trace_params}, data)
 
             await download_parallel(jobs, download, write)
+
+
+def _station_key(pick: Pick) -> tuple[str, str, str]:
+    waveform_id = pick.waveform_id
+    return (
+        waveform_id.network_code or "",
+        waveform_id.station_code or "",
+        waveform_id.location_code or "",
+    )
 
 
 def get_catalog_timerange(catalog: Catalog) -> tuple[datetime, datetime]:
@@ -409,6 +413,12 @@ def get_stations(catalog: Catalog) -> set[str]:
     return stations
 
 
+def _uncertainty(errors: QuantityError | None) -> float:
+    if errors is None or errors.uncertainty is None:
+        return np.nan
+    return errors.uncertainty
+
+
 def get_event_params(event: Event) -> EventParameters:
     origin = event.preferred_origin()
     magnitude = event.preferred_magnitude()
@@ -421,14 +431,14 @@ def get_event_params(event: Event) -> EventParameters:
         raise ValueError("Event has no preferred origin.")
 
     # The Nordic reader stores the horizontal errors in degrees
-    latitude_uncertainty_km = degrees2kilometers(uncertainty(origin.latitude_errors))
+    latitude_uncertainty_km = degrees2kilometers(_uncertainty(origin.latitude_errors))
     longitude_uncertainty_km = degrees2kilometers(
-        uncertainty(origin.longitude_errors)
+        _uncertainty(origin.longitude_errors)
     ) * np.cos(np.radians(origin.latitude))
 
     # A depth error of 0 marks a depth fixed during location (Nordic depth
     # indicator F), so the uncertainty is unknown, not zero
-    depth_uncertainty_km = uncertainty(origin.depth_errors) / 1e3
+    depth_uncertainty_km = _uncertainty(origin.depth_errors) / 1e3
     if depth_uncertainty_km == 0:
         depth_uncertainty_km = np.nan
 
@@ -436,7 +446,7 @@ def get_event_params(event: Event) -> EventParameters:
         split="train",
         source_id=sb_id,
         source_origin_time=str(origin.time),
-        source_origin_uncertainty_sec=uncertainty(origin.time_errors),
+        source_origin_uncertainty_sec=_uncertainty(origin.time_errors),
         source_latitude_deg=origin.latitude,
         source_latitude_uncertainty_km=latitude_uncertainty_km,
         source_longitude_deg=origin.longitude,
@@ -446,12 +456,52 @@ def get_event_params(event: Event) -> EventParameters:
     )
     if magnitude is not None:
         params["source_magnitude"] = magnitude.mag
-        params["source_magnitude_uncertainty"] = uncertainty(magnitude.mag_errors)
+        params["source_magnitude_uncertainty"] = _uncertainty(magnitude.mag_errors)
         params["source_magnitude_type"] = magnitude.magnitude_type
         if magnitude.creation_info is not None:
             params["source_magnitude_author"] = magnitude.creation_info.agency_id
 
     return params
+
+
+def get_trace_params(
+    waveform_id: WaveformStreamID,
+    inventory: Inventory,
+    event_params: EventParameters,
+) -> TraceParameters:
+    try:
+        coordinates = inventory.get_coordinates(
+            waveform_id.get_seed_string(),
+            datetime=UTCDateTime(event_params["source_origin_time"]),
+        )
+    except Exception as r:
+        raise ValueError(
+            f"Could not get coordinates for {waveform_id.get_seed_string()}: {r}"
+        ) from r
+
+    if not np.isnan(coordinates["latitude"] * coordinates["longitude"]):
+        back_azimuth = gps2dist_azimuth(
+            event_params["source_latitude_deg"],
+            event_params["source_longitude_deg"],
+            coordinates["latitude"],
+            coordinates["longitude"],
+        )[2]
+    else:
+        back_azimuth = np.nan
+
+    trace_params = TraceParameters(
+        trace_name="foo",
+        path_back_azimuth_deg=back_azimuth,
+        station_network_code=waveform_id.network_code,
+        station_code=waveform_id.station_code,
+        trace_channel=waveform_id.channel_code[:2],
+        station_location_code=waveform_id.location_code,
+        station_latitude_deg=coordinates["latitude"],
+        station_longitude_deg=coordinates["longitude"],
+        station_elevation_m=coordinates["elevation"],
+    )
+
+    return trace_params
 
 
 def fixup_catalog(catalog: Catalog, inventory: Inventory) -> Catalog:
@@ -563,6 +613,20 @@ def get_network_code(
     return min(networks, key=priority)
 
 
+def get_split(test: float = 0.1, dev: float = 0.1) -> Literal["train", "dev", "test"]:
+    """
+    Returns a random split for the dataset.
+    """
+    r = RNG.random()
+    train = 1.0 - test - dev
+    if r < train:
+        return "train"
+    elif r < train + dev:
+        return "dev"
+    else:
+        return "test"
+
+
 if __name__ == "__main__":
     from argparse import ArgumentParser
 
@@ -588,7 +652,13 @@ if __name__ == "__main__":
         args.eida_token = str(path)
 
     if args.force:
-        backup_dataset(BohemiaSaxony._path_internal())
+        dataset_path = BohemiaSaxony._path_internal()
+        if dataset_path.exists():
+            backup_path = dataset_path.with_name(
+                f"{dataset_path.name}.bak-{datetime.now():%Y%m%dT%H%M%S}"
+            )
+            logger.info("Moving existing dataset to %s", backup_path)
+            dataset_path.rename(backup_path)
 
     ds = BohemiaSaxony(eida_token=args.eida_token, component_order="ZNE")
     print(ds)

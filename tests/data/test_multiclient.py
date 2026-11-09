@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import numpy as np
 from obspy import Stream, Trace, UTCDateTime
 
-from seisbench.data.utils import HinetRequest, HinetSource, WaveformRequest
+from seisbench.data.multiclient import HinetRequest, HinetSource, WaveformRequest
 
 START = UTCDateTime(2010, 5, 1, 3, 0, 20)
 

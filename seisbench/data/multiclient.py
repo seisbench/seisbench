@@ -1,5 +1,6 @@
 """
-Helpers to download station metadata and waveforms from FDSN web services.
+A client that downloads station metadata and waveforms from several data centers,
+FDSN web services and NIED Hi-net, and routes each network to the one serving it.
 """
 
 from __future__ import annotations
@@ -28,12 +29,9 @@ import obspy
 from obspy import Inventory, Stream, UTCDateTime, read_inventory
 from obspy.core.inventory import Channel, Network, Station
 from obspy.clients.fdsn.header import FDSNException, FDSNNoDataException
-from obspy.core.event.base import QuantityError, WaveformStreamID
-from obspy.core.event.origin import Pick
-from obspy.geodetics import gps2dist_azimuth
 
 from seisbench import logger
-from seisbench.data.base import EventParameters, TraceParameters
+from seisbench.data.base import TraceParameters
 from seisbench.util.trace_ops import (
     rotate_stream_to_zne,
     stream_to_array,
@@ -867,91 +865,3 @@ async def get_waveform_array(
         trace_component_order=component_order,
     )
     return seed_id, trace_params, data
-
-
-def station_key(pick: Pick) -> tuple[str, str, str]:
-    """
-    Groups picks by station, e.g., with :py:func:`itertools.groupby`.
-    """
-    waveform_id = pick.waveform_id
-    return (
-        waveform_id.network_code or "",
-        waveform_id.station_code or "",
-        waveform_id.location_code or "",
-    )
-
-
-def uncertainty(errors: QuantityError | None) -> float:
-    if errors is None or errors.uncertainty is None:
-        return np.nan
-    return errors.uncertainty
-
-
-def get_trace_params(
-    waveform_id: WaveformStreamID,
-    inventory: Inventory,
-    time: UTCDateTime,
-    event_params: EventParameters | None = None,
-) -> TraceParameters:
-    """
-    Station parameters of a channel at the given time. With ``event_params``, the
-    back azimuth from the event is included.
-    """
-    try:
-        coordinates = inventory.get_coordinates(
-            waveform_id.get_seed_string(),
-            datetime=time,
-        )
-    except Exception as r:
-        raise ValueError(
-            f"Could not get coordinates for {waveform_id.get_seed_string()}: {r}"
-        ) from r
-
-    trace_params = TraceParameters(
-        station_network_code=waveform_id.network_code,
-        station_code=waveform_id.station_code,
-        trace_channel=waveform_id.channel_code[:2],
-        station_location_code=waveform_id.location_code,
-        station_latitude_deg=coordinates["latitude"],
-        station_longitude_deg=coordinates["longitude"],
-        station_elevation_m=coordinates["elevation"],
-    )
-    if event_params is not None:
-        if not np.isnan(coordinates["latitude"] * coordinates["longitude"]):
-            back_azimuth = gps2dist_azimuth(
-                event_params["source_latitude_deg"],
-                event_params["source_longitude_deg"],
-                coordinates["latitude"],
-                coordinates["longitude"],
-            )[2]
-        else:
-            back_azimuth = np.nan
-        trace_params["path_back_azimuth_deg"] = back_azimuth
-    return trace_params
-
-
-def get_split(
-    rng: np.random.Generator, test: float = 0.1, dev: float = 0.1
-) -> Literal["train", "dev", "test"]:
-    """
-    Returns a random split.
-    """
-    r = rng.random()
-    train = 1.0 - test - dev
-    if r < train:
-        return "train"
-    elif r < train + dev:
-        return "dev"
-    else:
-        return "test"
-
-
-def backup_dataset(path: Path) -> None:
-    """
-    Moves an existing dataset folder to a timestamped backup folder next to it.
-    """
-    if not path.exists():
-        return
-    backup_path = path.with_name(f"{path.name}.bak-{datetime.now():%Y%m%dT%H%M%S}")
-    logger.info("Moving existing dataset to %s", backup_path)
-    path.rename(backup_path)

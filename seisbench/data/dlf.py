@@ -4,6 +4,7 @@ import asyncio
 import bisect
 import csv
 import json
+from datetime import datetime
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from itertools import groupby
@@ -11,9 +12,10 @@ from pathlib import Path
 from typing import Literal, NamedTuple
 
 import numpy as np
-from obspy import UTCDateTime, read_events
+from obspy import Inventory, UTCDateTime, read_events
 from obspy.clients.fdsn.header import URL_MAPPINGS, FDSNNoDataException
 from obspy.core.event import Catalog, Event, Pick, WaveformStreamID
+from obspy.geodetics import gps2dist_azimuth
 from obspy.signal.filter import bandpass
 from obspy.signal.trigger import classic_sta_lta
 
@@ -23,18 +25,15 @@ from seisbench.data.base import (
     TraceParameters,
     WaveformBenchmarkDataset,
 )
-from seisbench.data.utils import (
+from seisbench.data.multiclient import (
     Client,
     FDSNSource,
     HinetSource,
     MultiClient,
-    backup_dataset,
+    WaveformRequest,
     download_parallel,
     get_cached_inventory,
-    get_trace_params,
     get_waveform_array,
-    WaveformRequest,
-    station_key,
 )
 from seisbench.util.trace_ops import trace_has_spikes
 
@@ -529,8 +528,8 @@ BQ, HS, NH, 1P, 2D, LU), among others.
             source_id = event_params["source_id"]
 
             # groupby only groups adjacent picks, so sort them by station first
-            picks = sorted(event.picks, key=station_key)
-            for _, pick_group in groupby(picks, key=station_key):
+            picks = sorted(event.picks, key=_station_key)
+            for _, pick_group in groupby(picks, key=_station_key):
                 pick_group = tuple(pick_group)
                 waveform_id = pick_group[0].waveform_id
                 trace_name = (
@@ -836,6 +835,57 @@ BQ, HS, NH, 1P, 2D, LU), among others.
         logger.info("Download statistics:\n%s", stats)
 
 
+def _station_key(pick: Pick) -> tuple[str, str, str]:
+    waveform_id = pick.waveform_id
+    return (
+        waveform_id.network_code or "",
+        waveform_id.station_code or "",
+        waveform_id.location_code or "",
+    )
+
+
+def get_trace_params(
+    waveform_id: WaveformStreamID,
+    inventory: Inventory,
+    time: UTCDateTime,
+    event_params: EventParameters | None = None,
+) -> TraceParameters:
+    """
+    Station parameters of a channel at the given time. With ``event_params``, the
+    back azimuth from the event is included.
+    """
+    try:
+        coordinates = inventory.get_coordinates(
+            waveform_id.get_seed_string(), datetime=time
+        )
+    except Exception as exc:
+        raise ValueError(
+            f"Could not get coordinates for {waveform_id.get_seed_string()}: {exc}"
+        ) from exc
+
+    trace_params = TraceParameters(
+        station_network_code=waveform_id.network_code,
+        station_code=waveform_id.station_code,
+        trace_channel=waveform_id.channel_code[:2],
+        station_location_code=waveform_id.location_code,
+        station_latitude_deg=coordinates["latitude"],
+        station_longitude_deg=coordinates["longitude"],
+        station_elevation_m=coordinates["elevation"],
+    )
+    if event_params is not None:
+        if not np.isnan(coordinates["latitude"] * coordinates["longitude"]):
+            back_azimuth = gps2dist_azimuth(
+                event_params["source_latitude_deg"],
+                event_params["source_longitude_deg"],
+                coordinates["latitude"],
+                coordinates["longitude"],
+            )[2]
+        else:
+            back_azimuth = np.nan
+        trace_params["path_back_azimuth_deg"] = back_azimuth
+    return trace_params
+
+
 def get_source_id(event: Event) -> str:
     """
     ``smi:local/phasenet_dlf_v4b/hawaii/hawaii2_60234378`` becomes
@@ -1007,7 +1057,13 @@ if __name__ == "__main__":
         )
 
     if args.force:
-        backup_dataset(DeepLowFrequency._path_internal())
+        dataset_path = DeepLowFrequency._path_internal()
+        if dataset_path.exists():
+            backup_path = dataset_path.with_name(
+                f"{dataset_path.name}.bak-{datetime.now():%Y%m%dT%H%M%S}"
+            )
+            logger.info("Moving existing dataset to %s", backup_path)
+            dataset_path.rename(backup_path)
 
     ds = DeepLowFrequency(
         catalog_dir=args.catalog_dir,
