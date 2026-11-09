@@ -184,8 +184,29 @@ def ls_webdav(url, precheck_timeout=3):
     return files
 
 
+def _try_lock(file: Path):
+    """
+    Takes an exclusive lock on ``file.lock``. Returns the open lock file, which holds
+    the lock until it is closed, or None if another process holds the lock.
+    Without ``fcntl`` (Windows), nothing is locked.
+    """
+    lock_path = file.parent / (file.name + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(lock_path, "w")
+    try:
+        import fcntl
+    except ImportError:
+        return handle
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    return handle
+
+
 def callback_if_uncached(
-    files, callback, force=False, wait_for_file=False, test_interval=60
+    files, callback, force=False, wait_for_file=False, test_interval=60, resume=False
 ):
     """
     Checks if all files exists and executes the callback otherwise.
@@ -210,6 +231,9 @@ def callback_if_uncached(
     :type wait_for_file: bool
     :param test_interval: Sleep interval for wait_for_file.
     :type test_interval: float
+    :param resume: If true, the callback holds a lock while it runs. Partial files of an earlier callback that no
+                   longer holds the lock, e.g., after a crash, are kept and given to the callback to continue.
+    :type resume: bool
     """
     if not isinstance(files, (list, tuple)):
         files = [files]
@@ -226,7 +250,18 @@ def callback_if_uncached(
     def is_partial():
         return any(file.is_file() for file in partial_files)
 
-    while not exist() and is_partial() and not force:
+    lock = _try_lock(files[0]) if resume else None
+    if resume and lock is not None and not exist() and is_partial():
+        seisbench.logger.info(
+            "Found partial files of an interrupted download. Resuming."
+        )
+
+    while not exist() and is_partial() and not force and lock is None:
+        if resume:
+            # Another process holds the lock. Resume if it has stopped meanwhile.
+            lock = _try_lock(files[0])
+            if lock is not None:
+                break
         if wait_for_file:
             seisbench.logger.warning(
                 f"Found partial instance. Rechecking in {test_interval} seconds."
@@ -247,6 +282,8 @@ def callback_if_uncached(
                 os.remove(partial_file)
 
     if exist():
+        if lock is not None:
+            lock.close()
         return
     else:
         # Open and close each partial file once, to ensure they exist early and make race conditions unlikely.
@@ -263,11 +300,15 @@ def callback_if_uncached(
             for partial_file in partial_files:
                 if partial_file.stat().st_size == 0:
                     os.remove(partial_file)
+            if lock is not None:
+                lock.close()
 
         seisbench.logger.info("Moving partial files to target")
         for partial_file, file in zip(partial_files, files):
             if partial_file.is_file():
                 partial_file.rename(file)
+        if resume:
+            (files[0].parent / (files[0].name + ".lock")).unlink(missing_ok=True)
 
 
 def safe_extract_tar(tar, path=".", members=None, *, numeric_owner=False):

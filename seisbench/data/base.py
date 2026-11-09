@@ -2153,6 +2153,10 @@ class AbstractBenchmarkDataset(ABC):
     :param kwargs: Keyword arguments passed to WaveformDataset
     """
 
+    #: If true, an interrupted download is resumed from its partial files instead of failing. The dataset's
+    #: ``_download_dataset`` must then skip the traces in ``writer.resumed_metadata``.
+    supports_resume: bool = False
+
     # This is the list of files that are required for each chunk.
     # This value will usually be overwritten in the inheriting class.
     # Use $CHUNK as a placeholder for the chunk name.
@@ -2219,7 +2223,11 @@ class AbstractBenchmarkDataset(ABC):
             files = [self.path / file.replace("$CHUNK", chunk) for file in self._files]
 
             seisbench.util.callback_if_uncached(
-                files, download_callback, force=force, wait_for_file=wait_for_file
+                files,
+                download_callback,
+                force=force,
+                wait_for_file=wait_for_file,
+                resume=self.supports_resume,
             )
 
         super().__init__(chunks=chunks, **kwargs)
@@ -2382,7 +2390,7 @@ class WaveformBenchmarkDataset(AbstractBenchmarkDataset, WaveformDataset, ABC):
         tmp_download_args = self.add_chunk_to_download_args(chunk, kwargs)
 
         # Turn the ``files`` argument into the ``writer`` argument. Necessary for backwards compatibility.
-        with WaveformDataWriter(*files) as writer:
+        with WaveformDataWriter(*files, resume=self.supports_resume) as writer:
             self._download_dataset(writer, **tmp_download_args)
 
     @abstractmethod
@@ -2564,10 +2572,13 @@ class WaveformDataWriter:
     :type metadata_path: str or Path
     :param waveforms_path: Path to write the waveforms file to
     :type waveforms_path: str or Path
+    :param resume: If true, existing files are continued: their traces are kept, see :py:attr:`resumed_metadata`,
+                   and new traces are appended. Use :py:meth:`checkpoint` to make progress resumable.
+    :type resume: bool
     :return: None
     """
 
-    def __init__(self, metadata_path, waveforms_path):
+    def __init__(self, metadata_path, waveforms_path, resume=False):
         self.metadata_path = Path(metadata_path)
         self.waveforms_path = Path(waveforms_path)
         self.metadata_dict = {}
@@ -2584,6 +2595,35 @@ class WaveformDataWriter:
         self._bucket_size = 1024
         self._cache = defaultdict(list)  # Cache used for the bucketing
         self._bucket_counter = 0  # Bucket counter to generate bucket names
+
+        #: Metadata of the traces in the files when resuming, as text
+        self.resumed_metadata = pd.DataFrame()
+        #: Original names of the traces in the files when resuming
+        self.resumed_trace_names: set[str] = set()
+        if resume:
+            self._resume()
+
+    def _resume(self):
+        if self.metadata_path.is_file() and self.metadata_path.stat().st_size > 0:
+            # Read as text, so that values such as location code "00" are written back unchanged
+            self.resumed_metadata = pd.read_csv(
+                self.metadata_path, dtype=str, keep_default_na=False
+            )
+            self._metadata = self.resumed_metadata.to_dict("records")
+            names = self.resumed_metadata["trace_name"]
+            if "trace_name_original" in self.resumed_metadata:
+                # Traces in buckets keep their name in trace_name_original
+                original = self.resumed_metadata["trace_name_original"]
+                names = original.where(original != "", names)
+            self.resumed_trace_names = set(names)
+        if self.waveforms_path.is_file() and self.waveforms_path.stat().st_size > 0:
+            self._waveform_file = h5py.File(self.waveforms_path, "a")
+            buckets = [
+                int(name[6:])
+                for name in self._waveform_file["data"]
+                if name.startswith("bucket") and name[6:].isdigit()
+            ]
+            self._bucket_counter = max(buckets, default=-1) + 1
 
     @property
     def bucketer(self):
@@ -2698,6 +2738,9 @@ class WaveformDataWriter:
 
             metadata["trace_name"] = trace_name
 
+            if trace_name in self._waveform_file["data"]:
+                # Written after the last checkpoint of an interrupted run
+                del self._waveform_file["data"][trace_name]
             self._waveform_file["data"].create_dataset(trace_name, data=waveform)
 
         else:
@@ -2784,17 +2827,36 @@ class WaveformDataWriter:
             return
 
         if len(self.data_format) > 0:
+            # Resumed from a partial file that was finalized after an error
+            if "data_format" in self._waveform_file:
+                del self._waveform_file["data_format"]
             g_data_format = self._waveform_file.create_group("data_format")
             for key in self.data_format.keys():
                 g_data_format.create_dataset(key, data=self.data_format[key])
         else:
             seisbench.logger.warning("No data format options specified.")
 
+        self._write_metadata()
+
+    def _write_metadata(self):
         metadata = pd.DataFrame(self._metadata)
         if self.metadata_dict is not None:
             metadata.rename(columns=self.metadata_dict, inplace=True)
 
-        metadata.to_csv(self.metadata_path, index=False)
+        tmp_path = self.metadata_path.with_name(self.metadata_path.name + ".tmp")
+        metadata.to_csv(tmp_path, index=False)
+        tmp_path.replace(self.metadata_path)
+
+    def checkpoint(self):
+        """
+        Writes all traces added so far to disk, waveforms and metadata, so that an interrupted download can
+        resume from here, see the ``resume`` parameter.
+        """
+        self.flush_hdf5()
+        if self._waveform_file is not None:
+            self._waveform_file.flush()
+        if self._metadata:
+            self._write_metadata()
 
     def flush_hdf5(self):
         """
