@@ -23,6 +23,11 @@ datasets are compiled from FDSN web services on first use, which needs ``aiohttp
 
     pip install seisbench[download]
 
+The Japan region of :py:class:`~seisbench.data.dlf.DeepLowFrequency` is downloaded from NIED Hi-net, which needs
+an account, ``HinetPy`` and the Hi-net win32tools (``catwin32`` and ``win2sac_32`` on the ``PATH``): ::
+
+    pip install seisbench[hinet]
+
 If you want, you can install the latest version from source. For this approach, clone `the repository <https://github.com/seisbench/seisbench>`_, switch to the repository root and run: ::
 
     pip install .

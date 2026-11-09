@@ -24,21 +24,25 @@ from seisbench.data.base import (
     WaveformBenchmarkDataset,
 )
 from seisbench.data.utils import (
+    Client,
     FDSNSource,
+    HinetSource,
     MultiClient,
     backup_dataset,
     download_parallel,
     get_cached_inventory,
     get_trace_params,
     get_waveform_array,
+    WaveformRequest,
     station_key,
 )
 from seisbench.util.trace_ops import trace_has_spikes
 
-# One QuakeML file per region, <region>.xml. Japan (Hi-net) is not available via FDSN.
+# One QuakeML file per region, <region>.xml. Japan needs a Hi-net account.
 REGIONS = (
     "eifel_qseek",
     "hawaii",
+    "japan",
     "volpick_alaska",
     "volpick_cascade",
     "volpick_norcal",
@@ -139,6 +143,22 @@ class Job(NamedTuple):
     endtime: UTCDateTime
     params: dict
     picks: tuple[Pick, ...] = ()
+
+    @property
+    def request(self) -> WaveformRequest:
+        """
+        The waveforms to download. Noise windows start :py:data:`NOISE_LEAD` earlier,
+        for the STA/LTA check.
+        """
+        lead = NOISE_LEAD if self.kind == "noise" else 0.0
+        return WaveformRequest(
+            network=self.waveform_id.network_code,
+            station=self.waveform_id.station_code,
+            location=self.waveform_id.location_code or "",
+            channel=self.waveform_id.channel_code[:2] + "?",
+            starttime=self.starttime - lead,
+            endtime=self.endtime,
+        )
 
     def outcome(
         self, status: Status, exc: Exception | None = None, rejected: int = 0
@@ -286,10 +306,13 @@ class DownloadStats(NamedTuple):
 class DeepLowFrequency(WaveformBenchmarkDataset):
     """
     Deep low-frequency (DLF) earthquakes, also called deep long-period (DLP) events,
-    below volcanoes in Alaska, Hawaii, Northern California, the Cascades and the
-    Eifel, plus noise windows recorded at the same stations.
+    below volcanoes in Alaska, Hawaii, Japan, Northern California, the Cascades and
+    the Eifel, plus noise windows recorded at the same stations.
 
-    The dataset is compiled from FDSN web services (EarthScope, NCEDC, BGR, GFZ). The
+    The dataset is compiled from FDSN web services (EarthScope, NCEDC, BGR, GFZ) and
+    NIED Hi-net. Japan is only included with Hi-net credentials, which also needs
+    HinetPy and the Hi-net win32tools (``pip install seisbench[hinet]``). Hi-net
+    traces are velocity as extracted by the win32tools, the others are counts. The
     catalogs are read from one QuakeML file per region in ``catalog_dir``. The event
     class is an event comment (``event_class: DLP``). The events of each catalog are
     split into train, dev and test with the fractions in ``split``. Events less than
@@ -325,6 +348,8 @@ class DeepLowFrequency(WaveformBenchmarkDataset):
         from the same station. 0 disables noise windows.
     :param noise_length: Length of the noise windows in seconds
     :param eida_token: EIDA token or path to a token file, for restricted EIDA data
+    :param hinet_user: Hi-net user name, for the Japan region
+    :param hinet_password: Hi-net password
     :param connections: Number of parallel connections per FDSN data center
     """
 
@@ -337,6 +362,8 @@ class DeepLowFrequency(WaveformBenchmarkDataset):
         noise_fraction: float = 0.3,
         noise_length: float = 60.0,
         eida_token: str | None = None,
+        hinet_user: str | None = None,
+        hinet_password: str | None = None,
         connections: int = 4,
         compile_from_source: bool = True,
         **kwargs,
@@ -356,6 +383,8 @@ Catalogs:
   and long-period earthquakes. Geophysical Research Letters, 51, e2024GL108438,
   https://doi.org/10.1029/2024GL108438 (VCSEIS: Alaska, Hawaii, Northern California,
   Cascades)
+* Japan: JMA unified hypocenter catalog, events classified as deep low-frequency, with
+  JMA/NIED analyst picks. Waveforms: NIED Hi-net, https://doi.org/10.17598/NIED.0003
 * Eifel: deep low-frequency events below Laacher See detected with qseek. The picks are
   pseudo-labels of a fine-tuned PhaseNet, checked against the located arrivals.
 
@@ -371,6 +400,9 @@ BQ, HS, NH, 1P, 2D, LU), among others.
         self._noise_fraction = noise_fraction
         self._noise_length = noise_length
         self._eida_token = eida_token
+        self._hinet_credentials = (
+            (hinet_user, hinet_password) if hinet_user and hinet_password else None
+        )
         self._connections = connections
 
         super().__init__(
@@ -404,6 +436,8 @@ BQ, HS, NH, 1P, 2D, LU), among others.
                 FDSNSource(URL_MAPPINGS["IRIS"], connections=self._connections),
             ]
         )
+        if self._hinet_credentials is not None:
+            self._client.sources.append(HinetSource(*self._hinet_credentials))
 
     def get_catalogs(self) -> dict[str, Catalog]:
         """
@@ -412,6 +446,9 @@ BQ, HS, NH, 1P, 2D, LU), among others.
         catalog_dir = self._catalog_dir or self.path / "quakeml"
         catalogs = {}
         for region in REGIONS:
+            if region == "japan" and self._hinet_credentials is None:
+                logger.warning("Skipping region japan: no Hi-net credentials.")
+                continue
             file = catalog_dir / f"{region}.xml"
             if not file.exists():
                 logger.warning("No catalog for region %s at %s.", region, file)
@@ -466,7 +503,7 @@ BQ, HS, NH, 1P, 2D, LU), among others.
         outcomes: list[Outcome],
         time_before: float,
         time_after: float,
-    ) -> list[tuple[FDSNSource, Job]]:
+    ) -> list[tuple[Client, Job]]:
         """
         Lists the event traces of a catalog, and the noise windows before them.
         Traces and windows that can't be downloaded are added to ``outcomes``.
@@ -530,6 +567,22 @@ BQ, HS, NH, 1P, 2D, LU), among others.
                     jobs.append((source, noise_job))
         return jobs
 
+    def _plan(self, client: MultiClient, jobs: list[tuple[Client, Job]]) -> None:
+        """
+        Announces the requests of the jobs, so that clients can combine them. Noise
+        requests include the earlier windows that replace rejected ones.
+        """
+        requests = []
+        for _, job in jobs:
+            request = job.request
+            if job.kind == "noise":
+                request = request._replace(
+                    starttime=request.starttime
+                    - NOISE_MAX_REJECTED * self._noise_length
+                )
+            requests.append(request)
+        client.plan(requests)
+
     def _noise_job(self, event_job: Job) -> Job:
         """
         The noise window at the station of an event trace, before the event.
@@ -555,7 +608,7 @@ BQ, HS, NH, 1P, 2D, LU), among others.
         outcomes: list[Outcome],
         noise_candidates: dict[str, list[Job]],
         rng: np.random.Generator,
-    ) -> list[tuple[FDSNSource, Job]]:
+    ) -> list[tuple[Client, Job]]:
         """
         Noise jobs at random event traces of the regions that are below the noise
         fraction, as many as are missing. The chosen traces are removed from
@@ -631,8 +684,7 @@ BQ, HS, NH, 1P, 2D, LU), among others.
             network=waveform_id.network_code,
             station=waveform_id.station_code,
             channel=waveform_id.channel_code[:2] + "?",
-            # Noise windows start earlier, for the STA/LTA check
-            starttime=job.starttime - (NOISE_LEAD if job.kind == "noise" else 0.0),
+            starttime=job.request.starttime,
             endtime=job.endtime,
             sampling_rate=SAMPLING_RATE,
             component_order=COMPONENT_ORDER,
@@ -749,6 +801,7 @@ BQ, HS, NH, 1P, 2D, LU), among others.
                 if job.kind == "event" and f"noise_{job.trace_name}" not in with_noise:
                     noise_candidates[job.region].append(job)
 
+            self._plan(client, jobs)
             await download_parallel(jobs, download, write)
 
             for i_round in range(NOISE_MAX_ROUNDS):
@@ -762,6 +815,7 @@ BQ, HS, NH, 1P, 2D, LU), among others.
                     len(jobs),
                 )
                 with_noise.update(job.trace_name for _, job in jobs)
+                self._plan(client, jobs)
                 await download_parallel(jobs, download, write)
 
         stats = DownloadStats.from_outcomes(
@@ -896,7 +950,9 @@ def is_away_from_events(
 
 
 if __name__ == "__main__":
+    import os
     from argparse import ArgumentParser
+    from getpass import getpass
 
     parser = ArgumentParser()
     parser.add_argument(
@@ -910,6 +966,13 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Path to EIDA token file.",
+    )
+    parser.add_argument(
+        "--hinet-user",
+        type=str,
+        default=None,
+        help="Hi-net user name, for the Japan region. The password is read from the "
+        "HINET_PASSWORD environment variable, or asked for.",
     )
     parser.add_argument(
         "--force",
@@ -926,6 +989,11 @@ if __name__ == "__main__":
         args.eida_token = str(path)
     if args.catalog_dir is not None:
         args.catalog_dir = args.catalog_dir.expanduser().resolve()
+    hinet_password = None
+    if args.hinet_user is not None:
+        hinet_password = os.environ.get("HINET_PASSWORD") or getpass(
+            f"Hi-net password for {args.hinet_user}: "
+        )
 
     if args.force:
         backup_dataset(DeepLowFrequency._path_internal())
@@ -933,6 +1001,8 @@ if __name__ == "__main__":
     ds = DeepLowFrequency(
         catalog_dir=args.catalog_dir,
         eida_token=args.eida_token,
+        hinet_user=args.hinet_user,
+        hinet_password=hinet_password,
         component_order="ZNE",
     )
     print(ds)
