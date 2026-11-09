@@ -961,6 +961,12 @@ if __name__ == "__main__":
         default=None,
         help="Path to EIDA token file.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Compile a new dataset. An existing dataset is moved to a backup "
+        "folder next to it first.",
+    )
     args = parser.parse_args()
     logger.setLevel("INFO")
     if args.eida_token is not None:
@@ -968,6 +974,15 @@ if __name__ == "__main__":
         if not path.is_file():
             parser.error(f"EIDA token file {path} does not exist.")
         args.eida_token = str(path)
+
+    if args.force:
+        dataset_path = BohemiaSaxony._path_internal()
+        if dataset_path.exists():
+            backup_path = dataset_path.with_name(
+                f"{dataset_path.name}.bak-{datetime.now():%Y%m%dT%H%M%S}"
+            )
+            logger.info("Moving existing dataset to %s", backup_path)
+            dataset_path.rename(backup_path)
 
     ds = BohemiaSaxony(eida_token=args.eida_token, component_order="ZNE")
     print(ds)
