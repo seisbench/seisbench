@@ -28,7 +28,11 @@ from obspy.io.nordic.core import read_nordic
 
 import seisbench
 from seisbench import logger
-from seisbench.data.base import BenchmarkDataset, EventParameters, TraceParameters
+from seisbench.data.base import (
+    EventParameters,
+    TraceParameters,
+    WaveformBenchmarkDataset,
+)
 from seisbench.util import download_http
 from seisbench.util.trace_ops import (
     rotate_stream_to_zne,
@@ -83,7 +87,7 @@ ASCII_SET = string.ascii_lowercase + string.digits
 SOURCE_ID_RNG = random.Random(31337)
 
 
-class BohemiaSaxony(BenchmarkDataset):
+class BohemiaSaxony(WaveformBenchmarkDataset):
     """
     Regional benchmark dataset of waveform data and metadata
     for the North-West Bohemia and Saxony region in Germany/Czech Republic.
@@ -139,6 +143,7 @@ Seismic Networks:
         super().__init__(
             citation=citation,
             license="CC0-1.0",
+            name="BohemiaSaxony",
             repository_lookup=False,
             # There is no precompiled version, the dataset is always built from FDSN
             compile_from_source=compile_from_source,
@@ -149,12 +154,12 @@ Seismic Networks:
         self._client = MultiClient(
             [
                 FDSNSource(URL_MAPPINGS["BGR"], connections=self._connections),
+                FDSNSource(URL_MAPPINGS["LMU"], connections=self._connections),
                 FDSNSource(
                     URL_MAPPINGS["GEOFON"],
                     connections=self._connections,
                     eida_token=self._eida_token,
                 ),
-                FDSNSource(URL_MAPPINGS["LMU"], connections=self._connections),
             ]
         )
 
