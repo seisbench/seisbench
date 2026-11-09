@@ -296,19 +296,23 @@ def callback_if_uncached(
                 callback(partial_files[0])
             else:
                 callback(partial_files)
+        except BaseException:
+            if lock is not None:
+                lock.close()
+            raise
         finally:
             for partial_file in partial_files:
                 if partial_file.stat().st_size == 0:
                     os.remove(partial_file)
-            if lock is not None:
-                lock.close()
 
         seisbench.logger.info("Moving partial files to target")
         for partial_file, file in zip(partial_files, files):
             if partial_file.is_file():
                 partial_file.rename(file)
-        if resume:
-            (files[0].parent / (files[0].name + ".lock")).unlink(missing_ok=True)
+        if lock is not None:
+            # Released only now, so that no other process resumes a finished download
+            Path(lock.name).unlink(missing_ok=True)
+            lock.close()
 
 
 def safe_extract_tar(tar, path=".", members=None, *, numeric_owner=False):

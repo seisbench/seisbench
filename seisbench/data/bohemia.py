@@ -29,6 +29,7 @@ from seisbench.data.base import (
 from seisbench.data.multiclient import (
     FDSNSource,
     MultiClient,
+    WaveformRequest,
     download_parallel,
     get_cached_inventory,
     get_waveform_array,
@@ -65,7 +66,7 @@ COMPONENT_ORDER = "ZNE"
 # Networks the catalog picks come from (see the catalog README), used to resolve
 # station codes that exist in several networks
 PREFERRED_NETWORKS = ("SX", "WB", "TH", "BW", "CZ", "GR")
-RNG = np.random.default_rng(31337)
+RNG_SEED = 31337
 
 PICK_WHITELIST = {
     "Pg",
@@ -233,15 +234,18 @@ Seismic Networks:
         tmin = min(p.time for p in picks) - time_before
         tmax = max(p.time for p in picks) + time_after
 
-        _, waveform_params, data = await get_waveform_array(
-            self._client,
-            inventory,
+        request = WaveformRequest(
             network=waveform_id.network_code,
             station=waveform_id.station_code,
-            location=waveform_id.location_code,
+            location=waveform_id.location_code or "",
             channel=waveform_id.channel_code[:2] + "*",
             starttime=tmin,
             endtime=tmax,
+        )
+        _, waveform_params, data = await get_waveform_array(
+            self._client,
+            inventory,
+            request,
             sampling_rate=sampling_rate,
             component_order=COMPONENT_ORDER,
         )
@@ -253,7 +257,7 @@ Seismic Networks:
 
         for pick in picks:
             sample = (pick.time - actual_t_start) * sampling_rate
-            trace_params[f"trace_{pick.phase_hint}_arrival_sample"] = int(sample)
+            trace_params[f"trace_{pick.phase_hint}_arrival_sample"] = round(sample)
             trace_params[f"trace_{pick.phase_hint}_status"] = pick.evaluation_mode
             if pick.polarity is None:
                 trace_params[f"trace_{pick.phase_hint}_polarity"] = "undecidable"
@@ -302,9 +306,8 @@ Seismic Networks:
         time_after: float,
     ):
         """
-        Downloads the waveforms of all stations in the catalog. Each source has its
-        own queue, worked on by as many tasks as the source has connections. A single
-        task writes the traces, so the writer is never used concurrently.
+        Downloads the waveforms of all stations in the catalog, see
+        :py:func:`~seisbench.data.multiclient.download_parallel`.
 
         When resuming, the traces already written are skipped. Source ids and splits
         are deterministic, so they match the earlier run.
@@ -318,10 +321,13 @@ Seismic Networks:
             inv = await self.get_inventory(catalog, force_download=not done)
             catalog = fixup_catalog(catalog, inv)
 
+            # A new generator for every download, so the splits are the same in a
+            # resumed download
+            rng = np.random.default_rng(RNG_SEED)
             jobs = []
             source_ids = Counter()
             for event in catalog:
-                split = get_split()
+                split = get_split(rng)
                 try:
                     event_params = get_event_params(event)
                 except ValueError as exc:
@@ -632,11 +638,13 @@ def get_network_code(
     return min(networks, key=priority)
 
 
-def get_split(test: float = 0.1, dev: float = 0.1) -> Literal["train", "dev", "test"]:
+def get_split(
+    rng: np.random.Generator, test: float = 0.1, dev: float = 0.1
+) -> Literal["train", "dev", "test"]:
     """
     Returns a random split for the dataset.
     """
-    r = RNG.random()
+    r = rng.random()
     train = 1.0 - test - dev
     if r < train:
         return "train"

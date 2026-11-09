@@ -17,6 +17,7 @@ import pytest
 from seisbench.data.dlf import (
     NOISE_MAX_REJECTED,
     DeepLowFrequency,
+    Download,
     Job,
     NoNoiseWindowError,
     DownloadStats,
@@ -170,7 +171,7 @@ def _noise_search(quiet_after: int, origin_times: list[float]):
         windows.append(window)
         if len(windows) <= quiet_after:
             raise NotQuietError("STA/LTA 9.9 exceeds 3.0.")
-        return {"trace_name": window.trace_name}, np.zeros((3, 6001))
+        return Download({"trace_name": window.trace_name}, np.zeros((3, 6001)))
 
     dataset.get_waveform_data = get_waveform_data
     end = UTCDateTime(2020, 1, 1, 12)

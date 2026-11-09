@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Literal, NamedTuple
 
 import numpy as np
+import pandas as pd
 from obspy import Inventory, UTCDateTime, read_events
 from obspy.clients.fdsn.header import URL_MAPPINGS, FDSNNoDataException
 from obspy.core.event import Catalog, Event, Pick, WaveformStreamID
@@ -26,10 +27,10 @@ from seisbench.data.base import (
     WaveformBenchmarkDataset,
 )
 from seisbench.data.multiclient import (
-    Client,
     FDSNSource,
     HinetSource,
     MultiClient,
+    Source,
     WaveformRequest,
     download_parallel,
     get_cached_inventory,
@@ -505,7 +506,7 @@ BQ, HS, NH, 1P, 2D, LU), among others.
         outcomes: list[Outcome],
         time_before: float,
         time_after: float,
-    ) -> list[tuple[Client, Job]]:
+    ) -> list[tuple[Source, Job]]:
         """
         Lists the event traces of a catalog, and the noise windows before them.
         Traces and windows that can't be downloaded are added to ``outcomes``.
@@ -569,7 +570,7 @@ BQ, HS, NH, 1P, 2D, LU), among others.
                     jobs.append((source, noise_job))
         return jobs
 
-    def _plan(self, client: MultiClient, jobs: list[tuple[Client, Job]]) -> None:
+    def _plan(self, client: MultiClient, jobs: list[tuple[Source, Job]]) -> None:
         """
         Announces the requests of the jobs, so that clients can combine them. Noise
         requests include the earlier windows that replace rejected ones.
@@ -610,11 +611,11 @@ BQ, HS, NH, 1P, 2D, LU), among others.
         outcomes: list[Outcome],
         noise_candidates: dict[str, list[Job]],
         rng: np.random.Generator,
-    ) -> list[tuple[Client, Job]]:
+    ) -> list[tuple[Source, Job]]:
         """
         Noise jobs at the event traces of random events, for the regions that are
-        below the noise fraction, as many as are missing. The chosen traces are removed from
-        ``noise_candidates``.
+        below the noise fraction, as many as are missing. The chosen traces are removed
+        from ``noise_candidates``.
         """
         downloaded = Counter(
             (outcome.region, outcome.kind)
@@ -652,7 +653,7 @@ BQ, HS, NH, 1P, 2D, LU), among others.
         return jobs
 
     async def get_noise_data(
-        self, job: Job, inventory, origin_times: list[float]
+        self, job: Job, inventory: Inventory, origin_times: list[float]
     ) -> Download:
         """
         Downloads the first quiet noise window, starting with the window of the job
@@ -667,8 +668,8 @@ BQ, HS, NH, 1P, 2D, LU), among others.
         while job.endtime - window.endtime <= NOISE_MAX_LOOKBACK:
             if is_away_from_events(origin_times, window.starttime, window.endtime):
                 try:
-                    trace_params, data = await self.get_waveform_data(window, inventory)
-                    return Download(trace_params, data, rejected)
+                    download = await self.get_waveform_data(window, inventory)
+                    return download._replace(rejected=rejected)
                 except NotQuietError as exc:
                     rejected += 1
                     reason = exc
@@ -686,33 +687,26 @@ BQ, HS, NH, 1P, 2D, LU), among others.
             "not_quiet", rejected, f"{rejected} windows rejected, last: {reason}"
         )
 
-    async def get_waveform_data(
-        self, job: Job, inventory
-    ) -> tuple[TraceParameters, np.ndarray]:
+    async def get_waveform_data(self, job: Job, inventory: Inventory) -> Download:
         """
         Downloads the waveforms of an event trace or a noise window.
         """
-        waveform_id = job.waveform_id
-        kwargs = dict(
-            network=waveform_id.network_code,
-            station=waveform_id.station_code,
-            channel=waveform_id.channel_code[:2] + "?",
-            starttime=job.request.starttime,
-            endtime=job.endtime,
-            sampling_rate=SAMPLING_RATE,
-            component_order=COMPONENT_ORDER,
-        )
+        request = job.request
         try:
             seed_id, waveform_params, data = await get_waveform_array(
-                self._client, inventory, location=waveform_id.location_code, **kwargs
+                self._client, inventory, request, SAMPLING_RATE, COMPONENT_ORDER
             )
         except FDSNNoDataException:
-            if not waveform_id.location_code:
+            if not request.location:
                 raise
             # Location codes differ between archives, e.g., 1P is 00 in the Eifel
             # catalog but empty at GFZ
             seed_id, waveform_params, data = await get_waveform_array(
-                self._client, inventory, location="*", **kwargs
+                self._client,
+                inventory,
+                request._replace(location="*"),
+                SAMPLING_RATE,
+                COMPONENT_ORDER,
             )
 
         trace_params = get_trace_params(
@@ -744,7 +738,7 @@ BQ, HS, NH, 1P, 2D, LU), among others.
             trace_params[f"trace_{pick.phase_hint}_arrival_sample"] = sample
             trace_params[f"trace_{pick.phase_hint}_status"] = pick.evaluation_mode
 
-        return trace_params, data
+        return Download(trace_params, data)
 
     async def _download_waveforms(
         self,
@@ -755,17 +749,7 @@ BQ, HS, NH, 1P, 2D, LU), among others.
     ):
         rng = np.random.default_rng(RNG_SEED)
         done = writer.resumed_trace_names
-        # Traces already written by an interrupted run count as downloaded
-        outcomes: list[Outcome] = [
-            Outcome(
-                kind=row["trace_category"],
-                region=row["source_region"],
-                source_id=row.get("source_id", ""),
-                trace_name=row.get("trace_name_original") or row["trace_name"],
-                status="downloaded",
-            )
-            for row in writer.resumed_metadata.to_dict("records")
-        ]
+        outcomes = resumed_outcomes(writer.resumed_metadata)
         if done:
             logger.info("Resuming: %d traces are already downloaded.", len(done))
 
@@ -809,19 +793,9 @@ BQ, HS, NH, 1P, 2D, LU), among others.
             async def download(job: Job) -> Download:
                 if job.kind == "noise":
                     return await self.get_noise_data(job, inv, origin_times[job.region])
-                return Download(*await self.get_waveform_data(job, inv))
+                return await self.get_waveform_data(job, inv)
 
-            # Downloaded event traces without a noise window, per region
-            noise_candidates: dict[str, list[Job]] = {region: [] for region in catalogs}
-            with_noise = {job.trace_name for _, job in jobs if job.kind == "noise"}
-            with_noise |= {name for name in done if name.startswith("noise_")}
-            for _, job in jobs:
-                if (
-                    job.kind == "event"
-                    and job.trace_name in done
-                    and f"noise_{job.trace_name}" not in with_noise
-                ):
-                    noise_candidates[job.region].append(job)
+            with_noise, noise_candidates = noise_state(jobs, done, catalogs)
             jobs = [(source, job) for source, job in jobs if job.trace_name not in done]
 
             def write(job: Job, result: Download | None, exc: Exception | None):
@@ -861,6 +835,43 @@ BQ, HS, NH, 1P, 2D, LU), among others.
         )
         stats.write(self.path)
         logger.info("Download statistics:\n%s", stats)
+
+
+def resumed_outcomes(metadata: pd.DataFrame) -> list[Outcome]:
+    """
+    The traces an interrupted download already wrote count as downloaded.
+    """
+    return [
+        Outcome(
+            kind=row["trace_category"],
+            region=row["source_region"],
+            source_id=row.get("source_id", ""),
+            trace_name=row.get("trace_name_original") or row["trace_name"],
+            status="downloaded",
+        )
+        for row in metadata.to_dict("records")
+    ]
+
+
+def noise_state(
+    jobs: list[tuple[Source, Job]], done: set[str], regions: Iterable[str]
+) -> tuple[set[str], dict[str, list[Job]]]:
+    """
+    The names of the noise windows that are planned or already written, and per
+    region the event traces already written without a noise window. These are the
+    candidates for the noise top-up, together with the event traces downloaded later.
+    """
+    with_noise = {job.trace_name for _, job in jobs if job.kind == "noise"}
+    with_noise |= {name for name in done if name.startswith("noise_")}
+    candidates: dict[str, list[Job]] = {region: [] for region in regions}
+    for _, job in jobs:
+        if (
+            job.kind == "event"
+            and job.trace_name in done
+            and f"noise_{job.trace_name}" not in with_noise
+        ):
+            candidates[job.region].append(job)
+    return with_noise, candidates
 
 
 def _station_key(pick: Pick) -> tuple[str, str, str]:

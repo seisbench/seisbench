@@ -225,6 +225,32 @@ For more information see: https://scweb.cwa.gov.tw/en-US
     Seismological Research Letters 2024.
     doi: https://doi.org/10.1785/0220230393
 
+Deep low-frequency
+------------------
+
+The :py:class:`~seisbench.data.dlf.DeepLowFrequency` dataset contains deep low-frequency (DLF) earthquakes, also called deep long-period (DLP) events, below volcanoes, together with noise windows recorded at the same stations.
+It is compiled on first use from FDSN web services (EarthScope, NCEDC, BGR, GFZ) and NIED Hi-net, using one QuakeML catalog per region.
+
+Dataset details:
+
+    * Regions: Alaska (12,453 events), Japan (5,940), Hawaii (2,315), Northern California (1,021), Cascades (201) and the Eifel (57), about 99,800 event traces in total. The number of traces in a build depends on what the data centers still serve.
+    * Sampling Rate 100 Hz, components ZNE. A missing component is zero-filled.
+    * Picks: analyst picks, except for the Eifel, whose picks are pseudo-labels of a fine-tuned PhaseNet. Many traces have an S pick only (Japan about 65%). A missing pick means that the phase was not picked, so the arrival is left empty.
+    * Noise: noise windows (``trace_category = "noise"``) from the event stations, before the events, for a configurable fraction of the event traces (default 0.3). Windows with gaps or a high STA/LTA are replaced by earlier ones.
+    * Default Split: per catalog, training (70%), validation (10%) and test (20%). Events less than an hour apart are kept in the same split, so that swarm waveforms do not leak between splits.
+
+.. warning ::
+
+    No precompiled version is available through SeisBench. The Japan region needs a Hi-net account, HinetPy and the
+    Hi-net win32tools (``pip install seisbench[hinet]``), and Hi-net data may not be redistributed. An interrupted
+    download resumes where it stopped.
+
+.. admonition:: Citation
+
+    * Zhong, Y. & Tan, Y. J. (2024). Deep-learning-based phase picking for volcano-tectonic and long-period earthquakes.
+      Geophysical Research Letters, 51, e2024GL108438. https://doi.org/10.1029/2024GL108438
+    * NIED Hi-net, https://doi.org/10.17598/NIED.0003
+
 ESM25
 -----
 

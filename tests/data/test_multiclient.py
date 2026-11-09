@@ -29,7 +29,7 @@ def _source(fetched: list) -> HinetSource:
                         network="N",
                         station=station,
                         channel=f"EH{component}",
-                        starttime=request.starttime,
+                        starttime=UTCDateTime(request.starttime),
                         sampling_rate=100.0,
                     ),
                 )
@@ -55,18 +55,7 @@ def test_hinet_plan_combines_requests():
     source.plan(requests)
 
     async def get_all():
-        return [
-            await source.get_waveforms(
-                None,
-                r.network,
-                r.station,
-                r.location,
-                r.channel,
-                r.starttime,
-                r.endtime,
-            )
-            for r in requests
-        ]
+        return [await source.get_waveforms(None, request) for request in requests]
 
     streams = asyncio.run(get_all())
 
@@ -74,8 +63,8 @@ def test_hinet_plan_combines_requests():
     assert len(fetched) == 2
     first, second = fetched
     assert first.stations == {"AYEH", "BHRH"}
-    assert first.starttime == UTCDateTime(2010, 5, 1, 3, 0)
-    assert first.endtime == UTCDateTime(2010, 5, 1, 3, 9)
+    assert first.starttime == UTCDateTime(2010, 5, 1, 3, 0).timestamp
+    assert first.endtime == UTCDateTime(2010, 5, 1, 3, 9).timestamp
     assert second.stations == {"RKBH"}
     for stream, request in zip(streams, requests):
         assert {tr.stats.station for tr in stream} == {request.station}
@@ -87,16 +76,12 @@ def test_hinet_unplanned_request():
     fetched = []
     source = _source(fetched)
     request = _request("AYEH", 0, 60)
-    stream = asyncio.run(
-        source.get_waveforms(
-            None, "N", "AYEH", "", "EH?", request.starttime, request.endtime
-        )
-    )
+    stream = asyncio.run(source.get_waveforms(None, request))
     assert len(stream) == 3
     assert fetched == [
         HinetRequest(
-            UTCDateTime(2010, 5, 1, 3, 0),
-            UTCDateTime(2010, 5, 1, 3, 2),
+            UTCDateTime(2010, 5, 1, 3, 0).timestamp,
+            UTCDateTime(2010, 5, 1, 3, 2).timestamp,
             frozenset({"AYEH"}),
         )
     ]
@@ -116,7 +101,9 @@ def test_hinet_get_stations():
         ),
     ]
     inv = asyncio.run(
-        source.get_stations(None, "AYEH,BHRH,XXXH,ABC", START, START, "channel")
+        source.get_stations(
+            None, {"AYEH", "BHRH", "XXXH", "ABC"}, START, START, "channel"
+        )
     )
     assert [station.code for station in inv[0]] == ["AYEH", "BHRH"]
     coordinates = inv.get_coordinates("N.AYEH..EHZ", START)
@@ -126,7 +113,7 @@ def test_hinet_get_stations():
     assert (
         len(
             asyncio.run(
-                source.get_stations(None, "AYEH", START, START, "channel", {"AV"})
+                source.get_stations(None, {"AYEH"}, START, START, "channel", {"AV"})
             )
         )
         == 0

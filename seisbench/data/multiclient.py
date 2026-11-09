@@ -70,7 +70,7 @@ def _format_time(time: datetime | UTCDateTime) -> str:
 
 class WaveformRequest(NamedTuple):
     """
-    A waveform window that will be requested from a :py:class:`Client`.
+    A waveform window to request from a :py:class:`Source`.
     """
 
     network: str
@@ -81,7 +81,7 @@ class WaveformRequest(NamedTuple):
     endtime: UTCDateTime
 
 
-class Client(ABC):
+class Source(ABC):
     """
     A data center that :py:class:`MultiClient` routes networks to.
 
@@ -117,34 +117,27 @@ class Client(ABC):
     async def get_stations(
         self,
         session: aiohttp.ClientSession,
-        stations: str,
+        stations: set[str],
         starttime: datetime | UTCDateTime,
         endtime: datetime | UTCDateTime,
         level: str,
         networks: set[str] | None = None,
     ) -> Inventory:
         """
-        :param stations: Comma-separated station codes
+        :param stations: Station codes
         :param networks: Only these networks, all networks if None
         """
 
     @abstractmethod
     async def get_waveforms(
-        self,
-        session: aiohttp.ClientSession,
-        network: str,
-        station: str,
-        location: str,
-        channel: str,
-        starttime: datetime | UTCDateTime,
-        endtime: datetime | UTCDateTime,
+        self, session: aiohttp.ClientSession, request: WaveformRequest
     ) -> Stream | None:
         """
         :return: The waveforms, or None if there are no data
         """
 
 
-class FDSNSource(Client):
+class FDSNSource(Source):
     """
     An FDSN web service data center.
 
@@ -220,7 +213,7 @@ class FDSNSource(Client):
     async def get_stations(
         self,
         session: aiohttp.ClientSession,
-        stations: str,
+        stations: set[str],
         starttime: datetime | UTCDateTime,
         endtime: datetime | UTCDateTime,
         level: str,
@@ -232,7 +225,7 @@ class FDSNSource(Client):
         logger.info("Fetching inventory from %s", self.base_url)
         params = {
             "network": "*" if networks is None else ",".join(sorted(networks)),
-            "station": stations,
+            "station": ",".join(sorted(stations)),
             "location": "*",
             "channel": "*",
             "level": level,
@@ -250,22 +243,15 @@ class FDSNSource(Client):
         )
 
     async def get_waveforms(
-        self,
-        session: aiohttp.ClientSession,
-        network: str,
-        station: str,
-        location: str,
-        channel: str,
-        starttime: datetime | UTCDateTime,
-        endtime: datetime | UTCDateTime,
+        self, session: aiohttp.ClientSession, request: WaveformRequest
     ) -> Stream | None:
         params = {
-            "network": network,
-            "station": station,
-            "location": location or "*",
-            "channel": channel or "*",
-            "starttime": _format_time(starttime),
-            "endtime": _format_time(endtime),
+            "network": request.network,
+            "station": request.station,
+            "location": request.location or "*",
+            "channel": request.channel or "*",
+            "starttime": _format_time(request.starttime),
+            "endtime": _format_time(request.endtime),
         }
         if self._auth is not None:
             url = f"{self.base_url}/fdsnws/dataselect/1/queryauth"
@@ -280,15 +266,16 @@ class FDSNSource(Client):
 
 class MultiClient:
     """
-    Async FDSN client that routes each network to the data center serving it.
+    Async client for several data centers (:py:class:`Source`), e.g., FDSN web
+    services and Hi-net. It routes each network to the source serving it.
 
     Use it as an async context manager. It holds one HTTP session for all sources.
     Networks are mapped to sources by :py:meth:`get_inventory`.
     """
 
-    def __init__(self, sources: list[Client]):
+    def __init__(self, sources: list[Source]):
         self.sources = sources
-        self._network: dict[str, Client] = {}
+        self._network: dict[str, Source] = {}
         self._session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self) -> MultiClient:
@@ -315,7 +302,7 @@ class MultiClient:
             raise RuntimeError("MultiClient must be used as an async context manager.")
         return self._session
 
-    def get_source(self, network: str) -> Client:
+    def get_source(self, network: str) -> Source:
         try:
             return self._network[network]
         except KeyError:
@@ -324,31 +311,21 @@ class MultiClient:
                 "Call get_inventory() first to discover networks."
             ) from None
 
-    async def get_waveforms(
-        self,
-        network: str,
-        station: str,
-        location: str,
-        channel: str,
-        starttime: datetime = datetime.min,
-        endtime: datetime = datetime.max,
-    ) -> Stream:
-        source = self.get_source(network)
+    async def get_waveforms(self, request: WaveformRequest) -> Stream:
+        source = self.get_source(request.network)
         logger.debug("Fetching waveforms from %s", source)
-        stream = await source.get_waveforms(
-            self.session, network, station, location, channel, starttime, endtime
-        )
+        stream = await source.get_waveforms(self.session, request)
         if stream is None:
             raise FDSNNoDataException(
-                f"{source} has no data for {network}.{station} "
-                f"between {starttime} and {endtime}."
+                f"{source} has no data for {request.network}.{request.station} "
+                f"between {request.starttime} and {request.endtime}."
             )
         return stream
 
     def plan(self, requests: Iterable[WaveformRequest]) -> None:
         """
         Announces waveform requests to the sources serving them, see
-        :py:meth:`Client.plan`. Requests for unknown networks are ignored.
+        :py:meth:`Source.plan`. Requests for unknown networks are ignored.
         """
         by_source = defaultdict(list)
         for request in requests:
@@ -372,16 +349,14 @@ class MultiClient:
 
         :param networks: Only query these networks, all networks if None
         """
-        if isinstance(stations, str):
-            stations = [stations]
-        station_list = ",".join(sorted(stations))
+        stations = {stations} if isinstance(stations, str) else set(stations)
         if networks is not None:
             networks = set(networks)
 
         inventories = await asyncio.gather(
             *(
                 source.get_stations(
-                    self.session, station_list, starttime, endtime, level, networks
+                    self.session, stations, starttime, endtime, level, networks
                 )
                 for source in self.sources
             )
@@ -402,30 +377,23 @@ HINET_COMPONENTS = {"U": "Z", "N": "N", "E": "E"}
 
 class HinetRequest(NamedTuple):
     """
-    A Hi-net request: whole minutes (UTC) of several stations.
+    A Hi-net request: whole minutes of several stations, as UTC timestamps.
     """
 
-    starttime: UTCDateTime
-    endtime: UTCDateTime
+    starttime: float
+    endtime: float
     stations: frozenset[str]
 
-    @property
-    def key(self) -> tuple[int, int, frozenset[str]]:
-        """
-        Hashable key, UTCDateTime is not hashable.
-        """
-        return self.starttime.ns, self.endtime.ns, self.stations
+
+def _floor_minute(time: UTCDateTime) -> float:
+    return time.timestamp // 60 * 60
 
 
-def _floor_minute(time: UTCDateTime) -> UTCDateTime:
-    return UTCDateTime(time.timestamp // 60 * 60)
+def _ceil_minute(time: UTCDateTime) -> float:
+    return -(-time.timestamp // 60) * 60
 
 
-def _ceil_minute(time: UTCDateTime) -> UTCDateTime:
-    return UTCDateTime(-(-time.timestamp // 60) * 60)
-
-
-class HinetSource(Client):
+class HinetSource(Source):
     """
     NIED Hi-net (`doi:10.17598/NIED.0003 <https://doi.org/10.17598/NIED.0003>`_), via
     `HinetPy <https://github.com/seisman/HinetPy>`_. Requires an account, HinetPy and
@@ -434,8 +402,8 @@ class HinetSource(Client):
     Hi-net serves whole minutes, for the stations selected in the account. Requests
     announced with :py:meth:`plan` are combined into requests of several stations and
     minutes, and the extracted data are cached. Other requests are fetched one by
-    one. The account's station selection is changed by every request, so the
-    requests run one at a time.
+    one. The account's station selection is changed by every request, so the source
+    has a single connection and the requests run one at a time.
 
     Stations are labeled ``<network>.<station>..EH<Z|N|E>`` (short-period, 100 Hz).
     The data are velocity as extracted by ``win2sac_32``, not counts.
@@ -472,8 +440,7 @@ class HinetSource(Client):
         self._client = None
         self._stations = None
         self._planned: dict[str, list[HinetRequest]] = defaultdict(list)
-        self._cache: OrderedDict[tuple, asyncio.Future] = OrderedDict()
-        self._lock = asyncio.Lock()
+        self._cache: OrderedDict[HinetRequest, Stream] = OrderedDict()
 
     def __repr__(self) -> str:
         return f"HinetSource(network={self.network!r})"
@@ -491,7 +458,7 @@ class HinetSource(Client):
     async def get_stations(
         self,
         session: aiohttp.ClientSession,
-        stations: str,
+        stations: set[str],
         starttime: datetime | UTCDateTime,
         endtime: datetime | UTCDateTime,
         level: str,
@@ -508,12 +475,10 @@ class HinetSource(Client):
             self._stations = await asyncio.to_thread(
                 self._client.get_station_list, self.code
             )
-        codes = set(stations.split(","))
-
         network = Network(code=self.network)
         for hinet_station in self._stations:
             code = hinet_station.name.split(".")[-1]
-            if code not in codes or hinet_station.latitude is None:
+            if code not in stations or hinet_station.latitude is None:
                 continue
             coordinates = dict(
                 latitude=hinet_station.latitude,
@@ -575,46 +540,39 @@ class HinetSource(Client):
         self, station: str, starttime: UTCDateTime, endtime: UTCDateTime
     ) -> HinetRequest:
         for request in self._planned.get(station, ()):
-            if request.starttime <= starttime and endtime <= request.endtime:
+            if (
+                request.starttime <= starttime.timestamp
+                and endtime.timestamp <= request.endtime
+            ):
                 return request
         return HinetRequest(
             _floor_minute(starttime), _ceil_minute(endtime), frozenset({station})
         )
 
     async def get_waveforms(
-        self,
-        session: aiohttp.ClientSession,
-        network: str,
-        station: str,
-        location: str,
-        channel: str,
-        starttime: datetime | UTCDateTime,
-        endtime: datetime | UTCDateTime,
+        self, session: aiohttp.ClientSession, request: WaveformRequest
     ) -> Stream | None:
-        starttime, endtime = UTCDateTime(starttime), UTCDateTime(endtime)
-        request = self._find_planned(station, starttime, endtime)
+        starttime, endtime = (
+            UTCDateTime(request.starttime),
+            UTCDateTime(request.endtime),
+        )
+        hinet_request = self._find_planned(request.station, starttime, endtime)
 
-        if request.key in self._cache:
-            self._cache.move_to_end(request.key)
-            future = self._cache[request.key]
-        else:
-            future = asyncio.get_running_loop().create_future()
-            self._cache[request.key] = future
+        # The single connection runs one request at a time, so no locking is needed
+        stream = self._cache.get(hinet_request)
+        if stream is None:
+            stream = await asyncio.to_thread(self._fetch, hinet_request)
+            self._cache[hinet_request] = stream
             while len(self._cache) > self.cache_size:
                 self._cache.popitem(last=False)
-            try:
-                async with self._lock:
-                    future.set_result(await asyncio.to_thread(self._fetch, request))
-            except Exception as exc:
-                future.set_exception(exc)
-                self._cache.pop(request.key, None)
-        stream = await asyncio.shield(future)
+        else:
+            self._cache.move_to_end(hinet_request)
 
         selected = Stream(
             [
                 trace
-                for trace in stream.select(station=station)
-                if fnmatch(trace.stats.channel, channel or "*")
+                for trace in stream.select(station=request.station)
+                if fnmatch(trace.stats.channel, request.channel or "*")
             ]
         )
         selected = selected.slice(starttime, endtime)
@@ -642,19 +600,17 @@ class HinetSource(Client):
     def _fetch_once(self, request: HinetRequest) -> Stream:
         HinetPy = _import_hinetpy()
         names = [f"{self.network}.{station}" for station in sorted(request.stations)]
+        starttime = UTCDateTime(request.starttime)
         span = round((request.endtime - request.starttime) / 60)
         logger.debug(
-            "Requesting %d Hi-net stations, %s +%d min",
-            len(names),
-            request.starttime,
-            span,
+            "Requesting %d Hi-net stations, %s +%d min", len(names), starttime, span
         )
 
         with tempfile.TemporaryDirectory() as tmp:
             self._client.select_stations(self.code, names)
             data, ctable = self._client.get_continuous_waveform(
                 self.code,
-                (request.starttime + JST_OFFSET).datetime,
+                (starttime + JST_OFFSET).datetime,
                 span,
                 outdir=tmp,
                 threads=1,
@@ -710,10 +666,9 @@ Result = TypeVar("Result")
 
 
 async def download_parallel(
-    jobs: Iterable[tuple[Client, Job]],
+    jobs: Iterable[tuple[Source, Job]],
     download: Callable[[Job], Awaitable[Result]],
     write: Callable[[Job, Result | None, Exception | None], None],
-    log_every: int = 1000,
     checkpoint: Callable[[], None] | None = None,
     checkpoint_interval: float = 600.0,
 ) -> None:
@@ -727,7 +682,7 @@ async def download_parallel(
     :param checkpoint: Called every ``checkpoint_interval`` seconds, between two calls
         of ``write``, e.g., :py:meth:`~seisbench.data.WaveformDataWriter.checkpoint`
     """
-    queues: dict[Client, asyncio.Queue] = defaultdict(asyncio.Queue)
+    queues: dict[Source, asyncio.Queue] = defaultdict(asyncio.Queue)
     for source, job in jobs:
         queues[source].put_nowait(job)
     n_jobs = sum(queue.qsize() for queue in queues.values())
@@ -762,7 +717,7 @@ async def download_parallel(
             ):
                 await asyncio.to_thread(checkpoint)
                 last_checkpoint = time.monotonic()
-            if (i_job + 1) % log_every == 0 or i_job + 1 == n_jobs:
+            if (i_job + 1) % 1000 == 0 or i_job + 1 == n_jobs:
                 logger.info(
                     "Processed %d/%d waveforms, %d downloaded.",
                     i_job + 1,
@@ -813,12 +768,7 @@ async def homogenize_sampling_rate(st: Stream, sampling_rate: float) -> float:
 async def get_waveform_array(
     client: MultiClient,
     inventory: Inventory,
-    network: str,
-    station: str,
-    location: str,
-    channel: str,
-    starttime: UTCDateTime,
-    endtime: UTCDateTime,
+    request: WaveformRequest,
     sampling_rate: float,
     component_order: str,
 ) -> tuple[str, TraceParameters, np.ndarray]:
@@ -829,25 +779,11 @@ async def get_waveform_array(
     :return: SEED id of the first downloaded trace, the trace parameters describing
         the array, and the array
     """
-    try:
-        stream = await client.get_waveforms(
-            network=network,
-            station=station,
-            location=location,
-            channel=channel,
-            starttime=starttime.datetime,
-            endtime=endtime.datetime,
-        )
-    except FDSNException:
-        logger.debug("Error fetching waveforms for %s.%s", network, station)
-        raise
-
+    starttime, endtime = request.starttime, request.endtime
+    stream = await client.get_waveforms(request)
     if not len(stream):
-        raise ValueError(
-            f"No waveforms found for {network}.{station}.{location}.{channel} "
-            f"in time range {starttime} - {endtime}.",
-        )
-    stream = select_location(stream, location)
+        raise ValueError(f"No waveforms found for {request}.")
+    stream = select_location(stream, request.location)
     seed_id = stream[0].id
 
     rotate_stream_to_zne(stream, inventory=inventory)
