@@ -48,6 +48,7 @@ include = ["seisbench*"]
 
 [project.optional-dependencies]
 das = ["xdas>=0.2.8", "pyarrow", "torchvision"]
+download = ["aiohttp>=3.12"]
 dev = ["ruff", "pre-commit"]
 tests = ["pytest<9.2", "pytest-asyncio>=0.26.0", "pytest-benchmark"]
 

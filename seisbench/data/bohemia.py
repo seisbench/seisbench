@@ -1,22 +1,25 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import random
 import string
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from functools import partial
 from itertools import groupby
 from pathlib import Path
-from typing import Coroutine, Iterable, Literal, cast
+from typing import TYPE_CHECKING, Iterable, Literal, cast
 from urllib.parse import urljoin
 from zipfile import ZipFile
 
 import numpy as np
+import obspy
 from obspy import Inventory, Stream, UTCDateTime, read_inventory
-from obspy.clients.fdsn import Client
-from obspy.clients.fdsn.header import FDSNException, FDSNNoDataException
+from obspy.clients.fdsn.header import (
+    URL_MAPPINGS,
+    FDSNException,
+    FDSNNoDataException,
+)
 from obspy.core.event.base import QuantityError, WaveformStreamID
 from obspy.core.event.catalog import Catalog, Event
 from obspy.core.event.origin import Pick
@@ -32,6 +35,9 @@ from seisbench.util.trace_ops import (
     stream_to_array,
     trace_has_spikes,
 )
+
+if TYPE_CHECKING:
+    import aiohttp
 
 REMOVE_CHANNELS = {
     "HHT",  # Stray channel or typo
@@ -83,11 +89,23 @@ class BohemiaSaxony(BenchmarkDataset):
         To compile the full dataset, you will need to provide an EIDA token.
         Please see the `WEBNET site <https://doi.org/10.7914/SN/WB>`_ for more information.
 
+    .. note ::
+
+        The dataset is compiled from FDSN web services on first use, which requires
+        ``aiohttp``. Install it with ``pip install seisbench[download]``.
+
+    :param eida_token: EIDA token or path to a token file, for the restricted WB data
+    :param connections: Number of parallel connections per FDSN data center
     """
 
     _client: MultiClient
 
-    def __init__(self, eida_token: str | None = None, **kwargs):
+    def __init__(
+        self,
+        eida_token: str | None = None,
+        connections: int = 4,
+        **kwargs,
+    ):
         citation = """
 The data is compiled from data of the networks from Saxony Seismic Network (SX),
 West Bohemia Local Seismic Network (WEBNET; WB), Thuringia Seismological Network (TH),
@@ -110,6 +128,7 @@ Seismic Networks:
 * Czech Regional Seismic Network, https://doi.org/10.7914/SN/CZ
 """
         self._eida_token = eida_token
+        self._connections = connections
 
         super().__init__(
             citation=citation,
@@ -119,10 +138,17 @@ Seismic Networks:
         )
 
     def _init_client(self):
-        self._client = MultiClient()
-        self._client.add_client(Client("BGR"))
-        self._client.add_client(Client("GEOFON", eida_token=self._eida_token))
-        self._client.add_client(Client("LMU"))
+        self._client = MultiClient(
+            [
+                FDSNSource(URL_MAPPINGS["BGR"], connections=self._connections),
+                FDSNSource(
+                    URL_MAPPINGS["GEOFON"],
+                    connections=self._connections,
+                    eida_token=self._eida_token,
+                ),
+                FDSNSource(URL_MAPPINGS["LMU"], connections=self._connections),
+            ]
+        )
 
     def _download_catalog_colm(self, path: Path = Path.cwd()) -> Path:
         files = list((self.path / "final2").glob("cll_*.txt"))
@@ -148,25 +174,31 @@ Seismic Networks:
 
         return path
 
-    def get_inventory(
+    async def get_inventory(
         self,
         catalog: Catalog,
         force_download: bool = False,
     ) -> Inventory:
+        """
+        Downloads the inventory of all stations in the catalog, or loads it from
+        the dataset folder. Must be called within the client's context.
+        """
         inventory_file = self.path / "inventory.xml"
+        stations = get_stations(catalog)
         if not inventory_file.exists() or force_download:
-            stations = get_stations(catalog)
             starttime, endtime = get_catalog_timerange(catalog)
-            inv = self._client.get_inventory(
+            inv = await self._client.get_inventory(
                 stations=stations
                 # starttime=starttime,
                 # endtime=endtime,
             )
-            inv.write(str(inventory_file), format="STATIONXML")
+            await asyncio.to_thread(inv.write, str(inventory_file), format="STATIONXML")
 
         else:
             logger.info("Loading inventory from %s", inventory_file)
-            inv: Inventory = read_inventory(str(inventory_file))
+            inv = await asyncio.to_thread(read_inventory, str(inventory_file))
+            # The file doesn't record which source serves which network
+            await self._client.get_inventory(stations=stations, level="network")
 
         return inv
 
@@ -284,102 +316,124 @@ Seismic Networks:
         }
 
         cat = self.get_catalog()
-        inv = self.get_inventory(cat, force_download=True)
+        asyncio.run(
+            self._download_waveforms(
+                writer, cat, time_before=time_before, time_after=time_after
+            )
+        )
 
-        cat = fixup_catalog(cat, inv)
+    async def _download_waveforms(
+        self,
+        writer,
+        catalog: Catalog,
+        time_before: float,
+        time_after: float,
+    ):
+        """
+        Downloads the waveforms of all stations in the catalog. Each source has its
+        own queue, worked on by as many tasks as the source has connections. A single
+        task writes the traces, so the writer is never used concurrently.
+        """
+        async with self._client as client:
+            inv = await self.get_inventory(catalog, force_download=True)
+            catalog = fixup_catalog(catalog, inv)
 
-        async def download_event_data(
-            event: Event,
-            event_params: EventParameters,
-            event_work: list[tuple[str, Coroutine]],
-        ) -> int:
-            # Each request is bounded by the FDSN client's own timeout. There is no
-            # timeout for the whole event, as it would drop the remaining stations.
-            async def download_station(seed_id: str, work: Coroutine):
-                try:
-                    return await work
-                except Exception as exc:
-                    logger.warning(
-                        "Error processing station %s of event %s: %s",
-                        seed_id,
-                        event.short_str(),
-                        exc,
-                    )
-                    return None
-
+            queues = {source: asyncio.Queue() for source in client.sources}
             n_stations = 0
-            n_work = len(event_work)
-            for i_result, result in enumerate(
-                asyncio.as_completed(
-                    [download_station(seed_id, work) for seed_id, work in event_work]
-                )
-            ):
-                result = await result
-                if result is None:
+            for event in catalog:
+                split = get_split()
+                try:
+                    event_params = get_event_params(event)
+                except ValueError as exc:
+                    logger.warning("Skipping event %s: %s", event.short_str(), exc)
                     continue
-                trace_params, data = result
-                await asyncio.to_thread(
-                    writer.add_trace,
-                    {**event_params, **trace_params},
-                    data,
-                )
-                logger.debug(
-                    "Processed station %s of event %s (%d/%d)",
-                    trace_params["trace_name"],
-                    event.short_str(),
-                    i_result + 1,
-                    n_work,
-                )
-                n_stations += 1
-            return n_stations
+                event_params["split"] = split
 
-        def station_key(pick: Pick) -> tuple[str, str, str]:
-            waveform_id = pick.waveform_id
-            return (
-                waveform_id.network_code or "",
-                waveform_id.station_code or "",
-                waveform_id.location_code or "",
-            )
+                # groupby only groups adjacent picks, so sort them by station first
+                picks = sorted(event.picks, key=_station_key)
+                for _, pick_group in groupby(picks, key=_station_key):
+                    pick_group = list(pick_group)
+                    network = pick_group[0].waveform_id.network_code
+                    try:
+                        source = client.get_source(network)
+                    except KeyError as exc:
+                        logger.warning("Skipping station: %s", exc)
+                        continue
+                    queues[source].put_nowait((event, event_params, pick_group))
+                    n_stations += 1
 
-        n_stations_total = 0
-        n_events = len(cat)
-        logger.info("Downloading data for %d events.", n_events)
-
-        for i_event, event in enumerate(cat):
-            split = get_split()
-            try:
-                event_params = get_event_params(event)
-            except ValueError as exc:
-                logger.warning("Skipping event %s: %s", event.short_str(), exc)
-                continue
-            event_params["split"] = split
-
-            event_work = []
-            # groupby only groups adjacent picks, so sort them by station first
-            picks = sorted(event.picks, key=station_key)
-            for _, pick_group in groupby(picks, key=station_key):
-                pick_group = list(pick_group)
-                work = self.get_station_waveform_data(
-                    event_params=event_params,
-                    picks=pick_group,
-                    inventory=inv,
-                    time_before=time_before,
-                    time_after=time_after,
-                )
-                event_work.append((pick_group[0].waveform_id.get_seed_string(), work))
-
-            n_stations = asyncio.run(
-                download_event_data(event, event_params, event_work)
-            )
-            n_stations_total += n_stations
             logger.info(
-                "Downloaded %d waveform examples. %d stations for event %s (%d/%d)",
-                n_stations_total,
+                "Downloading %d stations of %d events (%s).",
                 n_stations,
-                event.short_str(),
-                i_event + 1,
-                n_events,
+                len(catalog),
+                ", ".join(
+                    f"{queue.qsize()} from {source.base_url}"
+                    for source, queue in queues.items()
+                ),
             )
+            results = asyncio.Queue(maxsize=64)
+
+            async def download(queue: asyncio.Queue):
+                while True:
+                    try:
+                        event, event_params, picks = queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        return
+                    try:
+                        result = await self.get_station_waveform_data(
+                            event_params=event_params,
+                            picks=picks,
+                            inventory=inv,
+                            time_before=time_before,
+                            time_after=time_after,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Error processing station %s of event %s: %s",
+                            picks[0].waveform_id.get_seed_string(),
+                            event.short_str(),
+                            exc,
+                        )
+                        result = None
+                    await results.put((event_params, result))
+
+            async def write():
+                n_written = 0
+                for i_station in range(n_stations):
+                    event_params, result = await results.get()
+                    if result is not None:
+                        trace_params, data = result
+                        await asyncio.to_thread(
+                            writer.add_trace,
+                            {**event_params, **trace_params},
+                            data,
+                        )
+                        n_written += 1
+                    if (i_station + 1) % 1000 == 0 or i_station + 1 == n_stations:
+                        logger.info(
+                            "Processed %d/%d stations, wrote %d traces.",
+                            i_station + 1,
+                            n_stations,
+                            n_written,
+                        )
+
+            await asyncio.gather(
+                write(),
+                *(
+                    download(queue)
+                    for source, queue in queues.items()
+                    for _ in range(source.connections)
+                ),
+            )
+
+
+def _station_key(pick: Pick) -> tuple[str, str, str]:
+    waveform_id = pick.waveform_id
+    return (
+        waveform_id.network_code or "",
+        waveform_id.station_code or "",
+        waveform_id.location_code or "",
+    )
 
 
 def get_catalog_timerange(catalog: Catalog) -> tuple[datetime, datetime]:
@@ -420,18 +474,190 @@ def get_stations(catalog: Catalog) -> set[str]:
     return stations
 
 
+def _import_aiohttp():
+    try:
+        import aiohttp
+    except ImportError as exc:
+        raise ImportError(
+            "Compiling the BohemiaSaxony dataset from FDSN web services requires "
+            "aiohttp. Install it with `pip install seisbench[download]`."
+        ) from exc
+    return aiohttp
+
+
+def _format_time(time: datetime | UTCDateTime) -> str:
+    return UTCDateTime(time).isoformat()
+
+
+class FDSNSource:
+    """
+    An FDSN web service data center.
+
+    :param base_url: Base URL of the data center, e.g., ``https://geofon.gfz.de``
+    :param connections: Number of parallel connections used to download waveforms
+    :param eida_token: EIDA token or path to a token file, for restricted data
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        connections: int = 4,
+        eida_token: str | None = None,
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.connections = connections
+        self.eida_token = eida_token
+        self._auth = None
+
+    def __repr__(self) -> str:
+        return f"FDSNSource({self.base_url!r})"
+
+    async def authenticate(self, session: aiohttp.ClientSession) -> None:
+        """
+        Exchanges the EIDA token for temporary credentials, which are then used
+        for all waveform requests.
+        """
+        if not self.eida_token:
+            return
+        aiohttp = _import_aiohttp()
+
+        token = self.eida_token
+        if Path(token).is_file():
+            token = Path(token).read_text()
+
+        url = f"{self.base_url}/fdsnws/dataselect/1/auth"
+        if not url.startswith("https://"):
+            raise ValueError(f"Refusing to send the EIDA token to {url} without TLS.")
+        async with session.post(url, data=token.encode()) as response:
+            if response.status != 200:
+                raise FDSNException(
+                    f"EIDA authentication at {url} failed with HTTP "
+                    f"{response.status}: {(await response.text())[:200]}"
+                )
+            login, password = (await response.text()).strip().split(":")
+        self._auth = aiohttp.DigestAuthMiddleware(login, password)
+        logger.info("Authenticated at %s with EIDA token.", self.base_url)
+
+    async def _get(
+        self,
+        session: aiohttp.ClientSession,
+        url: str,
+        params: dict[str, str],
+        **kwargs,
+    ) -> bytes | None:
+        async with session.get(url, params=params, **kwargs) as response:
+            # 204 and 404 are both valid "no data" responses in FDSN web services
+            if response.status in (204, 404):
+                return None
+            if response.status != 200:
+                raise FDSNException(
+                    f"{response.url} returned HTTP {response.status}: "
+                    f"{(await response.text())[:200]}"
+                )
+            return await response.read()
+
+    async def get_stations(
+        self,
+        session: aiohttp.ClientSession,
+        stations: str,
+        starttime: datetime | UTCDateTime,
+        endtime: datetime | UTCDateTime,
+        level: str,
+    ) -> Inventory:
+        logger.info("Fetching inventory from %s", self.base_url)
+        params = {
+            "network": "*",
+            "station": stations,
+            "location": "*",
+            "channel": "*",
+            "level": level,
+            "starttime": _format_time(starttime),
+            "endtime": _format_time(endtime),
+            "format": "xml",
+        }
+        body = await self._get(
+            session, f"{self.base_url}/fdsnws/station/1/query", params
+        )
+        if body is None:
+            return Inventory()
+        return await asyncio.to_thread(
+            read_inventory, io.BytesIO(body), format="STATIONXML"
+        )
+
+    async def get_waveforms(
+        self,
+        session: aiohttp.ClientSession,
+        network: str,
+        station: str,
+        location: str,
+        channel: str,
+        starttime: datetime | UTCDateTime,
+        endtime: datetime | UTCDateTime,
+    ) -> Stream | None:
+        params = {
+            "network": network,
+            "station": station,
+            "location": location or "*",
+            "channel": channel or "*",
+            "starttime": _format_time(starttime),
+            "endtime": _format_time(endtime),
+        }
+        if self._auth is not None:
+            url = f"{self.base_url}/fdsnws/dataselect/1/queryauth"
+            body = await self._get(session, url, params, middlewares=(self._auth,))
+        else:
+            url = f"{self.base_url}/fdsnws/dataselect/1/query"
+            body = await self._get(session, url, params)
+        if body is None:
+            return None
+        return await asyncio.to_thread(obspy.read, io.BytesIO(body), format="MSEED")
+
+
 class MultiClient:
-    _clients: list[Client]
-    _network: dict[str, Client]
-    _executor_pool: ThreadPoolExecutor
+    """
+    Async FDSN client that routes each network to the data center serving it.
 
-    def __init__(self):
-        self._clients: list[Client] = []
-        self._network: dict[str, Client] = {}
-        self._executor_pool = ThreadPoolExecutor(max_workers=8)
+    Use it as an async context manager. It holds one HTTP session for all sources.
+    Networks are mapped to sources by :py:meth:`get_inventory`.
+    """
 
-    def add_client(self, client: Client):
-        self._clients.append(client)
+    def __init__(self, sources: list[FDSNSource]):
+        self.sources = sources
+        self._network: dict[str, FDSNSource] = {}
+        self._session: aiohttp.ClientSession | None = None
+
+    async def __aenter__(self) -> MultiClient:
+        aiohttp = _import_aiohttp()
+        self._session = aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(sock_connect=30, sock_read=120),
+        )
+        try:
+            await asyncio.gather(
+                *(source.authenticate(self._session) for source in self.sources)
+            )
+        except BaseException:
+            await self._session.close()
+            raise
+        return self
+
+    async def __aexit__(self, *exc_info) -> None:
+        await self._session.close()
+        self._session = None
+
+    @property
+    def session(self) -> aiohttp.ClientSession:
+        if self._session is None:
+            raise RuntimeError("MultiClient must be used as an async context manager.")
+        return self._session
+
+    def get_source(self, network: str) -> FDSNSource:
+        try:
+            return self._network[network]
+        except KeyError:
+            raise KeyError(
+                f"No source known for network {network}. "
+                "Call get_inventory() first to discover networks."
+            ) from None
 
     async def get_waveforms(
         self,
@@ -442,75 +668,46 @@ class MultiClient:
         starttime: datetime = datetime.min,
         endtime: datetime = datetime.max,
     ) -> Stream:
-        # Networks are mapped to clients by get_inventory(). If the inventory was
-        # loaded from a file instead, try the clients in order and remember the
-        # first one that has data for the network.
-        if network in self._network:
-            clients = [self._network[network]]
-        else:
-            clients = self._clients
-
-        loop = asyncio.get_running_loop()
-        for client in clients:
-            logger.debug("Fetching waveforms from client %s", client.base_url)
-            try:
-                stream = await loop.run_in_executor(
-                    self._executor_pool,
-                    partial(
-                        client.get_waveforms,
-                        network=network,
-                        station=station,
-                        location=location or "*",
-                        channel=channel or "*",
-                        starttime=UTCDateTime(starttime),
-                        endtime=UTCDateTime(endtime),
-                    ),
-                )
-            except FDSNNoDataException:
-                continue
-            self._network.setdefault(network, client)
-            return cast(Stream, stream)
-
-        raise FDSNNoDataException(
-            f"No client has data for {network}.{station} "
-            f"between {starttime} and {endtime}."
+        source = self.get_source(network)
+        logger.debug("Fetching waveforms from %s", source.base_url)
+        stream = await source.get_waveforms(
+            self.session, network, station, location, channel, starttime, endtime
         )
+        if stream is None:
+            raise FDSNNoDataException(
+                f"{source.base_url} has no data for {network}.{station} "
+                f"between {starttime} and {endtime}."
+            )
+        return stream
 
-    def get_inventory(
+    async def get_inventory(
         self,
         stations: str | Iterable[str],
         starttime: datetime = datetime.min,
         endtime: datetime = datetime.max,
-        level: Literal["response", "station", "channel"] = "channel",
+        level: Literal["response", "channel", "station", "network"] = "channel",
     ) -> Inventory:
-        inventory = Inventory()
+        """
+        Fetches the inventory from all sources and maps each network to the first
+        source, in the order of :py:attr:`sources`, that serves it.
+        """
         if isinstance(stations, str):
             stations = [stations]
         station_list = ",".join(stations)
 
-        async def get_inventory(client: Client):
-            logger.info("Fetching inventory from client %s", client.base_url)
-            inv = await asyncio.to_thread(
-                client.get_stations,
-                network="*",
-                station=station_list,
-                location="*",
-                channel="*",
-                level=level,
-                starttime=UTCDateTime(starttime),
-                endtime=UTCDateTime(endtime),
+        inventories = await asyncio.gather(
+            *(
+                source.get_stations(
+                    self.session, station_list, starttime, endtime, level
+                )
+                for source in self.sources
             )
+        )
+        inventory = Inventory()
+        for source, inv in zip(self.sources, inventories):
             for network in inv:
-                self._network[network.code] = client
-
+                self._network.setdefault(network.code, source)
             inventory.extend(inv)
-
-        async def worker():
-            tasks = [get_inventory(client) for client in self._clients]
-            return await asyncio.gather(*tasks)
-
-        asyncio.run(worker())
-
         return inventory
 
 

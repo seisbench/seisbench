@@ -18,6 +18,11 @@ To install these, you can use: ::
 
     pip install seisbench[das]
 
+The :py:class:`~seisbench.data.bohemia.BohemiaSaxony` dataset is compiled from FDSN web services on first use,
+which needs ``aiohttp``: ::
+
+    pip install seisbench[download]
+
 If you want, you can install the latest version from source. For this approach, clone `the repository <https://github.com/seisbench/seisbench>`_, switch to the repository root and run: ::
 
     pip install .
