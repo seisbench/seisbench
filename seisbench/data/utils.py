@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import io
 import tempfile
+import time
 from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from datetime import datetime
@@ -445,6 +446,8 @@ class HinetSource(Client):
     :param password: Hi-net password
     :param network: Network code of the stations
     :param max_span: Maximum length of a combined request in minutes
+    :param max_gap: Requests up to this many minutes apart are combined
+    :param retries: Attempts per request, for dropped connections
     :param cache_size: Number of combined requests kept in memory
     """
 
@@ -455,12 +458,16 @@ class HinetSource(Client):
         user: str,
         password: str,
         network: str = "N",
-        max_span: int = 10,
+        max_span: int = 20,
+        max_gap: int = 5,
+        retries: int = 3,
         cache_size: int = 16,
     ):
         super().__init__(connections=1, networks=[network])
         self.network = network
         self.max_span = max_span
+        self.max_gap = max_gap
+        self.retries = retries
         self.cache_size = cache_size
         self._user = user
         self._password = password
@@ -539,7 +546,8 @@ class HinetSource(Client):
     def plan(self, requests: Iterable[WaveformRequest]) -> None:
         """
         Combines the requests into requests of whole minutes, for all stations
-        within :py:attr:`max_span` minutes.
+        within :py:attr:`max_span` minutes. Requests less than :py:attr:`max_gap`
+        minutes apart are combined, e.g., an event and the noise before it.
         """
         current = None
         for request in sorted(requests, key=lambda r: r.starttime):
@@ -547,7 +555,7 @@ class HinetSource(Client):
             end = _ceil_minute(UTCDateTime(request.endtime))
             if (
                 current is not None
-                and start <= current.endtime
+                and start <= current.endtime + self.max_gap * 60
                 and max(end, current.endtime) - current.starttime <= self.max_span * 60
             ):
                 current = HinetRequest(
@@ -616,8 +624,24 @@ class HinetSource(Client):
 
     def _fetch(self, request: HinetRequest) -> Stream:
         """
-        Requests and extracts the data of a combined request. Runs in a thread.
+        Requests and extracts the data of a combined request, with retries for
+        dropped connections. Runs in a thread.
         """
+        for attempt in range(1, self.retries + 1):
+            try:
+                return self._fetch_once(request)
+            except OSError as exc:  # requests' ConnectionError is an OSError
+                if attempt == self.retries:
+                    raise
+                logger.warning(
+                    "Hi-net request failed (%s), retrying %d/%d.",
+                    exc,
+                    attempt,
+                    self.retries - 1,
+                )
+                time.sleep(10)
+
+    def _fetch_once(self, request: HinetRequest) -> Stream:
         HinetPy = _import_hinetpy()
         names = [f"{self.network}.{station}" for station in sorted(request.stations)]
         span = round((request.endtime - request.starttime) / 60)

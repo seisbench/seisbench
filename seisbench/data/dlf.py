@@ -4,7 +4,7 @@ import asyncio
 import bisect
 import csv
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from itertools import groupby
 from pathlib import Path
@@ -610,8 +610,8 @@ BQ, HS, NH, 1P, 2D, LU), among others.
         rng: np.random.Generator,
     ) -> list[tuple[Client, Job]]:
         """
-        Noise jobs at random event traces of the regions that are below the noise
-        fraction, as many as are missing. The chosen traces are removed from
+        Noise jobs at the event traces of random events, for the regions that are
+        below the noise fraction, as many as are missing. The chosen traces are removed from
         ``noise_candidates``.
         """
         downloaded = Counter(
@@ -628,7 +628,18 @@ BQ, HS, NH, 1P, 2D, LU), among others.
             n_jobs = min(missing, len(candidates))
             if n_jobs <= 0:
                 continue
-            chosen = set(rng.choice(len(candidates), n_jobs, replace=False).tolist())
+            # Whole events, in random order, so that a client can combine the requests
+            # of an event (Hi-net)
+            by_event = defaultdict(list)
+            for i, job in enumerate(candidates):
+                by_event[job.source_id].append(i)
+            events = list(by_event.values())
+            chosen = []
+            for i_event in rng.permutation(len(events)):
+                chosen += events[i_event]
+                if len(chosen) >= n_jobs:
+                    break
+            chosen = set(chosen[:n_jobs])
             for i in sorted(chosen):
                 event_job = candidates[i]
                 source = client.get_source(event_job.waveform_id.network_code)

@@ -45,11 +45,11 @@ def _source(fetched: list) -> HinetSource:
 def test_hinet_plan_combines_requests():
     fetched = []
     source = _source(fetched)
-    # One event at two stations, another 3 minutes later, one 1 h later
+    # One event at two stations, another 3 minutes after its end, one 1 h later
     requests = [
         _request("AYEH", 0, 120),
         _request("BHRH", 10, 120),
-        _request("AYEH", 180, 120),
+        _request("AYEH", 360, 120),
         _request("RKBH", 3600, 120),
     ]
     source.plan(requests)
@@ -70,12 +70,12 @@ def test_hinet_plan_combines_requests():
 
     streams = asyncio.run(get_all())
 
-    # The first three requests are within 10 minutes: one Hi-net request
+    # The first three requests are within 10 minutes and 5 minutes apart: one request
     assert len(fetched) == 2
     first, second = fetched
     assert first.stations == {"AYEH", "BHRH"}
     assert first.starttime == UTCDateTime(2010, 5, 1, 3, 0)
-    assert first.endtime == UTCDateTime(2010, 5, 1, 3, 6)
+    assert first.endtime == UTCDateTime(2010, 5, 1, 3, 9)
     assert second.stations == {"RKBH"}
     for stream, request in zip(streams, requests):
         assert {tr.stats.station for tr in stream} == {request.station}
