@@ -10,7 +10,15 @@ from obspy.core.event import (
     ResourceIdentifier,
 )
 
-from seisbench.data.dlf import get_event_params, is_quiet
+import numpy as np
+
+from seisbench.data.dlf import (
+    DownloadStats,
+    Outcome,
+    get_event_params,
+    is_quiet,
+    split_events,
+)
 from seisbench.data.utils import FDSNSource
 
 
@@ -52,7 +60,8 @@ def test_get_event_params():
 
     params = get_event_params(event, "hawaii")
     assert params["source_id"] == "hawaii:hawaii2_60234378"
-    assert params["split"] == "test"
+    # The split is drawn per catalog, not taken from the comment
+    assert "split" not in params
     assert params["source_event_class"] == "DLP"
     assert params["source_volcano"] == "Pahala deep swarm"
     assert params["source_region"] == "hawaii"
@@ -70,3 +79,41 @@ def test_fdsn_source_networks():
         )
 
     assert len(asyncio.run(get_stations({"AV", "HV"}))) == 0
+
+
+def test_split_events():
+    rng = np.random.default_rng(0)
+    # 100 isolated events, one per day, and a swarm of 20 events within an hour
+    times = [i * 86400.0 for i in range(100)] + [
+        50.0 * 86400 + 100 + i for i in range(20)
+    ]
+    splits = split_events(times, (0.7, 0.1, 0.2), rng)
+
+    assert len(set(splits[100:])) == 1  # The swarm stays in one split
+    counts = {split: splits.count(split) for split in ("train", "dev", "test")}
+    assert abs(counts["train"] - 84) <= 20
+    assert abs(counts["dev"] - 12) <= 1
+    assert abs(counts["test"] - 24) <= 1
+
+
+def test_download_stats(tmp_path):
+    outcomes = [
+        Outcome("event", "hawaii", "hawaii:1", "a", "downloaded"),
+        Outcome("event", "hawaii", "hawaii:1", "b", "failed", "FDSNNoDataException"),
+        Outcome("noise", "hawaii", "hawaii:1", "noise_a", "near_event"),
+        Outcome("event", "eifel_qseek", "eifel_qseek:2", "c", "no_source"),
+    ]
+    stats = DownloadStats.from_outcomes({"hawaii": 1, "eifel_qseek": 1}, outcomes)
+
+    hawaii, eifel = stats.regions
+    assert (hawaii.events_downloaded, hawaii.traces, hawaii.traces_failed) == (1, 2, 1)
+    assert hawaii.noise_near_event == 1
+    assert hawaii.failure_reasons == {"FDSNNoDataException": 1}
+    assert (eifel.events_downloaded, eifel.traces_no_source) == (0, 1)
+    assert (stats.total.events, stats.total.traces) == (2, 3)
+    assert len(stats.failures) == 3
+    assert "hawaii: 1/1 events, 1/2 traces downloaded" in str(stats)
+
+    stats.write(tmp_path)
+    assert (tmp_path / "download_stats.json").exists()
+    assert len((tmp_path / "download_failures.csv").read_text().splitlines()) == 4
