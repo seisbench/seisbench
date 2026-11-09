@@ -714,6 +714,8 @@ async def download_parallel(
     download: Callable[[Job], Awaitable[Result]],
     write: Callable[[Job, Result | None, Exception | None], None],
     log_every: int = 1000,
+    checkpoint: Callable[[], None] | None = None,
+    checkpoint_interval: float = 600.0,
 ) -> None:
     """
     Runs ``download`` for all jobs. Each source has its own queue, worked on by as
@@ -722,6 +724,8 @@ async def download_parallel(
     time, so a dataset writer is never used concurrently.
 
     :param jobs: Pairs of the source serving a job and the job
+    :param checkpoint: Called every ``checkpoint_interval`` seconds, between two calls
+        of ``write``, e.g., :py:meth:`~seisbench.data.WaveformDataWriter.checkpoint`
     """
     queues: dict[Client, asyncio.Queue] = defaultdict(asyncio.Queue)
     for source, job in jobs:
@@ -747,10 +751,17 @@ async def download_parallel(
 
     async def writer():
         n_written = 0
+        last_checkpoint = time.monotonic()
         for i_job in range(n_jobs):
             job, result, exc = await results.get()
             await asyncio.to_thread(write, job, result, exc)
             n_written += exc is None
+            if (
+                checkpoint is not None
+                and time.monotonic() - last_checkpoint >= checkpoint_interval
+            ):
+                await asyncio.to_thread(checkpoint)
+                last_checkpoint = time.monotonic()
             if (i_job + 1) % log_every == 0 or i_job + 1 == n_jobs:
                 logger.info(
                     "Processed %d/%d waveforms, %d downloaded.",

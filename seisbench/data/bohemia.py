@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import random
-import string
 import warnings
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
 from itertools import groupby
 from pathlib import Path
@@ -77,10 +75,6 @@ PICK_WHITELIST = {
 WEBNET_SWITCH_SH_CH_CHANNEL = datetime(2015, 5, 26)
 
 
-ASCII_SET = string.ascii_lowercase + string.digits
-SOURCE_ID_RNG = random.Random(31337)
-
-
 class BohemiaSaxony(WaveformBenchmarkDataset):
     """
     Regional benchmark dataset of waveform data and metadata
@@ -95,13 +89,16 @@ class BohemiaSaxony(WaveformBenchmarkDataset):
     .. note ::
 
         The dataset is compiled from FDSN web services on first use, which requires
-        ``aiohttp``. Install it with ``pip install seisbench[download]``.
+        ``aiohttp``. Install it with ``pip install seisbench[download]``. An
+        interrupted download resumes where it stopped when the dataset is created
+        again.
 
     :param eida_token: EIDA token or path to a token file, for the restricted WB data
     :param connections: Number of parallel connections per FDSN data center
     """
 
     _client: MultiClient
+    supports_resume = True
 
     def __init__(
         self,
@@ -252,11 +249,7 @@ Seismic Networks:
         actual_t_start = UTCDateTime(trace_params["trace_start_time"])
         sampling_rate = trace_params["trace_sampling_rate_hz"]
 
-        trace_params["trace_name"] = (
-            f"{event_params['source_id']}_{waveform_id.network_code}."
-            f"{waveform_id.station_code}.{waveform_id.location_code or ''}."
-            f"{waveform_id.channel_code[:2]}"
-        )
+        trace_params["trace_name"] = get_trace_name(event_params, waveform_id)
 
         for pick in picks:
             sample = (pick.time - actual_t_start) * sampling_rate
@@ -312,12 +305,21 @@ Seismic Networks:
         Downloads the waveforms of all stations in the catalog. Each source has its
         own queue, worked on by as many tasks as the source has connections. A single
         task writes the traces, so the writer is never used concurrently.
+
+        When resuming, the traces already written are skipped. Source ids and splits
+        are deterministic, so they match the earlier run.
         """
+        done = writer.resumed_trace_names
+        if done:
+            logger.info("Resuming: %d traces are already downloaded.", len(done))
         async with self._client as client:
-            inv = await self.get_inventory(catalog, force_download=True)
+            # A resumed download keeps the inventory, so stations map to the same
+            # networks as before
+            inv = await self.get_inventory(catalog, force_download=not done)
             catalog = fixup_catalog(catalog, inv)
 
             jobs = []
+            source_ids = Counter()
             for event in catalog:
                 split = get_split()
                 try:
@@ -326,6 +328,12 @@ Seismic Networks:
                     logger.warning("Skipping event %s: %s", event.short_str(), exc)
                     continue
                 event_params["split"] = split
+                # The catalog lists a few events twice
+                source_ids[event_params["source_id"]] += 1
+                if source_ids[event_params["source_id"]] > 1:
+                    event_params["source_id"] += (
+                        f"_{source_ids[event_params['source_id']]}"
+                    )
 
                 # groupby only groups adjacent picks, so sort them by station first
                 picks = sorted(event.picks, key=_station_key)
@@ -336,6 +344,9 @@ Seismic Networks:
                         source = client.get_source(network)
                     except KeyError as exc:
                         logger.warning("Skipping station: %s", exc)
+                        continue
+                    waveform_id = pick_group[0].waveform_id
+                    if get_trace_name(event_params, waveform_id) in done:
                         continue
                     jobs.append((source, (event, event_params, pick_group)))
 
@@ -362,7 +373,15 @@ Seismic Networks:
                 trace_params, data = result
                 writer.add_trace({**event_params, **trace_params}, data)
 
-            await download_parallel(jobs, download, write)
+            await download_parallel(jobs, download, write, checkpoint=writer.checkpoint)
+
+
+def get_trace_name(event_params: EventParameters, waveform_id: WaveformStreamID) -> str:
+    return (
+        f"{event_params['source_id']}_{waveform_id.network_code}."
+        f"{waveform_id.station_code}.{waveform_id.location_code or ''}."
+        f"{waveform_id.channel_code[:2]}"
+    )
 
 
 def _station_key(pick: Pick) -> tuple[str, str, str]:
@@ -423,12 +442,12 @@ def get_event_params(event: Event) -> EventParameters:
     origin = event.preferred_origin()
     magnitude = event.preferred_magnitude()
 
-    sb_id = str(event.resource_id).split("/")[-1]
-    if sb_id == "1":
-        sb_id = "sb_id_" + "".join(SOURCE_ID_RNG.choice(ASCII_SET) for _ in range(6))
-
     if origin is None:
         raise ValueError("Event has no preferred origin.")
+
+    # The Nordic reader gives every event a new random resource id. The origin time
+    # is deterministic, so that an interrupted download can resume.
+    sb_id = "bs_" + origin.time.strftime("%Y%m%dT%H%M%S.%f")[:-4]
 
     # The Nordic reader stores the horizontal errors in degrees
     latitude_uncertainty_km = degrees2kilometers(_uncertainty(origin.latitude_errors))

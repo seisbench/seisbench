@@ -338,7 +338,9 @@ class DeepLowFrequency(WaveformBenchmarkDataset):
     .. note ::
 
         The dataset is compiled from FDSN web services on first use, which requires
-        ``aiohttp``. Install it with ``pip install seisbench[download]``.
+        ``aiohttp``. Install it with ``pip install seisbench[download]``. An
+        interrupted download resumes where it stopped when the dataset is created
+        again.
 
     :param catalog_dir: Folder with the QuakeML catalogs, ``<region>.xml``. Defaults
         to ``quakeml`` in the dataset folder.
@@ -353,6 +355,7 @@ class DeepLowFrequency(WaveformBenchmarkDataset):
     """
 
     _client: MultiClient
+    supports_resume = True
 
     def __init__(
         self,
@@ -751,7 +754,20 @@ BQ, HS, NH, 1P, 2D, LU), among others.
         time_after: float,
     ):
         rng = np.random.default_rng(RNG_SEED)
-        outcomes: list[Outcome] = []
+        done = writer.resumed_trace_names
+        # Traces already written by an interrupted run count as downloaded
+        outcomes: list[Outcome] = [
+            Outcome(
+                kind=row["trace_category"],
+                region=row["source_region"],
+                source_id=row.get("source_id", ""),
+                trace_name=row.get("trace_name_original") or row["trace_name"],
+                status="downloaded",
+            )
+            for row in writer.resumed_metadata.to_dict("records")
+        ]
+        if done:
+            logger.info("Resuming: %d traces are already downloaded.", len(done))
 
         async with self._client as client:
             stations, networks = set(), set()
@@ -760,12 +776,13 @@ BQ, HS, NH, 1P, 2D, LU), among others.
                     for pick in event.picks:
                         stations.add(pick.waveform_id.station_code)
                         networks.add(pick.waveform_id.network_code)
+            # A resumed download keeps the inventory of the earlier run
             inv = await get_cached_inventory(
                 client,
                 self.path / "inventory.xml",
                 stations=stations,
                 networks=networks,
-                force_download=True,
+                force_download=not done,
             )
 
             jobs = []
@@ -797,6 +814,15 @@ BQ, HS, NH, 1P, 2D, LU), among others.
             # Downloaded event traces without a noise window, per region
             noise_candidates: dict[str, list[Job]] = {region: [] for region in catalogs}
             with_noise = {job.trace_name for _, job in jobs if job.kind == "noise"}
+            with_noise |= {name for name in done if name.startswith("noise_")}
+            for _, job in jobs:
+                if (
+                    job.kind == "event"
+                    and job.trace_name in done
+                    and f"noise_{job.trace_name}" not in with_noise
+                ):
+                    noise_candidates[job.region].append(job)
+            jobs = [(source, job) for source, job in jobs if job.trace_name not in done]
 
             def write(job: Job, result: Download | None, exc: Exception | None):
                 if isinstance(exc, NoNoiseWindowError):
@@ -812,7 +838,7 @@ BQ, HS, NH, 1P, 2D, LU), among others.
                     noise_candidates[job.region].append(job)
 
             self._plan(client, jobs)
-            await download_parallel(jobs, download, write)
+            await download_parallel(jobs, download, write, checkpoint=writer.checkpoint)
 
             for i_round in range(NOISE_MAX_ROUNDS):
                 jobs = self._noise_top_up(client, outcomes, noise_candidates, rng)
@@ -826,7 +852,9 @@ BQ, HS, NH, 1P, 2D, LU), among others.
                 )
                 with_noise.update(job.trace_name for _, job in jobs)
                 self._plan(client, jobs)
-                await download_parallel(jobs, download, write)
+                await download_parallel(
+                    jobs, download, write, checkpoint=writer.checkpoint
+                )
 
         stats = DownloadStats.from_outcomes(
             {region: len(catalog) for region, catalog in catalogs.items()}, outcomes
