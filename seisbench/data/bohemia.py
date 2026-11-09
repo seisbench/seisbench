@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import random
 import string
+import warnings
 from collections import defaultdict
 from datetime import datetime
 from itertools import groupby
@@ -217,7 +218,12 @@ Seismic Networks:
         catalog = Catalog()
         for file in nordic_files:
             logger.info(f"Reading NORDIC file {file}")
-            catalog += read_nordic(str(file))
+            with warnings.catch_warnings():
+                # obspy has no field for fixed depths, get_event_params handles them
+                warnings.filterwarnings(
+                    "ignore", message="Depth indicator F has not been mapped"
+                )
+                catalog += read_nordic(str(file))
 
         logger.info("Loaded catalog with %d events.", len(catalog))
         return catalog
@@ -506,6 +512,12 @@ def get_event_params(event: Event) -> EventParameters:
         _uncertainty(origin.longitude_errors)
     ) * np.cos(np.radians(origin.latitude))
 
+    # A depth error of 0 marks a depth fixed during location (Nordic depth
+    # indicator F), so the uncertainty is unknown, not zero
+    depth_uncertainty_km = _uncertainty(origin.depth_errors) / 1e3
+    if depth_uncertainty_km == 0:
+        depth_uncertainty_km = np.nan
+
     params: EventParameters = EventParameters(
         split="train",
         source_id=sb_id,
@@ -516,7 +528,7 @@ def get_event_params(event: Event) -> EventParameters:
         source_longitude_deg=origin.longitude,
         source_longitude_uncertainty_km=longitude_uncertainty_km,
         source_depth_km=np.nan if origin.depth is None else origin.depth / 1e3,
-        source_depth_uncertainty_km=_uncertainty(origin.depth_errors) / 1e3,
+        source_depth_uncertainty_km=depth_uncertainty_km,
     )
     if magnitude is not None:
         params["source_magnitude"] = magnitude.mag
