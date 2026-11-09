@@ -8,20 +8,16 @@ from collections import defaultdict
 from datetime import datetime
 from itertools import groupby
 from pathlib import Path
-from typing import Literal, cast
+from typing import cast
 from urllib.parse import urljoin
 from zipfile import ZipFile
 
 import numpy as np
-from obspy import Inventory, Stream, UTCDateTime, read_inventory
-from obspy.clients.fdsn.header import (
-    URL_MAPPINGS,
-    FDSNException,
-)
-from obspy.core.event.base import QuantityError, WaveformStreamID
+from obspy import Inventory, UTCDateTime
+from obspy.clients.fdsn.header import URL_MAPPINGS
 from obspy.core.event.catalog import Catalog, Event
 from obspy.core.event.origin import Pick
-from obspy.geodetics import degrees2kilometers, gps2dist_azimuth
+from obspy.geodetics import degrees2kilometers
 from obspy.io.nordic.core import read_nordic
 
 import seisbench
@@ -31,13 +27,19 @@ from seisbench.data.base import (
     TraceParameters,
     WaveformBenchmarkDataset,
 )
-from seisbench.data.utils import FDSNSource, MultiClient
-from seisbench.util import download_http
-from seisbench.util.trace_ops import (
-    rotate_stream_to_zne,
-    stream_to_array,
-    trace_has_spikes,
+from seisbench.data.utils import (
+    FDSNSource,
+    MultiClient,
+    backup_dataset,
+    download_parallel,
+    get_cached_inventory,
+    get_split,
+    get_trace_params,
+    get_waveform_array,
+    station_key,
+    uncertainty,
 )
+from seisbench.util import download_http
 
 REMOVE_CHANNELS = {
     "HHT",  # Stray channel or typo
@@ -192,24 +194,14 @@ Seismic Networks:
         Downloads the inventory of all stations in the catalog, or loads it from
         the dataset folder. Must be called within the client's context.
         """
-        inventory_file = self.path / "inventory.xml"
-        stations = get_stations(catalog)
-        if not inventory_file.exists() or force_download:
-            starttime, endtime = get_catalog_timerange(catalog)
-            inv = await self._client.get_inventory(
-                stations=stations
-                # starttime=starttime,
-                # endtime=endtime,
-            )
-            await asyncio.to_thread(inv.write, str(inventory_file), format="STATIONXML")
-
-        else:
-            logger.info("Loading inventory from %s", inventory_file)
-            inv = await asyncio.to_thread(read_inventory, str(inventory_file))
-            # The file doesn't record which source serves which network
-            await self._client.get_inventory(stations=stations, level="network")
-
-        return inv
+        return await get_cached_inventory(
+            self._client,
+            self.path / "inventory.xml",
+            stations=get_stations(catalog),
+            # starttime=starttime,
+            # endtime=endtime,
+            force_download=force_download,
+        )
 
     def get_catalog(self) -> Catalog:
         self._download_catalog_colm(self.path)
@@ -242,50 +234,28 @@ Seismic Networks:
         trace_params = get_trace_params(
             waveform_id,
             inventory,
+            UTCDateTime(event_params["source_origin_time"]),
             event_params,
         )
 
         tmin = min(p.time for p in picks) - time_before
         tmax = max(p.time for p in picks) + time_after
 
-        try:
-            stream = await self._client.get_waveforms(
-                network=waveform_id.network_code,
-                station=waveform_id.station_code,
-                location=waveform_id.location_code,
-                channel=waveform_id.channel_code[:2] + "*",
-                starttime=tmin.datetime,
-                endtime=tmax.datetime,
-            )
-        except FDSNException as exc:
-            logger.error(
-                "Error fetching waveforms for %s", waveform_id.get_seed_string()
-            )
-            raise exc
-
-        if not len(stream):
-            raise ValueError(
-                f"No waveforms found for {waveform_id} in time range {tmin} - {tmax}.",
-            )
-
-        rotate_stream_to_zne(stream, inventory=inventory)
-        sampling_rate = await homogenize_sampling_rate(stream, sampling_rate)
-
-        stream = stream.slice(tmin, tmax)
-        actual_t_start, data, completeness = stream_to_array(
-            stream,
+        _, waveform_params, data = await get_waveform_array(
+            self._client,
+            inventory,
+            network=waveform_id.network_code,
+            station=waveform_id.station_code,
+            location=waveform_id.location_code,
+            channel=waveform_id.channel_code[:2] + "*",
+            starttime=tmin,
+            endtime=tmax,
+            sampling_rate=sampling_rate,
             component_order=COMPONENT_ORDER,
         )
-        desired_samples = int((tmax - tmin) * sampling_rate) + 1
-        if desired_samples > data.shape[1]:
-            # Traces appear to be complete, but do not cover the intended time range
-            completeness *= data.shape[1] / desired_samples
-
-        trace_params["trace_sampling_rate_hz"] = sampling_rate
-        trace_params["trace_completeness"] = completeness
-        trace_params["trace_has_spikes"] = trace_has_spikes(data)
-        trace_params["trace_start_time"] = str(actual_t_start)
-        trace_params["trace_component_order"] = COMPONENT_ORDER
+        trace_params.update(waveform_params)
+        actual_t_start = UTCDateTime(trace_params["trace_start_time"])
+        sampling_rate = trace_params["trace_sampling_rate_hz"]
 
         trace_params["trace_name"] = (
             f"{event_params['source_id']}_{waveform_id.network_code}."
@@ -352,10 +322,9 @@ Seismic Networks:
             inv = await self.get_inventory(catalog, force_download=True)
             catalog = fixup_catalog(catalog, inv)
 
-            queues = {source: asyncio.Queue() for source in client.sources}
-            n_stations = 0
+            jobs = []
             for event in catalog:
-                split = get_split()
+                split = get_split(RNG)
                 try:
                     event_params = get_event_params(event)
                 except ValueError as exc:
@@ -364,8 +333,8 @@ Seismic Networks:
                 event_params["split"] = split
 
                 # groupby only groups adjacent picks, so sort them by station first
-                picks = sorted(event.picks, key=_station_key)
-                for _, pick_group in groupby(picks, key=_station_key):
+                picks = sorted(event.picks, key=station_key)
+                for _, pick_group in groupby(picks, key=station_key):
                     pick_group = list(pick_group)
                     network = pick_group[0].waveform_id.network_code
                     try:
@@ -373,81 +342,32 @@ Seismic Networks:
                     except KeyError as exc:
                         logger.warning("Skipping station: %s", exc)
                         continue
-                    queues[source].put_nowait((event, event_params, pick_group))
-                    n_stations += 1
+                    jobs.append((source, (event, event_params, pick_group)))
 
-            logger.info(
-                "Downloading %d stations of %d events (%s).",
-                n_stations,
-                len(catalog),
-                ", ".join(
-                    f"{queue.qsize()} from {source.base_url}"
-                    for source, queue in queues.items()
-                ),
-            )
-            results = asyncio.Queue(maxsize=64)
+            async def download(job):
+                _, event_params, picks = job
+                return await self.get_station_waveform_data(
+                    event_params=event_params,
+                    picks=picks,
+                    inventory=inv,
+                    time_before=time_before,
+                    time_after=time_after,
+                )
 
-            async def download(queue: asyncio.Queue):
-                while True:
-                    try:
-                        event, event_params, picks = queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        return
-                    try:
-                        result = await self.get_station_waveform_data(
-                            event_params=event_params,
-                            picks=picks,
-                            inventory=inv,
-                            time_before=time_before,
-                            time_after=time_after,
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            "Error processing station %s of event %s: %s",
-                            picks[0].waveform_id.get_seed_string(),
-                            event.short_str(),
-                            exc,
-                        )
-                        result = None
-                    await results.put((event_params, result))
+            def write(job, result, exc):
+                event, event_params, picks = job
+                if exc is not None:
+                    logger.warning(
+                        "Error processing station %s of event %s: %s",
+                        picks[0].waveform_id.get_seed_string(),
+                        event.short_str(),
+                        exc,
+                    )
+                    return
+                trace_params, data = result
+                writer.add_trace({**event_params, **trace_params}, data)
 
-            async def write():
-                n_written = 0
-                for i_station in range(n_stations):
-                    event_params, result = await results.get()
-                    if result is not None:
-                        trace_params, data = result
-                        await asyncio.to_thread(
-                            writer.add_trace,
-                            {**event_params, **trace_params},
-                            data,
-                        )
-                        n_written += 1
-                    if (i_station + 1) % 1000 == 0 or i_station + 1 == n_stations:
-                        logger.info(
-                            "Processed %d/%d stations, wrote %d traces.",
-                            i_station + 1,
-                            n_stations,
-                            n_written,
-                        )
-
-            await asyncio.gather(
-                write(),
-                *(
-                    download(queue)
-                    for source, queue in queues.items()
-                    for _ in range(source.connections)
-                ),
-            )
-
-
-def _station_key(pick: Pick) -> tuple[str, str, str]:
-    waveform_id = pick.waveform_id
-    return (
-        waveform_id.network_code or "",
-        waveform_id.station_code or "",
-        waveform_id.location_code or "",
-    )
+            await download_parallel(jobs, download, write)
 
 
 def get_catalog_timerange(catalog: Catalog) -> tuple[datetime, datetime]:
@@ -489,12 +409,6 @@ def get_stations(catalog: Catalog) -> set[str]:
     return stations
 
 
-def _uncertainty(errors: QuantityError | None) -> float:
-    if errors is None or errors.uncertainty is None:
-        return np.nan
-    return errors.uncertainty
-
-
 def get_event_params(event: Event) -> EventParameters:
     origin = event.preferred_origin()
     magnitude = event.preferred_magnitude()
@@ -507,14 +421,14 @@ def get_event_params(event: Event) -> EventParameters:
         raise ValueError("Event has no preferred origin.")
 
     # The Nordic reader stores the horizontal errors in degrees
-    latitude_uncertainty_km = degrees2kilometers(_uncertainty(origin.latitude_errors))
+    latitude_uncertainty_km = degrees2kilometers(uncertainty(origin.latitude_errors))
     longitude_uncertainty_km = degrees2kilometers(
-        _uncertainty(origin.longitude_errors)
+        uncertainty(origin.longitude_errors)
     ) * np.cos(np.radians(origin.latitude))
 
     # A depth error of 0 marks a depth fixed during location (Nordic depth
     # indicator F), so the uncertainty is unknown, not zero
-    depth_uncertainty_km = _uncertainty(origin.depth_errors) / 1e3
+    depth_uncertainty_km = uncertainty(origin.depth_errors) / 1e3
     if depth_uncertainty_km == 0:
         depth_uncertainty_km = np.nan
 
@@ -522,7 +436,7 @@ def get_event_params(event: Event) -> EventParameters:
         split="train",
         source_id=sb_id,
         source_origin_time=str(origin.time),
-        source_origin_uncertainty_sec=_uncertainty(origin.time_errors),
+        source_origin_uncertainty_sec=uncertainty(origin.time_errors),
         source_latitude_deg=origin.latitude,
         source_latitude_uncertainty_km=latitude_uncertainty_km,
         source_longitude_deg=origin.longitude,
@@ -532,52 +446,12 @@ def get_event_params(event: Event) -> EventParameters:
     )
     if magnitude is not None:
         params["source_magnitude"] = magnitude.mag
-        params["source_magnitude_uncertainty"] = _uncertainty(magnitude.mag_errors)
+        params["source_magnitude_uncertainty"] = uncertainty(magnitude.mag_errors)
         params["source_magnitude_type"] = magnitude.magnitude_type
         if magnitude.creation_info is not None:
             params["source_magnitude_author"] = magnitude.creation_info.agency_id
 
     return params
-
-
-def get_trace_params(
-    waveform_id: WaveformStreamID,
-    inventory: Inventory,
-    event_params: EventParameters,
-) -> TraceParameters:
-    try:
-        coordinates = inventory.get_coordinates(
-            waveform_id.get_seed_string(),
-            datetime=UTCDateTime(event_params["source_origin_time"]),
-        )
-    except Exception as r:
-        raise ValueError(
-            f"Could not get coordinates for {waveform_id.get_seed_string()}: {r}"
-        ) from r
-
-    if not np.isnan(coordinates["latitude"] * coordinates["longitude"]):
-        back_azimuth = gps2dist_azimuth(
-            event_params["source_latitude_deg"],
-            event_params["source_longitude_deg"],
-            coordinates["latitude"],
-            coordinates["longitude"],
-        )[2]
-    else:
-        back_azimuth = np.nan
-
-    trace_params = TraceParameters(
-        trace_name="foo",
-        path_back_azimuth_deg=back_azimuth,
-        station_network_code=waveform_id.network_code,
-        station_code=waveform_id.station_code,
-        trace_channel=waveform_id.channel_code[:2],
-        station_location_code=waveform_id.location_code,
-        station_latitude_deg=coordinates["latitude"],
-        station_longitude_deg=coordinates["longitude"],
-        station_elevation_m=coordinates["elevation"],
-    )
-
-    return trace_params
 
 
 def fixup_catalog(catalog: Catalog, inventory: Inventory) -> Catalog:
@@ -636,24 +510,6 @@ def fixup_catalog(catalog: Catalog, inventory: Inventory) -> Catalog:
     return catalog
 
 
-async def homogenize_sampling_rate(st: Stream, sampling_rate: float) -> float:
-    """
-    Homogenizes the sampling rate of the stream to the given sampling rate.
-    """
-    if sampling_rate <= 0.0:
-        sampling_rate = st[0].stats.sampling_rate
-    for trace in st:
-        if trace.stats.sampling_rate != sampling_rate:
-            logger.info(
-                "Resampling trace %s from %.2f Hz to %.2f Hz.",
-                trace.id,
-                trace.stats.sampling_rate,
-                sampling_rate,
-            )
-            await asyncio.to_thread(trace.resample, sampling_rate)
-    return sampling_rate
-
-
 StationIndex = dict[str, list[tuple[str, UTCDateTime | None, UTCDateTime | None]]]
 
 
@@ -707,20 +563,6 @@ def get_network_code(
     return min(networks, key=priority)
 
 
-def get_split(test: float = 0.1, dev: float = 0.1) -> Literal["train", "dev", "test"]:
-    """
-    Returns a random split for the dataset.
-    """
-    r = RNG.random()
-    train = 1.0 - test - dev
-    if r < train:
-        return "train"
-    elif r < train + dev:
-        return "dev"
-    else:
-        return "test"
-
-
 if __name__ == "__main__":
     from argparse import ArgumentParser
 
@@ -746,13 +588,7 @@ if __name__ == "__main__":
         args.eida_token = str(path)
 
     if args.force:
-        dataset_path = BohemiaSaxony._path_internal()
-        if dataset_path.exists():
-            backup_path = dataset_path.with_name(
-                f"{dataset_path.name}.bak-{datetime.now():%Y%m%dT%H%M%S}"
-            )
-            logger.info("Moving existing dataset to %s", backup_path)
-            dataset_path.rename(backup_path)
+        backup_dataset(BohemiaSaxony._path_internal())
 
     ds = BohemiaSaxony(eida_token=args.eida_token, component_order="ZNE")
     print(ds)
