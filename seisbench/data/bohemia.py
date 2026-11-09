@@ -55,6 +55,11 @@ STATION_MAPPING = {
     "VACW": "VAC",
     "KVCW": "KVC",
     "KRCW": "KRC",
+    "KOCW": "KOC",
+    "POCW": "POC",
+    "LBCW": "LBC",
+    "SKCW": "SKC",
+    "ZHCW": "ZHC",
     "ZEIT": "ZEITZ",
     "LEIB": "LEIB1",
 }
