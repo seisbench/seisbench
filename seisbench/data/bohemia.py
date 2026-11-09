@@ -469,7 +469,8 @@ def get_stations(catalog: Catalog) -> set[str]:
         for pick in ev.picks:
             if pick.waveform_id is not None:
                 station = pick.waveform_id.station_code
-                stations.add(station)
+                # Request the FDSN station names that fixup_catalog maps to
+                stations.add(STATION_MAPPING.get(station, station))
 
     return stations
 
