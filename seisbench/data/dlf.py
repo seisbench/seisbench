@@ -14,6 +14,8 @@ import numpy as np
 from obspy import UTCDateTime, read_events
 from obspy.clients.fdsn.header import URL_MAPPINGS, FDSNNoDataException
 from obspy.core.event import Catalog, Event, Pick, WaveformStreamID
+from obspy.signal.filter import bandpass
+from obspy.signal.trigger import classic_sta_lta
 
 from seisbench import logger
 from seisbench.data.base import (
@@ -31,6 +33,7 @@ from seisbench.data.utils import (
     get_waveform_array,
     station_key,
 )
+from seisbench.util.trace_ops import trace_has_spikes
 
 # One QuakeML file per region, <region>.xml. Japan (Hi-net) is not available via FDSN.
 REGIONS = (
@@ -50,6 +53,14 @@ SAMPLING_RATE = 100.0
 # Noise windows end this long before a catalog event and start this long after one
 NOISE_GAP_BEFORE_EVENT = 120.0
 NOISE_GAP_AFTER_EVENT = 180.0
+# Noise windows are rejected if the STA/LTA of a bandpassed component exceeds the
+# threshold. The data before the window lets the filter and the LTA settle.
+NOISE_FREQMIN = 1.0
+NOISE_FREQMAX = 15.0
+NOISE_STA = 1.0
+NOISE_LTA = 20.0
+NOISE_MAX_STA_LTA = 3.0
+NOISE_LEAD = 30.0
 
 # Events closer than this (s) in a catalog form a cluster, e.g., a swarm. A cluster is
 # never split between train, dev and test, so its waveforms don't leak across them.
@@ -58,7 +69,13 @@ SPLIT_CLUSTER_GAP = 3600.0
 RNG_SEED = 31337
 
 Kind = Literal["event", "noise"]
-Status = Literal["downloaded", "failed", "no_source", "near_event"]
+Status = Literal["downloaded", "failed", "no_source", "near_event", "not_quiet"]
+
+
+class NotQuietError(Exception):
+    """
+    A noise window has gaps or an STA/LTA above the threshold.
+    """
 
 
 class Outcome(NamedTuple):
@@ -118,6 +135,7 @@ class RegionStats(NamedTuple):
     noise_downloaded: int
     noise_failed: int
     noise_near_event: int
+    noise_not_quiet: int
     failure_reasons: dict[str, int]
 
     @classmethod
@@ -144,6 +162,7 @@ class RegionStats(NamedTuple):
             noise_downloaded=count["noise", "downloaded"],
             noise_failed=count["noise", "failed"],
             noise_near_event=count["noise", "near_event"],
+            noise_not_quiet=count["noise", "not_quiet"],
             failure_reasons=dict(
                 Counter(o.error for o in outcomes if o.status == "failed")
             ),
@@ -156,7 +175,7 @@ class RegionStats(NamedTuple):
             f"({self.traces_failed} failed, {self.traces_no_source} without data "
             f"center), {self.noise_downloaded}/{self.noise} noise windows downloaded "
             f"({self.noise_failed} failed, {self.noise_near_event} too close to an "
-            "event)."
+            f"event, {self.noise_not_quiet} not quiet)."
         )
 
 
@@ -231,7 +250,9 @@ class DeepLowFrequency(WaveformBenchmarkDataset):
     For a fraction of the event traces, a noise window is downloaded from the same
     station before the event, with ``trace_category = "noise"``. Noise windows keep
     120 s before and 180 s after every catalog event of the region. They take the
-    split of the event.
+    split of the event. A window is rejected if it has gaps, or if the STA/LTA
+    (1 s / 20 s, 1-15 Hz) of a component exceeds 3. Components without data are
+    allowed, as in the event traces of the same station.
 
     The download writes ``download_stats.json`` (counts per region) and
     ``download_failures.csv`` (every trace that could not be downloaded) to the
@@ -464,7 +485,9 @@ BQ, HS, NH, 1P, 2D, LU), among others.
                 jobs.append((source, event_job))
                 if noise_job is None:
                     continue
-                if is_quiet(origin_times, noise_job.starttime, noise_job.endtime):
+                if is_away_from_events(
+                    origin_times, noise_job.starttime, noise_job.endtime
+                ):
                     jobs.append((source, noise_job))
                 else:
                     outcomes.append(noise_job.outcome("near_event"))
@@ -481,7 +504,8 @@ BQ, HS, NH, 1P, 2D, LU), among others.
             network=waveform_id.network_code,
             station=waveform_id.station_code,
             channel=waveform_id.channel_code[:2] + "?",
-            starttime=job.starttime,
+            # Noise windows start earlier, for the STA/LTA check
+            starttime=job.starttime - (NOISE_LEAD if job.kind == "noise" else 0.0),
             endtime=job.endtime,
             sampling_rate=SAMPLING_RATE,
             component_order=COMPONENT_ORDER,
@@ -511,6 +535,18 @@ BQ, HS, NH, 1P, 2D, LU), among others.
 
         start = UTCDateTime(trace_params["trace_start_time"])
         sampling_rate = trace_params["trace_sampling_rate_hz"]
+        if job.kind == "noise":
+            window_start = round((job.starttime - start) * sampling_rate)
+            await asyncio.to_thread(
+                check_quiet,
+                data,
+                sampling_rate,
+                trace_params["trace_completeness"],
+                window_start,
+            )
+            data = data[:, window_start:]
+            trace_params["trace_start_time"] = str(start + window_start / sampling_rate)
+            trace_params["trace_has_spikes"] = trace_has_spikes(data)
         for pick in job.picks:
             sample = round((pick.time - start) * sampling_rate)
             trace_params[f"trace_{pick.phase_hint}_arrival_sample"] = sample
@@ -561,7 +597,8 @@ BQ, HS, NH, 1P, 2D, LU), among others.
             def write(job: Job, result, exc: Exception | None):
                 if exc is not None:
                     logger.debug("Could not download %s: %s", job.trace_name, exc)
-                    outcomes.append(job.outcome("failed", exc))
+                    status = "not_quiet" if isinstance(exc, NotQuietError) else "failed"
+                    outcomes.append(job.outcome(status, exc))
                     return
                 trace_params, data = result
                 writer.add_trace({**job.params, **trace_params}, data)
@@ -651,7 +688,42 @@ def split_events(
     return splits
 
 
-def is_quiet(
+def check_quiet(
+    data: np.ndarray, sampling_rate: float, completeness: float, window_start: int
+) -> None:
+    """
+    Raises :py:class:`NotQuietError` if the noise window has gaps, or if the STA/LTA
+    of a component exceeds :py:data:`NOISE_MAX_STA_LTA` within the window.
+    Components without data are allowed.
+
+    :param data: Waveforms, starting :py:data:`NOISE_LEAD` before the window
+    :param completeness: Fraction of the samples that contain data
+    :param window_start: First sample of the window in ``data``
+    """
+    has_data = np.ptp(data, axis=1) > 0
+    if not has_data.any():
+        raise NotQuietError("No component has data.")
+    if window_start < round(NOISE_LTA * sampling_rate):
+        raise NotQuietError("The data start too late for the STA/LTA.")
+    # Missing components count as incomplete, so compare with the components we have
+    if completeness < has_data.sum() / len(data) - 1e-3:
+        raise NotQuietError(f"The window has gaps, completeness {completeness:.3f}.")
+
+    for component in data[has_data]:
+        filtered = bandpass(
+            component, NOISE_FREQMIN, NOISE_FREQMAX, df=sampling_rate, corners=4
+        )
+        ratio = classic_sta_lta(
+            filtered,
+            round(NOISE_STA * sampling_rate),
+            round(NOISE_LTA * sampling_rate),
+        )
+        max_ratio = ratio[window_start:].max()
+        if max_ratio > NOISE_MAX_STA_LTA:
+            raise NotQuietError(f"STA/LTA {max_ratio:.1f} exceeds {NOISE_MAX_STA_LTA}.")
+
+
+def is_away_from_events(
     origin_times: list[float], starttime: UTCDateTime, endtime: UTCDateTime
 ) -> bool:
     """

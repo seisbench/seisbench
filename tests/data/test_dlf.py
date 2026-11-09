@@ -11,12 +11,15 @@ from obspy.core.event import (
 )
 
 import numpy as np
+import pytest
 
 from seisbench.data.dlf import (
     DownloadStats,
+    NotQuietError,
     Outcome,
+    check_quiet,
     get_event_params,
-    is_quiet,
+    is_away_from_events,
     split_events,
 )
 from seisbench.data.utils import FDSNSource
@@ -27,13 +30,13 @@ def test_is_quiet():
     event = UTCDateTime(2020, 1, 1, 0, 10)
 
     # Ends exactly 120 s before the event
-    assert is_quiet(origins, event - 180, event - 120)
-    assert not is_quiet(origins, event - 179, event - 119)
+    assert is_away_from_events(origins, event - 180, event - 120)
+    assert not is_away_from_events(origins, event - 179, event - 119)
     # Starts exactly 180 s after the event
-    assert is_quiet(origins, event + 180, event + 240)
-    assert not is_quiet(origins, event + 179, event + 239)
-    assert not is_quiet(origins, event - 30, event + 30)
-    assert is_quiet([], event, event + 60)
+    assert is_away_from_events(origins, event + 180, event + 240)
+    assert not is_away_from_events(origins, event + 179, event + 239)
+    assert not is_away_from_events(origins, event - 30, event + 30)
+    assert is_away_from_events([], event, event + 60)
 
 
 def test_get_event_params():
@@ -117,3 +120,33 @@ def test_download_stats(tmp_path):
     stats.write(tmp_path)
     assert (tmp_path / "download_stats.json").exists()
     assert len((tmp_path / "download_failures.csv").read_text().splitlines()) == 4
+
+
+def test_check_quiet():
+    rng = np.random.default_rng(0)
+    sampling_rate = 100.0
+    window_start = 3000  # NOISE_LEAD of 30 s
+    noise = rng.normal(size=(3, 9001))
+
+    check_quiet(noise, sampling_rate, 1.0, window_start)
+
+    # A component without data, e.g., a vertical-only station, is fine
+    z_only = noise.copy()
+    z_only[1:] = 0
+    check_quiet(z_only, sampling_rate, 1 / 3, window_start)
+
+    # An arrival in the window
+    burst = noise.copy()
+    burst[0, 6000:6200] *= 20
+    with pytest.raises(NotQuietError, match="STA/LTA"):
+        check_quiet(burst, sampling_rate, 1.0, window_start)
+
+    # An arrival before the window is not checked
+    early = noise.copy()
+    early[0, 500:700] *= 20
+    check_quiet(early, sampling_rate, 1.0, window_start)
+
+    with pytest.raises(NotQuietError, match="gaps"):
+        check_quiet(noise, sampling_rate, 0.9, window_start)
+    with pytest.raises(NotQuietError, match="too late"):
+        check_quiet(noise, sampling_rate, 1.0, 1000)
