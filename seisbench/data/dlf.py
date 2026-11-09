@@ -61,6 +61,13 @@ NOISE_STA = 1.0
 NOISE_LTA = 20.0
 NOISE_MAX_STA_LTA = 3.0
 NOISE_LEAD = 30.0
+# A rejected noise window is replaced by the one before it, up to this many rejected
+# downloads and this far (s) before the event
+NOISE_MAX_REJECTED = 5
+NOISE_MAX_LOOKBACK = 3600.0
+# Rounds of additional noise windows at other event traces, until the noise
+# fraction of each region is reached
+NOISE_MAX_ROUNDS = 10
 
 # Events closer than this (s) in a catalog form a cluster, e.g., a swarm. A cluster is
 # never split between train, dev and test, so its waveforms don't leak across them.
@@ -78,6 +85,31 @@ class NotQuietError(Exception):
     """
 
 
+class NoNoiseWindowError(Exception):
+    """
+    No noise window was found before the event.
+
+    :param status: ``near_event`` if every window was too close to a catalog event,
+        ``not_quiet`` if the downloaded windows were rejected
+    :param rejected: Number of downloaded windows that were rejected
+    """
+
+    def __init__(self, status: Status, rejected: int, message: str):
+        super().__init__(message)
+        self.status = status
+        self.rejected = rejected
+
+
+class Download(NamedTuple):
+    """
+    A downloaded trace, and for noise, how many windows were rejected before it.
+    """
+
+    trace_params: TraceParameters
+    data: np.ndarray
+    rejected: int = 0
+
+
 class Outcome(NamedTuple):
     """
     What happened to one event trace or noise window.
@@ -90,6 +122,7 @@ class Outcome(NamedTuple):
     status: Status
     error: str = ""
     message: str = ""
+    rejected: int = 0
 
 
 class Job(NamedTuple):
@@ -107,7 +140,9 @@ class Job(NamedTuple):
     params: dict
     picks: tuple[Pick, ...] = ()
 
-    def outcome(self, status: Status, exc: Exception | None = None) -> Outcome:
+    def outcome(
+        self, status: Status, exc: Exception | None = None, rejected: int = 0
+    ) -> Outcome:
         return Outcome(
             kind=self.kind,
             region=self.region,
@@ -116,6 +151,7 @@ class Job(NamedTuple):
             status=status,
             error="" if exc is None else type(exc).__name__,
             message="" if exc is None else str(exc),
+            rejected=rejected,
         )
 
 
@@ -136,6 +172,7 @@ class RegionStats(NamedTuple):
     noise_failed: int
     noise_near_event: int
     noise_not_quiet: int
+    noise_windows_rejected: int
     failure_reasons: dict[str, int]
 
     @classmethod
@@ -163,6 +200,9 @@ class RegionStats(NamedTuple):
             noise_failed=count["noise", "failed"],
             noise_near_event=count["noise", "near_event"],
             noise_not_quiet=count["noise", "not_quiet"],
+            noise_windows_rejected=sum(
+                outcome.rejected for outcome in outcomes if outcome.kind == "noise"
+            ),
             failure_reasons=dict(
                 Counter(o.error for o in outcomes if o.status == "failed")
             ),
@@ -174,8 +214,20 @@ class RegionStats(NamedTuple):
             f"{self.traces_downloaded}/{self.traces} traces downloaded "
             f"({self.traces_failed} failed, {self.traces_no_source} without data "
             f"center), {self.noise_downloaded}/{self.noise} noise windows downloaded "
-            f"({self.noise_failed} failed, {self.noise_near_event} too close to an "
-            f"event, {self.noise_not_quiet} not quiet)."
+            f"({self.noise_failed} failed, {self.noise_near_event} too close to "
+            f"events, {self.noise_not_quiet} not quiet; {self.noise_windows_rejected} "
+            f"windows rejected), noise fraction {self.noise_fraction:.2f}."
+        )
+
+    @property
+    def noise_fraction(self) -> float:
+        """
+        Noise windows per downloaded event trace.
+        """
+        return (
+            self.noise_downloaded / self.traces_downloaded
+            if self.traces_downloaded
+            else 0.0
         )
 
 
@@ -252,7 +304,10 @@ class DeepLowFrequency(WaveformBenchmarkDataset):
     120 s before and 180 s after every catalog event of the region. They take the
     split of the event. A window is rejected if it has gaps, or if the STA/LTA
     (1 s / 20 s, 1-15 Hz) of a component exceeds 3. Components without data are
-    allowed, as in the event traces of the same station.
+    allowed, as in the event traces of the same station. A rejected window is
+    replaced by the window before it, up to 5 rejected windows and one hour before
+    the event. If a region still has too few noise windows, more are drawn at other
+    event traces, until the noise fraction is reached.
 
     The download writes ``download_stats.json`` (counts per region) and
     ``download_failures.csv`` (every trace that could not be downloaded) to the
@@ -429,14 +484,12 @@ BQ, HS, NH, 1P, 2D, LU), among others.
             region,
             ", ".join(f"{n} {split}" for split, n in sorted(Counter(splits).items())),
         )
-        origin_times.sort()
 
         jobs = []
         for event, split in zip(events, splits):
             event_params = get_event_params(event, region)
             event_params["split"] = split
             source_id = event_params["source_id"]
-            origin_time = UTCDateTime(event_params["source_origin_time"])
 
             # groupby only groups adjacent picks, so sort them by station first
             picks = sorted(event.picks, key=station_key)
@@ -461,17 +514,7 @@ BQ, HS, NH, 1P, 2D, LU), among others.
                 )
                 noise_job = None
                 if rng.random() < self._noise_fraction:
-                    endtime = origin_time - NOISE_GAP_BEFORE_EVENT
-                    noise_job = Job(
-                        kind="noise",
-                        region=region,
-                        source_id=source_id,
-                        trace_name=f"noise_{trace_name}",
-                        waveform_id=waveform_id,
-                        starttime=endtime - self._noise_length,
-                        endtime=endtime,
-                        params={"split": split, "source_region": region},
-                    )
+                    noise_job = self._noise_job(event_job)
 
                 try:
                     source = client.get_source(waveform_id.network_code)
@@ -483,15 +526,99 @@ BQ, HS, NH, 1P, 2D, LU), among others.
                     ]
                     continue
                 jobs.append((source, event_job))
-                if noise_job is None:
-                    continue
-                if is_away_from_events(
-                    origin_times, noise_job.starttime, noise_job.endtime
-                ):
+                if noise_job is not None:
                     jobs.append((source, noise_job))
-                else:
-                    outcomes.append(noise_job.outcome("near_event"))
         return jobs
+
+    def _noise_job(self, event_job: Job) -> Job:
+        """
+        The noise window at the station of an event trace, before the event.
+        """
+        endtime = (
+            UTCDateTime(event_job.params["source_origin_time"]) - NOISE_GAP_BEFORE_EVENT
+        )
+        return event_job._replace(
+            kind="noise",
+            trace_name=f"noise_{event_job.trace_name}",
+            starttime=endtime - self._noise_length,
+            endtime=endtime,
+            params={
+                "split": event_job.params["split"],
+                "source_region": event_job.region,
+            },
+            picks=(),
+        )
+
+    def _noise_top_up(
+        self,
+        client: MultiClient,
+        outcomes: list[Outcome],
+        noise_candidates: dict[str, list[Job]],
+        rng: np.random.Generator,
+    ) -> list[tuple[FDSNSource, Job]]:
+        """
+        Noise jobs at random event traces of the regions that are below the noise
+        fraction, as many as are missing. The chosen traces are removed from
+        ``noise_candidates``.
+        """
+        downloaded = Counter(
+            (outcome.region, outcome.kind)
+            for outcome in outcomes
+            if outcome.status == "downloaded"
+        )
+        jobs = []
+        for region, candidates in noise_candidates.items():
+            missing = (
+                round(self._noise_fraction * downloaded[region, "event"])
+                - downloaded[region, "noise"]
+            )
+            n_jobs = min(missing, len(candidates))
+            if n_jobs <= 0:
+                continue
+            chosen = set(rng.choice(len(candidates), n_jobs, replace=False).tolist())
+            for i in sorted(chosen):
+                event_job = candidates[i]
+                source = client.get_source(event_job.waveform_id.network_code)
+                jobs.append((source, self._noise_job(event_job)))
+            noise_candidates[region] = [
+                job for i, job in enumerate(candidates) if i not in chosen
+            ]
+        return jobs
+
+    async def get_noise_data(
+        self, job: Job, inventory, origin_times: list[float]
+    ) -> Download:
+        """
+        Downloads the first quiet noise window, starting with the window of the job
+        and going back in time. Windows too close to a catalog event are skipped.
+
+        :param origin_times: Sorted origin timestamps of the region's events
+        :raises NoNoiseWindowError: If no quiet window was found
+        """
+        rejected = 0
+        reason = None
+        window = job
+        while job.endtime - window.endtime <= NOISE_MAX_LOOKBACK:
+            if is_away_from_events(origin_times, window.starttime, window.endtime):
+                try:
+                    trace_params, data = await self.get_waveform_data(window, inventory)
+                    return Download(trace_params, data, rejected)
+                except NotQuietError as exc:
+                    rejected += 1
+                    reason = exc
+                    if rejected == NOISE_MAX_REJECTED:
+                        break
+            window = window._replace(
+                starttime=window.starttime - self._noise_length,
+                endtime=window.starttime,
+            )
+        if reason is None:
+            raise NoNoiseWindowError(
+                "near_event", 0, "All windows are too close to catalog events."
+            )
+        raise NoNoiseWindowError(
+            "not_quiet", rejected, f"{rejected} windows rejected, last: {reason}"
+        )
 
     async def get_waveform_data(
         self, job: Job, inventory
@@ -591,20 +718,51 @@ BQ, HS, NH, 1P, 2D, LU), among others.
                     time_after=time_after,
                 )
 
-            async def download(job: Job):
-                return await self.get_waveform_data(job, inv)
+            origin_times = {
+                region: sorted(
+                    event.preferred_origin().time.timestamp
+                    for event in catalog
+                    if event.preferred_origin() is not None
+                )
+                for region, catalog in catalogs.items()
+            }
 
-            def write(job: Job, result, exc: Exception | None):
+            async def download(job: Job) -> Download:
+                if job.kind == "noise":
+                    return await self.get_noise_data(job, inv, origin_times[job.region])
+                return Download(*await self.get_waveform_data(job, inv))
+
+            # Downloaded event traces without a noise window, per region
+            noise_candidates: dict[str, list[Job]] = {region: [] for region in catalogs}
+            with_noise = {job.trace_name for _, job in jobs if job.kind == "noise"}
+
+            def write(job: Job, result: Download | None, exc: Exception | None):
+                if isinstance(exc, NoNoiseWindowError):
+                    outcomes.append(job.outcome(exc.status, exc, exc.rejected))
+                    return
                 if exc is not None:
                     logger.debug("Could not download %s: %s", job.trace_name, exc)
-                    status = "not_quiet" if isinstance(exc, NotQuietError) else "failed"
-                    outcomes.append(job.outcome(status, exc))
+                    outcomes.append(job.outcome("failed", exc))
                     return
-                trace_params, data = result
-                writer.add_trace({**job.params, **trace_params}, data)
-                outcomes.append(job.outcome("downloaded"))
+                writer.add_trace({**job.params, **result.trace_params}, result.data)
+                outcomes.append(job.outcome("downloaded", rejected=result.rejected))
+                if job.kind == "event" and f"noise_{job.trace_name}" not in with_noise:
+                    noise_candidates[job.region].append(job)
 
             await download_parallel(jobs, download, write)
+
+            for i_round in range(NOISE_MAX_ROUNDS):
+                jobs = self._noise_top_up(client, outcomes, noise_candidates, rng)
+                if not jobs:
+                    break
+                logger.info(
+                    "Noise round %d: %d more noise windows to reach the noise "
+                    "fraction.",
+                    i_round + 1,
+                    len(jobs),
+                )
+                with_noise.update(job.trace_name for _, job in jobs)
+                await download_parallel(jobs, download, write)
 
         stats = DownloadStats.from_outcomes(
             {region: len(catalog) for region, catalog in catalogs.items()}, outcomes

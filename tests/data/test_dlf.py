@@ -2,6 +2,7 @@ import asyncio
 
 from obspy import UTCDateTime
 from obspy.core.event import (
+    WaveformStreamID,
     Comment,
     Event,
     EventDescription,
@@ -14,6 +15,10 @@ import numpy as np
 import pytest
 
 from seisbench.data.dlf import (
+    NOISE_MAX_REJECTED,
+    DeepLowFrequency,
+    Job,
+    NoNoiseWindowError,
     DownloadStats,
     NotQuietError,
     Outcome,
@@ -150,3 +155,104 @@ def test_check_quiet():
         check_quiet(noise, sampling_rate, 0.9, window_start)
     with pytest.raises(NotQuietError, match="too late"):
         check_quiet(noise, sampling_rate, 1.0, 1000)
+
+
+def _noise_search(quiet_after: int, origin_times: list[float]):
+    """
+    Runs the noise window search with a fake download that rejects the first
+    ``quiet_after`` windows.
+    """
+    dataset = DeepLowFrequency.__new__(DeepLowFrequency)
+    dataset._noise_length = 60.0
+    windows = []
+
+    async def get_waveform_data(window, inventory):
+        windows.append(window)
+        if len(windows) <= quiet_after:
+            raise NotQuietError("STA/LTA 9.9 exceeds 3.0.")
+        return {"trace_name": window.trace_name}, np.zeros((3, 6001))
+
+    dataset.get_waveform_data = get_waveform_data
+    end = UTCDateTime(2020, 1, 1, 12)
+    job = Job(
+        kind="noise",
+        region="hawaii",
+        source_id="hawaii:1",
+        trace_name="noise_a",
+        waveform_id=WaveformStreamID("HV", "BYL", "", "HH?"),
+        starttime=end - 60,
+        endtime=end,
+        params={},
+    )
+    return asyncio.run(dataset.get_noise_data(job, None, origin_times)), windows
+
+
+def test_noise_retries_earlier_windows():
+    result, windows = _noise_search(quiet_after=2, origin_times=[])
+    assert result.rejected == 2
+    # Each retry is the window right before the previous one
+    assert [w.endtime - windows[0].endtime for w in windows] == [0, -60, -120]
+
+
+def test_noise_skips_windows_near_events():
+    end = UTCDateTime(2020, 1, 1, 12)
+    # An event 200 s before the first window: the next windows are too close to it
+    result, windows = _noise_search(
+        quiet_after=1, origin_times=[(end - 60 - 200).timestamp]
+    )
+    assert result.rejected == 1
+    assert windows[1].endtime <= end - 60 - 200 - 120
+
+
+def test_noise_gives_up():
+    with pytest.raises(NoNoiseWindowError) as exc_info:
+        _noise_search(quiet_after=100, origin_times=[])
+    assert exc_info.value.status == "not_quiet"
+    assert exc_info.value.rejected == NOISE_MAX_REJECTED
+
+    # Every window is close to some event
+    end = UTCDateTime(2020, 1, 1, 12)
+    events = sorted((end - t).timestamp for t in range(-200, 4000, 100))
+    with pytest.raises(NoNoiseWindowError) as exc_info:
+        _noise_search(quiet_after=0, origin_times=events)
+    assert exc_info.value.status == "near_event"
+
+
+def test_noise_top_up():
+    dataset = DeepLowFrequency.__new__(DeepLowFrequency)
+    dataset._noise_fraction = 0.3
+    dataset._noise_length = 60.0
+
+    class Client:
+        def get_source(self, network):
+            return "source"
+
+    origin = UTCDateTime(2020, 1, 1, 12)
+    candidates = [
+        Job(
+            kind="event",
+            region="hawaii",
+            source_id="hawaii:1",
+            trace_name=f"hawaii:1_HV.S{i}..HH",
+            waveform_id=WaveformStreamID("HV", f"S{i}", "", "HH?"),
+            starttime=origin,
+            endtime=origin + 120,
+            params={"source_origin_time": str(origin), "split": "dev"},
+        )
+        for i in range(10)
+    ]
+    # 20 event traces and 2 noise windows downloaded: 4 noise windows are missing
+    outcomes = [Outcome("event", "hawaii", "hawaii:1", "e", "downloaded")] * 20
+    outcomes += [Outcome("noise", "hawaii", "hawaii:1", "n", "downloaded")] * 2
+    noise_candidates = {"hawaii": candidates}
+
+    jobs = dataset._noise_top_up(
+        Client(), outcomes, noise_candidates, np.random.default_rng(0)
+    )
+
+    assert len(jobs) == 4
+    assert len(noise_candidates["hawaii"]) == 6
+    _, job = jobs[0]
+    assert job.kind == "noise" and job.trace_name.startswith("noise_hawaii:1")
+    assert job.params == {"split": "dev", "source_region": "hawaii"}
+    assert job.endtime == origin - 120 and job.picks == ()
