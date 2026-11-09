@@ -27,6 +27,14 @@ Bohemia dataset
     :undoc-members:
     :show-inheritance:
 
+Deep low-frequency dataset
+-----------------------------------
+
+.. autoclass:: seisbench.data.dlf.DeepLowFrequency
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 CEED dataset
 -----------------------------------
 

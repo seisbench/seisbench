@@ -28,6 +28,7 @@ from .das_base import (
     MultiDASDataset,
     RandomDASDataset,
 )
+from .dlf import DeepLowFrequency
 from .dummy import (
     ChunkedDummyDataset,
     DummyDataset,
@@ -143,5 +144,6 @@ __all__ = [
     "TXED",
     "VCSEIS",
     "BohemiaSaxony",
+    "DeepLowFrequency",
     "DatasetInspection",
 ]

@@ -18,8 +18,8 @@ To install these, you can use: ::
 
     pip install seisbench[das]
 
-The :py:class:`~seisbench.data.bohemia.BohemiaSaxony` dataset is compiled from FDSN web services on first use,
-which needs ``aiohttp``: ::
+The :py:class:`~seisbench.data.bohemia.BohemiaSaxony` and :py:class:`~seisbench.data.dlf.DeepLowFrequency`
+datasets are compiled from FDSN web services on first use, which needs ``aiohttp``: ::
 
     pip install seisbench[download]
 
