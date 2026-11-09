@@ -109,6 +109,7 @@ class BohemiaSaxony(BenchmarkDataset):
         self,
         eida_token: str | None = None,
         connections: int = 4,
+        compile_from_source: bool = True,
         **kwargs,
     ):
         citation = """
@@ -139,6 +140,8 @@ Seismic Networks:
             citation=citation,
             license="CC0-1.0",
             repository_lookup=False,
+            # There is no precompiled version, the dataset is always built from FDSN
+            compile_from_source=compile_from_source,
             **kwargs,
         )
 
