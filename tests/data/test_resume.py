@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -85,11 +87,12 @@ def test_callback_resume(tmp_path):
     with pytest.raises(ValueError, match="partial"):
         callback_if_uncached(file, callback)
 
-    # Another process holds the lock: still running
-    lock = _try_lock(file)
-    with pytest.raises(ValueError, match="partial"):
-        callback_if_uncached(file, callback, resume=True)
-    lock.close()
+    if sys.platform != "win32":  # Without fcntl, nothing is locked
+        # Another process holds the lock: still running
+        lock = _try_lock(file)
+        with pytest.raises(ValueError, match="partial"):
+            callback_if_uncached(file, callback, resume=True)
+        lock.close()
 
     # The lock is free: the earlier download stopped, so resume from its files
     callback_if_uncached(file, callback, resume=True)

@@ -311,8 +311,11 @@ def callback_if_uncached(
                 partial_file.rename(file)
         if lock is not None:
             # Released only now, so that no other process resumes a finished download
-            Path(lock.name).unlink(missing_ok=True)
             lock.close()
+            try:
+                Path(lock.name).unlink(missing_ok=True)
+            except PermissionError:
+                pass  # Windows: another process still has the lock file open
 
 
 def safe_extract_tar(tar, path=".", members=None, *, numeric_owner=False):
