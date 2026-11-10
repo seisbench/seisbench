@@ -447,7 +447,9 @@ class HinetSource(Source):
     with the same account at the same time.
 
     Stations are labeled ``<network>.<station>..EH<Z|N|E>`` (short-period, 100 Hz).
-    The data are velocity as extracted by ``win2sac_32``, not counts.
+    The data are counts, like those of FDSN web services. ``win2sac_32`` extracts
+    velocity in nm/s, which is converted back with the sensitivities of the channel
+    table, see :py:func:`hinet_counts`. The cache stores them compressed (STEIM2).
 
     :param user: Hi-net user name
     :param password: Hi-net password
@@ -683,7 +685,7 @@ class HinetSource(Source):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 tmp = path.with_suffix(".partial")
                 if len(part):
-                    part.write(str(tmp), format="MSEED")
+                    part.write(str(tmp), format="MSEED", encoding="STEIM2")
                 else:
                     tmp.write_bytes(b"")
                 tmp.replace(path)
@@ -712,6 +714,13 @@ class HinetSource(Source):
             HinetPy.win32.extract_sac(
                 data, ctable, outdir=tmp, filter_by_name=names, processes=1
             )
+            # Counts per m/s, as in HinetPy's Channel.sensitivity
+            sensitivity = {
+                (channel.name, channel.component): channel.gain
+                * 10 ** (channel.preamplification / 20)
+                / channel.lsb_value
+                for channel in HinetPy.win32.read_ctable(ctable)
+            }
             stream = Stream()
             for path in sorted(Path(tmp).glob("*.SAC")):
                 # Files are named <network>.<station>.<component>.SAC
@@ -719,6 +728,9 @@ class HinetSource(Source):
                 if component not in HINET_COMPONENTS:
                     continue
                 trace = obspy.read(str(path), format="SAC")[0]
+                trace.data = hinet_counts(
+                    trace.data, sensitivity[f"{network}.{station}", component]
+                )
                 trace.stats.network = network
                 trace.stats.station = station
                 trace.stats.location = ""
@@ -726,6 +738,23 @@ class HinetSource(Source):
                 trace.stats.starttime -= JST_OFFSET
                 stream += trace
         return stream
+
+
+def hinet_counts(data: np.ndarray, sensitivity: float) -> np.ndarray:
+    """
+    Converts the velocity extracted by ``win2sac_32`` (nm/s, ``counts / sensitivity
+    * 1e9``) back to counts.
+
+    :param sensitivity: Counts per m/s
+    :raises ValueError: If the data are not whole counts, e.g., for a wrong
+        sensitivity
+    """
+    counts = data.astype(np.float64) * (sensitivity / 1e9)
+    rounded = np.round(counts)
+    # The float32 data resolve large counts only to about 1e-7 of their value
+    if np.any(np.abs(counts - rounded) > 0.1 + 1e-6 * np.abs(counts)):
+        raise ValueError("Hi-net data are not whole counts for the sensitivity.")
+    return rounded.astype(np.int32)
 
 
 async def get_cached_inventory(

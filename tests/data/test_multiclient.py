@@ -12,10 +12,13 @@ from seisbench.data.multiclient import (
     WaveformRequest,
     _UnauthorizedError,
     antialias_filter,
+    hinet_counts,
     resample,
 )
 
 START = UTCDateTime(2010, 5, 1, 3, 0, 20)
+# Fake Hi-net counts are the number of samples since this time
+DAY = UTCDateTime(2010, 5, 1)
 
 
 def _request(station: str, offset: float, length: float) -> WaveformRequest:
@@ -30,8 +33,9 @@ def _source(fetched: list, cache_dir, no_data=()) -> HinetSource:
     def fetch(request: HinetRequest) -> Stream:
         fetched.append(request)
         npts = int((request.endtime - request.starttime) * 100)
-        # Values are the sample times, to check that blocks are joined correctly
-        data = request.starttime + np.arange(npts) / 100
+        # Counts are the sample times, to check that blocks are joined correctly
+        first = round((request.starttime - DAY.timestamp) * 100)
+        data = (first + np.arange(npts)).astype(np.int32)
         return Stream(
             [
                 Trace(
@@ -67,8 +71,9 @@ def _check(stream, request):
     for trace in stream:
         assert trace.stats.starttime == request.starttime
         assert trace.stats.endtime == request.endtime
-        np.testing.assert_allclose(trace.data[0], request.starttime.timestamp)
-        np.testing.assert_allclose(np.diff(trace.data), 0.01, atol=1e-6)
+        assert trace.data.dtype == np.int32
+        assert trace.data[0] == round((request.starttime - DAY) * 100)
+        assert np.all(np.diff(trace.data) == 1)
 
 
 def test_hinet_plan_combines_requests(tmp_path):
@@ -138,6 +143,17 @@ def test_hinet_failure_is_not_cached(tmp_path):
     with pytest.raises(ConnectionError):
         _get_all(source, [_request("AYEH", 0, 60)])
     assert not list(tmp_path.rglob("*.mseed"))
+
+
+def test_hinet_counts():
+    # win2sac_32 writes counts / sensitivity * 1e9 as float32
+    sensitivity = 1.671e9  # counts per m/s, e.g., N.BHRH
+    counts = np.array([-1721, 0, 1, 1576, 2**22], dtype=np.int32)
+    velocity = (counts / sensitivity * 1e9).astype(np.float32)
+    np.testing.assert_array_equal(hinet_counts(velocity, sensitivity), counts)
+
+    with pytest.raises(ValueError):
+        hinet_counts(velocity, sensitivity * 1.5)
 
 
 def test_hinet_get_stations():

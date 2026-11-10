@@ -311,10 +311,10 @@ class DeepLowFrequency(WaveformBenchmarkDataset):
 
     The dataset is compiled from FDSN web services (EarthScope, NCEDC, BGR, GFZ) and
     NIED Hi-net. Japan is only included with Hi-net credentials, which also needs
-    HinetPy and the Hi-net win32tools (``pip install seisbench[hinet]``). Hi-net
-    traces are velocity as extracted by the win32tools, the others are counts. Hi-net
-    downloads are cached in blocks of 5 minutes in ``hinet`` in the SeisBench cache,
-    so compiling the dataset again with other windows reuses them. The
+    HinetPy and the Hi-net win32tools (``pip install seisbench[hinet]``). All traces
+    are counts. Hi-net downloads are cached in blocks of 5 minutes in ``hinet`` in
+    the SeisBench cache, so compiling the dataset again with other windows reuses
+    them. The
     catalogs are read from one QuakeML file per region in ``catalog_dir``. The event
     class is an event comment (``event_class: DLP``). The events of each catalog are
     split into train, dev and test with the fractions in ``split``. Events less than
