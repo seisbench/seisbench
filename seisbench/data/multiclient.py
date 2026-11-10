@@ -137,6 +137,26 @@ class Source(ABC):
         """
 
 
+class _UnauthorizedError(FDSNException):
+    """
+    The server rejected the credentials (HTTP 401).
+    """
+
+
+def _read_eida_token(token: str) -> str:
+    """
+    Returns the token itself, or reads it from a token file.
+
+    :raises FileNotFoundError: If ``token`` is neither a token nor an existing file
+    """
+    if "BEGIN PGP" in token:
+        return token
+    path = Path(token).expanduser()
+    if not path.is_file():
+        raise FileNotFoundError(f"EIDA token file {path} does not exist.")
+    return path.read_text()
+
+
 class FDSNSource(Source):
     """
     An FDSN web service data center.
@@ -157,8 +177,9 @@ class FDSNSource(Source):
     ):
         super().__init__(connections=connections, networks=networks)
         self.base_url = base_url.rstrip("/")
-        self.eida_token = eida_token
+        self.eida_token = _read_eida_token(eida_token) if eida_token else None
         self._auth = None
+        self._auth_lock = asyncio.Lock()
 
     def __repr__(self) -> str:
         return f"FDSNSource({self.base_url!r})"
@@ -175,14 +196,10 @@ class FDSNSource(Source):
             return
         aiohttp = _import_aiohttp()
 
-        token = self.eida_token
-        if Path(token).is_file():
-            token = Path(token).read_text()
-
         url = f"{self.base_url}/fdsnws/dataselect/1/auth"
         if not url.startswith("https://"):
             raise ValueError(f"Refusing to send the EIDA token to {url} without TLS.")
-        async with session.post(url, data=token.encode()) as response:
+        async with session.post(url, data=self.eida_token.encode()) as response:
             if response.status != 200:
                 raise FDSNException(
                     f"EIDA authentication at {url} failed with HTTP "
@@ -203,6 +220,8 @@ class FDSNSource(Source):
             # 204 and 404 are both valid "no data" responses in FDSN web services
             if response.status in (204, 404):
                 return None
+            if response.status == 401:
+                raise _UnauthorizedError(f"{response.url} returned HTTP 401.")
             if response.status != 200:
                 raise FDSNException(
                     f"{response.url} returned HTTP {response.status}: "
@@ -242,6 +261,28 @@ class FDSNSource(Source):
             read_inventory, io.BytesIO(body), format="STATIONXML"
         )
 
+    async def _get_authenticated(
+        self, session: aiohttp.ClientSession, params: dict[str, str]
+    ) -> bytes | None:
+        """
+        Requests restricted waveforms. The server forgets the temporary credentials
+        after 24 h at the latest, or when it restarts. Then the EIDA token is
+        exchanged again, once for all concurrent requests, and the request repeated.
+        """
+        url = f"{self.base_url}/fdsnws/dataselect/1/queryauth"
+        auth = self._auth
+        try:
+            return await self._get(session, url, params, middlewares=(auth,))
+        except _UnauthorizedError:
+            async with self._auth_lock:
+                if self._auth is auth:
+                    logger.warning(
+                        "Credentials at %s were rejected, authenticating again.",
+                        self.base_url,
+                    )
+                    await self.authenticate(session)
+            return await self._get(session, url, params, middlewares=(self._auth,))
+
     async def get_waveforms(
         self, session: aiohttp.ClientSession, request: WaveformRequest
     ) -> Stream | None:
@@ -254,8 +295,7 @@ class FDSNSource(Source):
             "endtime": _format_time(request.endtime),
         }
         if self._auth is not None:
-            url = f"{self.base_url}/fdsnws/dataselect/1/queryauth"
-            body = await self._get(session, url, params, middlewares=(self._auth,))
+            body = await self._get_authenticated(session, params)
         else:
             url = f"{self.base_url}/fdsnws/dataselect/1/query"
             body = await self._get(session, url, params)

@@ -2,9 +2,16 @@ import asyncio
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from obspy import Stream, Trace, UTCDateTime
 
-from seisbench.data.multiclient import HinetRequest, HinetSource, WaveformRequest
+from seisbench.data.multiclient import (
+    FDSNSource,
+    HinetRequest,
+    HinetSource,
+    WaveformRequest,
+    _UnauthorizedError,
+)
 
 START = UTCDateTime(2010, 5, 1, 3, 0, 20)
 
@@ -118,3 +125,47 @@ def test_hinet_get_stations():
         )
         == 0
     )
+
+
+TOKEN = "-----BEGIN PGP SIGNED MESSAGE-----\ntoken"
+
+
+def test_fdsn_eida_token(tmp_path, monkeypatch):
+    assert FDSNSource("https://x", eida_token=TOKEN).eida_token == TOKEN
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Windows
+    (tmp_path / "token.pgp").write_text(TOKEN)
+    assert FDSNSource("https://x", eida_token="~/token.pgp").eida_token == TOKEN
+
+    with pytest.raises(FileNotFoundError):
+        FDSNSource("https://x", eida_token="~/missing.pgp")
+
+
+def test_fdsn_reauthenticate():
+    # The server forgot the credentials: authenticate once again for all requests
+    source = FDSNSource("https://x", eida_token=TOKEN)
+    source._auth = "forgotten"
+    calls = []
+
+    async def authenticate(session):
+        calls.append(session)
+        await asyncio.sleep(0.01)
+        source._auth = f"new{len(calls)}"
+
+    async def get(session, url, params, middlewares):
+        await asyncio.sleep(0)
+        if middlewares == ("forgotten",):
+            raise _UnauthorizedError("401")
+        return middlewares[0].encode()
+
+    source.authenticate = authenticate
+    source._get = get
+
+    async def run():
+        return await asyncio.gather(
+            *(source._get_authenticated(None, {}) for _ in range(4))
+        )
+
+    assert asyncio.run(run()) == [b"new1"] * 4
+    assert len(calls) == 1
