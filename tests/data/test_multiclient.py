@@ -11,6 +11,7 @@ from seisbench.data.multiclient import (
     HinetSource,
     WaveformRequest,
     _UnauthorizedError,
+    resample,
 )
 
 START = UTCDateTime(2010, 5, 1, 3, 0, 20)
@@ -213,3 +214,37 @@ def test_fdsn_reauthenticate():
 
     assert asyncio.run(run()) == [b"new1"] * 4
     assert len(calls) == 1
+
+
+def test_resample_independent_of_length():
+    # ObsPy's FFT resampling filters odd and even lengths differently
+    data = np.random.default_rng(0).standard_normal(24001)
+    streams = []
+    for npts in (24000, 24001):
+        stream = Stream([Trace(data[:npts].copy(), header=dict(sampling_rate=200.0))])
+        resample(stream, 100.0)
+        streams.append(stream)
+    even, odd = streams[0][0], streams[1][0]
+    assert even.stats.sampling_rate == odd.stats.sampling_rate == 100.0
+    assert even.stats.starttime == odd.stats.starttime
+    # Identical except for the filter length at the end, and for the slightly
+    # different mean at the edges
+    np.testing.assert_allclose(
+        even.data[:-50], odd.data[: even.stats.npts - 50], atol=1e-4
+    )
+
+
+@pytest.mark.parametrize("rate", [200.0, 250.0])
+def test_resample_sine(rate):
+    t = np.arange(int(60 * rate)) / rate
+    trace = Trace(1000.0 + np.sin(2 * np.pi * 5.0 * t), header=dict(sampling_rate=rate))
+    stream = Stream([trace])
+    resample(stream, 100.0)
+    trace = stream[0]
+    assert trace.stats.sampling_rate == 100.0
+    assert trace.stats.starttime == UTCDateTime(0)
+    assert trace.stats.npts == 6000
+    expected = 1000.0 + np.sin(2 * np.pi * 5.0 * trace.times())
+    # Amplitude, phase and offset are kept. The edges settle within 0.1 s.
+    np.testing.assert_allclose(trace.data[10:-10], expected[10:-10], atol=1e-4)
+    np.testing.assert_allclose(trace.data, expected, atol=0.05)

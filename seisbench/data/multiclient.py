@@ -13,6 +13,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from datetime import datetime
 from fnmatch import fnmatch
+from fractions import Fraction
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -28,6 +29,7 @@ import numpy as np
 import obspy
 from obspy import Inventory, Stream, UTCDateTime, read_inventory
 from obspy.core.inventory import Channel, Network, Station
+from scipy import signal
 from obspy.clients.fdsn.header import FDSNException, FDSNNoDataException
 
 import seisbench
@@ -836,21 +838,47 @@ def select_location(stream: Stream, location: str) -> Stream:
     return stream.select(location=selected)
 
 
+def resample(stream: Stream, sampling_rate: float) -> None:
+    """
+    Resamples the traces in place with a polyphase filter (Kaiser window). Unlike
+    ObsPy's FFT resampling, the anti-alias filter doesn't depend on the trace length.
+    The first sample keeps its time. The mean is removed before and added back after,
+    so that the offset of raw counts causes no transients at the trace edges.
+    """
+    for trace in stream:
+        if trace.stats.sampling_rate == sampling_rate:
+            continue
+        ratio = Fraction(sampling_rate / trace.stats.sampling_rate).limit_denominator(
+            1000
+        )
+        logger.debug(
+            "Resampling trace %s from %.2f Hz to %.2f Hz.",
+            trace.id,
+            trace.stats.sampling_rate,
+            sampling_rate,
+        )
+        mean = trace.data.mean()
+        trace.data = (
+            signal.resample_poly(
+                trace.data - mean,
+                ratio.numerator,
+                ratio.denominator,
+                window=("kaiser", 10),
+            )
+            + mean
+        )
+        trace.stats.sampling_rate = sampling_rate
+
+
 async def homogenize_sampling_rate(st: Stream, sampling_rate: float) -> float:
     """
-    Homogenizes the sampling rate of the stream to the given sampling rate.
+    Homogenizes the sampling rate of the stream to the given sampling rate, see
+    :py:func:`resample`. Resamples in a thread.
     """
     if sampling_rate <= 0.0:
         sampling_rate = st[0].stats.sampling_rate
-    for trace in st:
-        if trace.stats.sampling_rate != sampling_rate:
-            logger.info(
-                "Resampling trace %s from %.2f Hz to %.2f Hz.",
-                trace.id,
-                trace.stats.sampling_rate,
-                sampling_rate,
-            )
-            await asyncio.to_thread(trace.resample, sampling_rate)
+    if any(trace.stats.sampling_rate != sampling_rate for trace in st):
+        await asyncio.to_thread(resample, st, sampling_rate)
     return sampling_rate
 
 
