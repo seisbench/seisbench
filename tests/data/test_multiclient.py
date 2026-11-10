@@ -11,6 +11,7 @@ from seisbench.data.multiclient import (
     HinetSource,
     WaveformRequest,
     _UnauthorizedError,
+    antialias_filter,
     resample,
 )
 
@@ -245,6 +246,23 @@ def test_resample_sine(rate):
     assert trace.stats.starttime == UTCDateTime(0)
     assert trace.stats.npts == 6000
     expected = 1000.0 + np.sin(2 * np.pi * 5.0 * trace.times())
-    # Amplitude, phase and offset are kept. The edges settle within 0.1 s.
-    np.testing.assert_allclose(trace.data[10:-10], expected[10:-10], atol=1e-4)
-    np.testing.assert_allclose(trace.data, expected, atol=0.05)
+    # Amplitude, phase and offset are kept. The edges settle within 0.2 s.
+    np.testing.assert_allclose(trace.data[20:-20], expected[20:-20], atol=1e-3)
+    np.testing.assert_allclose(trace.data, expected, atol=0.1)
+
+
+@pytest.mark.parametrize("rate", [200.0, 250.0])
+def test_resample_antialias(rate):
+    # Flat up to 0.7 x Nyquist, e.g., no 50 Hz hum left after resampling to 100 Hz
+    t = np.arange(int(60 * rate)) / rate
+    amplitudes = {}
+    for frequency in (30.0, 50.0, 60.0):
+        stream = Stream(
+            [Trace(np.sin(2 * np.pi * frequency * t), header=dict(sampling_rate=rate))]
+        )
+        resample(stream, 100.0)
+        amplitudes[frequency] = np.sqrt(2) * stream[0].data[100:-100].std()
+    assert amplitudes[30.0] == pytest.approx(1.0, abs=1e-3)
+    assert amplitudes[50.0] < 1e-3
+    assert amplitudes[60.0] < 1e-3
+    assert antialias_filter.cache_info().hits > 0

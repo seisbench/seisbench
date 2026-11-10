@@ -6,6 +6,7 @@ FDSN web services and NIED Hi-net, and routes each network to the one serving it
 from __future__ import annotations
 
 import asyncio
+import functools
 import io
 import tempfile
 import time
@@ -838,12 +839,35 @@ def select_location(stream: Stream, location: str) -> Stream:
     return stream.select(location=selected)
 
 
+# Anti-alias filter for resampling, like those of digitizers: flat up to this
+# fraction of the Nyquist frequency, attenuated from the Nyquist frequency on
+ANTIALIAS_PASSBAND = 0.7
+ANTIALIAS_ATTENUATION = 80.0  # dB
+
+
+@functools.lru_cache
+def antialias_filter(up: int, down: int) -> np.ndarray:
+    """
+    Linear-phase low-pass FIR filter (Remez) for resampling by ``up / down``. The
+    passband ends at :py:data:`ANTIALIAS_PASSBAND` times the lower of the two
+    Nyquist frequencies, the stopband starts at it. Frequencies are relative to the
+    upsampled rate. The filter has an odd length, so it doesn't shift the samples.
+    """
+    nyquist = 0.5 / max(up, down)
+    edges = [0.0, ANTIALIAS_PASSBAND * nyquist, nyquist, 0.5]
+    numtaps, _ = signal.kaiserord(ANTIALIAS_ATTENUATION, (edges[2] - edges[1]) / 0.5)
+    taps = signal.remez(numtaps | 1, edges, [1.0, 0.0], fs=1.0)
+    taps.flags.writeable = False  # Shared by the cache
+    return taps
+
+
 def resample(stream: Stream, sampling_rate: float) -> None:
     """
-    Resamples the traces in place with a polyphase filter (Kaiser window). Unlike
-    ObsPy's FFT resampling, the anti-alias filter doesn't depend on the trace length.
-    The first sample keeps its time. The mean is removed before and added back after,
-    so that the offset of raw counts causes no transients at the trace edges.
+    Resamples the traces in place with a polyphase filter and the anti-alias filter
+    :py:func:`antialias_filter`. Unlike ObsPy's FFT resampling, the filter doesn't
+    depend on the trace length. The first sample keeps its time. Beyond the edges,
+    the traces are padded with their mean, so the offset of raw counts causes no
+    transients.
     """
     for trace in stream:
         if trace.stats.sampling_rate == sampling_rate:
@@ -851,21 +875,19 @@ def resample(stream: Stream, sampling_rate: float) -> None:
         ratio = Fraction(sampling_rate / trace.stats.sampling_rate).limit_denominator(
             1000
         )
+        up, down = ratio.numerator, ratio.denominator
         logger.debug(
             "Resampling trace %s from %.2f Hz to %.2f Hz.",
             trace.id,
             trace.stats.sampling_rate,
             sampling_rate,
         )
-        mean = trace.data.mean()
-        trace.data = (
-            signal.resample_poly(
-                trace.data - mean,
-                ratio.numerator,
-                ratio.denominator,
-                window=("kaiser", 10),
-            )
-            + mean
+        trace.data = signal.resample_poly(
+            trace.data.astype(np.float64),
+            up,
+            down,
+            window=antialias_filter(up, down),
+            padtype="mean",
         )
         trace.stats.sampling_rate = sampling_rate
 
