@@ -1009,6 +1009,9 @@ async def get_waveform_array(
     if not len(stream):
         raise ValueError(f"No waveforms found for {request}.")
     stream = select_location(stream, request.location)
+    # Joins segments that are contiguous up to half a sample, e.g., at a timing
+    # correction, and identical overlapping records
+    stream.merge(method=-1, misalignment_threshold=0.5)
     seed_id = stream[0].id
 
     rotate_stream_to_zne(stream, inventory=inventory)

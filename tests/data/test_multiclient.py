@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from obspy import Stream, Trace, UTCDateTime
+from obspy import Inventory, Stream, Trace, UTCDateTime
 from obspy.clients.fdsn.header import FDSNException
 
 from seisbench.data.multiclient import (
@@ -14,6 +14,7 @@ from seisbench.data.multiclient import (
     _TransientError,
     _UnauthorizedError,
     antialias_filter,
+    get_waveform_array,
     hinet_counts,
     resample,
 )
@@ -339,3 +340,41 @@ def test_fdsn_retries():
     # Gives up after the retries
     with pytest.raises(_TransientError):
         get([503, 503, 503])
+
+
+@pytest.mark.parametrize("second_start, completeness", [(123.076, 1.0), (124.0, None)])
+def test_waveform_array_joins_time_tears(second_start, completeness):
+    # NCEDC: NN.OMM 2005-03-11, the next record starts 0.4 samples early
+    start = UTCDateTime(2005, 3, 11, 4, 9, 7, 154000)
+    stream = Stream(
+        [
+            Trace(
+                # Counting samples, continued by the second record
+                (first + np.arange(n)).astype(np.int32),
+                header=dict(
+                    network="NN",
+                    station="OMM",
+                    channel=f"HH{component}",
+                    starttime=start + offset,
+                    sampling_rate=100.0,
+                ),
+            )
+            for component in "ZNE"
+            for offset, first, n in ((0.0, 0, 12308), (second_start, 12308, 50))
+        ]
+    )
+
+    class Client:
+        async def get_waveforms(self, request):
+            return stream.copy()
+
+    request = WaveformRequest("NN", "OMM", "", "HH?", start, start + 123.5)
+    _, params, data = asyncio.run(
+        get_waveform_array(Client(), Inventory(), request, 100.0, "ZNE")
+    )
+    if completeness is None:
+        # A real gap stays a gap
+        assert params["trace_completeness"] < 1.0
+    else:
+        assert params["trace_completeness"] == completeness
+        assert np.allclose(np.diff(data), 1.0)
