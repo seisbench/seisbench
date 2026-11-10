@@ -320,7 +320,7 @@ class _FakeSession:
 
 
 def test_fdsn_retries():
-    import aiohttp
+    aiohttp = pytest.importorskip("aiohttp")
 
     source = FDSNSource("https://x", retries=2, retry_wait=0.0)
 
