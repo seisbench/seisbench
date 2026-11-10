@@ -243,7 +243,8 @@ Dataset details:
 
     No precompiled version is available through SeisBench. The Japan region needs a Hi-net account, HinetPy and the
     Hi-net win32tools (``pip install seisbench[hinet]``), and Hi-net data may not be redistributed. An interrupted
-    download resumes where it stopped.
+    download resumes where it stopped. Hi-net downloads are cached in blocks of 5 minutes in ``hinet`` in the
+    SeisBench cache, so compiling the dataset again, e.g., with other windows, reuses them.
 
 .. admonition:: Citation
 

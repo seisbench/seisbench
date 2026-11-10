@@ -10,7 +10,7 @@ import io
 import tempfile
 import time
 from abc import ABC, abstractmethod
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from datetime import datetime
 from fnmatch import fnmatch
 from pathlib import Path
@@ -30,6 +30,7 @@ from obspy import Inventory, Stream, UTCDateTime, read_inventory
 from obspy.core.inventory import Channel, Network, Station
 from obspy.clients.fdsn.header import FDSNException, FDSNNoDataException
 
+import seisbench
 from seisbench import logger
 from seisbench.data.base import TraceParameters
 from seisbench.util.trace_ops import (
@@ -417,20 +418,12 @@ HINET_COMPONENTS = {"U": "Z", "N": "N", "E": "E"}
 
 class HinetRequest(NamedTuple):
     """
-    A Hi-net request: whole minutes of several stations, as UTC timestamps.
+    A Hi-net request: whole blocks of several stations, as UTC timestamps.
     """
 
     starttime: float
     endtime: float
     stations: frozenset[str]
-
-
-def _floor_minute(time: UTCDateTime) -> float:
-    return time.timestamp // 60 * 60
-
-
-def _ceil_minute(time: UTCDateTime) -> float:
-    return -(-time.timestamp // 60) * 60
 
 
 class HinetSource(Source):
@@ -439,11 +432,16 @@ class HinetSource(Source):
     `HinetPy <https://github.com/seisman/HinetPy>`_. Requires an account, HinetPy and
     the Hi-net win32tools (``catwin32`` and ``win2sac_32``) on the ``PATH``.
 
-    Hi-net serves whole minutes, for the stations selected in the account. Requests
-    announced with :py:meth:`plan` are combined into requests of several stations and
-    minutes, and the extracted data are cached. Other requests are fetched one by
-    one. The account's station selection is changed by every request, so the source
-    has a single connection and the requests run one at a time.
+    Downloads are cached in files of :py:attr:`block_length` minutes per station, in
+    ``cache_dir``. A request is rounded out to whole blocks and only the blocks that
+    are not cached yet are downloaded, so datasets with other windows or sampling
+    rates reuse the downloads. With requests announced by :py:meth:`plan`, a download
+    also covers the adjacent planned blocks of the station, e.g., the noise before an
+    event, and all stations planned in these blocks.
+
+    The account's station selection is changed by every request, so the source has
+    a single connection and the requests run one at a time. Don't run two downloads
+    with the same account at the same time.
 
     Stations are labeled ``<network>.<station>..EH<Z|N|E>`` (short-period, 100 Hz).
     The data are velocity as extracted by ``win2sac_32``, not counts.
@@ -451,10 +449,12 @@ class HinetSource(Source):
     :param user: Hi-net user name
     :param password: Hi-net password
     :param network: Network code of the stations
-    :param max_span: Maximum length of a combined request in minutes
-    :param max_gap: Requests up to this many minutes apart are combined
+    :param cache_dir: Folder of the cached downloads, by default ``hinet`` in the
+        SeisBench cache
+    :param block_length: Length of the cached blocks in minutes
+    :param max_span: Maximum length of a download in minutes, when it is extended by
+        adjacent planned blocks
     :param retries: Attempts per request, for dropped connections
-    :param cache_size: Number of combined requests kept in memory
     """
 
     code = "0101"
@@ -464,23 +464,25 @@ class HinetSource(Source):
         user: str,
         password: str,
         network: str = "N",
-        max_span: int = 20,
-        max_gap: int = 5,
+        cache_dir: Path | str | None = None,
+        block_length: int = 5,
+        max_span: int = 30,
         retries: int = 3,
-        cache_size: int = 16,
     ):
         super().__init__(connections=1, networks=[network])
         self.network = network
+        self.cache_dir = (
+            Path(cache_dir) if cache_dir is not None else seisbench.cache_root / "hinet"
+        )
+        self.block_length = block_length
         self.max_span = max_span
-        self.max_gap = max_gap
         self.retries = retries
-        self.cache_size = cache_size
         self._user = user
         self._password = password
         self._client = None
         self._stations = None
-        self._planned: dict[str, list[HinetRequest]] = defaultdict(list)
-        self._cache: OrderedDict[HinetRequest, Stream] = OrderedDict()
+        # Block index -> stations
+        self._planned: dict[int, set[str]] = defaultdict(set)
 
     def __repr__(self) -> str:
         return f"HinetSource(network={self.network!r})"
@@ -548,46 +550,58 @@ class HinetSource(Source):
 
     def plan(self, requests: Iterable[WaveformRequest]) -> None:
         """
-        Combines the requests into requests of whole minutes, for all stations
-        within :py:attr:`max_span` minutes. Requests less than :py:attr:`max_gap`
-        minutes apart are combined, e.g., an event and the noise before it.
+        Records the blocks the stations are requested in.
         """
-        current = None
-        for request in sorted(requests, key=lambda r: r.starttime):
-            start = _floor_minute(UTCDateTime(request.starttime))
-            end = _ceil_minute(UTCDateTime(request.endtime))
-            if (
-                current is not None
-                and start <= current.endtime + self.max_gap * 60
-                and max(end, current.endtime) - current.starttime <= self.max_span * 60
-            ):
-                current = HinetRequest(
-                    current.starttime,
-                    max(end, current.endtime),
-                    current.stations | {request.station},
-                )
-            else:
-                self._add_planned(current)
-                current = HinetRequest(start, end, frozenset({request.station}))
-        self._add_planned(current)
+        for request in requests:
+            for block in self._blocks(request.starttime, request.endtime):
+                self._planned[block].add(request.station)
 
-    def _add_planned(self, request: HinetRequest | None) -> None:
-        if request is not None:
-            for station in request.stations:
-                self._planned[station].append(request)
-
-    def _find_planned(
-        self, station: str, starttime: UTCDateTime, endtime: UTCDateTime
-    ) -> HinetRequest:
-        for request in self._planned.get(station, ()):
-            if (
-                request.starttime <= starttime.timestamp
-                and endtime.timestamp <= request.endtime
-            ):
-                return request
-        return HinetRequest(
-            _floor_minute(starttime), _ceil_minute(endtime), frozenset({station})
+    def _blocks(self, starttime: UTCDateTime, endtime: UTCDateTime) -> range:
+        """
+        Indices of the blocks covering the time window, including its end sample.
+        """
+        length = self.block_length * 60
+        return range(
+            int(UTCDateTime(starttime).timestamp // length),
+            int(UTCDateTime(endtime).timestamp // length) + 1,
         )
+
+    def _cache_file(self, station: str, block: int) -> Path:
+        start = UTCDateTime(block * self.block_length * 60)
+        name = f"{self.network}.{station}.{start.strftime('%Y%m%dT%H%M')}.mseed"
+        return self.cache_dir / self.network / station / name
+
+    def _is_cached(self, station: str, block: int) -> bool:
+        return self._cache_file(station, block).is_file()
+
+    def _download_request(self, station: str, blocks: range) -> HinetRequest:
+        """
+        The blocks of a request, extended by the adjacent blocks planned for the
+        station that are not cached, up to :py:attr:`max_span`. The request is for
+        the station and all stations planned in these blocks and not cached.
+        """
+        first, last = blocks[0], blocks[-1]
+        max_blocks = max(self.max_span // self.block_length, len(blocks))
+
+        def is_missing(block: int) -> bool:
+            return station in self._planned.get(block, ()) and not self._is_cached(
+                station, block
+            )
+
+        while last - first + 1 < max_blocks and is_missing(first - 1):
+            first -= 1
+        while last - first + 1 < max_blocks and is_missing(last + 1):
+            last += 1
+
+        stations = {station}
+        for block in range(first, last + 1):
+            stations |= {
+                other
+                for other in self._planned.get(block, ())
+                if not self._is_cached(other, block)
+            }
+        length = self.block_length * 60
+        return HinetRequest(first * length, (last + 1) * length, frozenset(stations))
 
     async def get_waveforms(
         self, session: aiohttp.ClientSession, request: WaveformRequest
@@ -596,36 +610,41 @@ class HinetSource(Source):
             UTCDateTime(request.starttime),
             UTCDateTime(request.endtime),
         )
-        hinet_request = self._find_planned(request.station, starttime, endtime)
-
+        blocks = self._blocks(starttime, endtime)
         # The single connection runs one request at a time, so no locking is needed
-        stream = self._cache.get(hinet_request)
-        if stream is None:
-            stream = await asyncio.to_thread(self._fetch, hinet_request)
-            self._cache[hinet_request] = stream
-            while len(self._cache) > self.cache_size:
-                self._cache.popitem(last=False)
-        else:
-            self._cache.move_to_end(hinet_request)
+        if not all(self._is_cached(request.station, block) for block in blocks):
+            await asyncio.to_thread(
+                self._fetch, self._download_request(request.station, blocks)
+            )
+        stream = await asyncio.to_thread(self._read_cache, request.station, blocks)
 
         selected = Stream(
             [
                 trace
-                for trace in stream.select(station=request.station)
+                for trace in stream
                 if fnmatch(trace.stats.channel, request.channel or "*")
             ]
         )
         selected = selected.slice(starttime, endtime)
         return selected if len(selected) else None
 
-    def _fetch(self, request: HinetRequest) -> Stream:
+    def _read_cache(self, station: str, blocks: range) -> Stream:
+        stream = Stream()
+        for block in blocks:
+            path = self._cache_file(station, block)
+            if path.stat().st_size:  # Empty files: no data
+                stream += obspy.read(str(path), format="MSEED")
+        return stream.merge(method=-1)  # Joins contiguous blocks
+
+    def _fetch(self, request: HinetRequest) -> None:
         """
-        Requests and extracts the data of a combined request, with retries for
-        dropped connections. Runs in a thread.
+        Downloads a request, with retries for dropped connections, and writes it to
+        the cache. Runs in a thread.
         """
         for attempt in range(1, self.retries + 1):
             try:
-                return self._fetch_once(request)
+                stream = self._fetch_once(request)
+                break
             except OSError as exc:  # requests' ConnectionError is an OSError
                 if attempt == self.retries:
                     raise
@@ -636,6 +655,35 @@ class HinetSource(Source):
                     self.retries - 1,
                 )
                 time.sleep(10)
+        self._write_cache(request, stream)
+
+    def _write_cache(self, request: HinetRequest, stream: Stream) -> None:
+        """
+        Writes one file per station and block of the request. Stations without
+        data get an empty file, so they are not requested again.
+        """
+        length = self.block_length * 60
+        for station in request.stations:
+            traces = stream.select(station=station)
+            for block in range(
+                int(request.starttime // length), int(request.endtime // length)
+            ):
+                start = UTCDateTime(block * length)
+                part = Stream(
+                    [
+                        trace.slice(start, start + length - trace.stats.delta / 2)
+                        for trace in traces
+                    ]
+                )
+                part.traces = [trace for trace in part if trace.stats.npts]
+                path = self._cache_file(station, block)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = path.with_suffix(".partial")
+                if len(part):
+                    part.write(str(tmp), format="MSEED")
+                else:
+                    tmp.write_bytes(b"")
+                tmp.replace(path)
 
     def _fetch_once(self, request: HinetRequest) -> Stream:
         HinetPy = _import_hinetpy()
@@ -656,7 +704,8 @@ class HinetSource(Source):
                 threads=1,
             )
             if data is None:
-                return Stream()
+                # HinetPy logs the reason, e.g., a failed request
+                raise ConnectionError("Hi-net returned no data.")
             HinetPy.win32.extract_sac(
                 data, ctable, outdir=tmp, filter_by_name=names, processes=1
             )

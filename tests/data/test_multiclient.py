@@ -22,16 +22,18 @@ def _request(station: str, offset: float, length: float) -> WaveformRequest:
     )
 
 
-def _source(fetched: list) -> HinetSource:
-    source = HinetSource("user", "password", max_span=10)
+def _source(fetched: list, cache_dir, no_data=()) -> HinetSource:
+    source = HinetSource("user", "password", cache_dir=cache_dir, retries=1)
 
     def fetch(request: HinetRequest) -> Stream:
         fetched.append(request)
         npts = int((request.endtime - request.starttime) * 100)
+        # Values are the sample times, to check that blocks are joined correctly
+        data = request.starttime + np.arange(npts) / 100
         return Stream(
             [
                 Trace(
-                    np.zeros(npts),
+                    data.copy(),
                     header=dict(
                         network="N",
                         station=station,
@@ -41,57 +43,99 @@ def _source(fetched: list) -> HinetSource:
                     ),
                 )
                 for station in request.stations
+                if station not in no_data
                 for component in "ZNE"
             ]
         )
 
-    source._fetch = fetch
+    source._fetch_once = fetch
     return source
 
 
-def test_hinet_plan_combines_requests():
-    fetched = []
-    source = _source(fetched)
-    # One event at two stations, another 3 minutes after its end, one 1 h later
-    requests = [
-        _request("AYEH", 0, 120),
-        _request("BHRH", 10, 120),
-        _request("AYEH", 360, 120),
-        _request("RKBH", 3600, 120),
-    ]
-    source.plan(requests)
-
+def _get_all(source, requests):
     async def get_all():
         return [await source.get_waveforms(None, request) for request in requests]
 
-    streams = asyncio.run(get_all())
+    return asyncio.run(get_all())
 
-    # The first three requests are within 10 minutes and 5 minutes apart: one request
+
+def _check(stream, request):
+    assert {trace.stats.station for trace in stream} == {request.station}
+    assert len(stream) == 3
+    for trace in stream:
+        assert trace.stats.starttime == request.starttime
+        assert trace.stats.endtime == request.endtime
+        np.testing.assert_allclose(trace.data[0], request.starttime.timestamp)
+        np.testing.assert_allclose(np.diff(trace.data), 0.01, atol=1e-6)
+
+
+def test_hinet_plan_combines_requests(tmp_path):
+    fetched = []
+    source = _source(fetched, tmp_path)
+    # An event at two stations, the noise before it at one, and an event 1 h later
+    requests = [
+        _request("AYEH", 400, 120),  # 03:07 - 03:09
+        _request("BHRH", 410, 120),
+        _request("AYEH", 100, 60),  # 03:02 - 03:03, noise
+        _request("RKBH", 3600, 120),
+    ]
+    source.plan(requests)
+    streams = _get_all(source, requests)
+
+    # The event and its noise are blocks 03:00 to 03:10: one request
     assert len(fetched) == 2
     first, second = fetched
     assert first.stations == {"AYEH", "BHRH"}
     assert first.starttime == UTCDateTime(2010, 5, 1, 3, 0).timestamp
-    assert first.endtime == UTCDateTime(2010, 5, 1, 3, 9).timestamp
+    assert first.endtime == UTCDateTime(2010, 5, 1, 3, 10).timestamp
     assert second.stations == {"RKBH"}
     for stream, request in zip(streams, requests):
-        assert {tr.stats.station for tr in stream} == {request.station}
-        assert len(stream) == 3
-        assert stream[0].stats.starttime == request.starttime
+        _check(stream, request)
+
+    # Cached: another source with the same cache downloads nothing
+    fetched.clear()
+    for stream, request in zip(
+        _get_all(_source(fetched, tmp_path), requests), requests
+    ):
+        _check(stream, request)
+    assert fetched == []
 
 
-def test_hinet_unplanned_request():
+def test_hinet_longer_window_reuses_cache(tmp_path):
     fetched = []
-    source = _source(fetched)
-    request = _request("AYEH", 0, 60)
-    stream = asyncio.run(source.get_waveforms(None, request))
-    assert len(stream) == 3
-    assert fetched == [
+    source = _source(fetched, tmp_path)
+    _get_all(source, [_request("AYEH", 400, 120)])  # 03:07 - 03:09, block 03:05
+    # +-1 min more: only the blocks before and after are downloaded
+    request = _request("AYEH", 340, 240)  # 03:06 - 03:10
+    (stream,) = _get_all(source, [request])
+    _check(stream, request)
+    assert fetched[1:] == [
         HinetRequest(
-            UTCDateTime(2010, 5, 1, 3, 0).timestamp,
-            UTCDateTime(2010, 5, 1, 3, 2).timestamp,
+            UTCDateTime(2010, 5, 1, 3, 5).timestamp,
+            UTCDateTime(2010, 5, 1, 3, 15).timestamp,
             frozenset({"AYEH"}),
         )
     ]
+
+
+def test_hinet_no_data_is_cached(tmp_path):
+    fetched = []
+    source = _source(fetched, tmp_path, no_data={"AYEH"})
+    request = _request("AYEH", 0, 60)
+    assert _get_all(source, [request, request]) == [None, None]
+    assert len(fetched) == 1
+
+
+def test_hinet_failure_is_not_cached(tmp_path):
+    source = HinetSource("user", "password", cache_dir=tmp_path, retries=1)
+
+    def fail(request):
+        raise ConnectionError("Hi-net returned no data.")
+
+    source._fetch_once = fail
+    with pytest.raises(ConnectionError):
+        _get_all(source, [_request("AYEH", 0, 60)])
+    assert not list(tmp_path.rglob("*.mseed"))
 
 
 def test_hinet_get_stations():
