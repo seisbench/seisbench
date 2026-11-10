@@ -2,6 +2,7 @@ import asyncio
 
 from obspy import UTCDateTime
 from obspy.core.event import (
+    Pick,
     WaveformStreamID,
     Comment,
     Event,
@@ -257,3 +258,40 @@ def test_noise_top_up():
     assert job.kind == "noise" and job.trace_name.startswith("noise_hawaii:1")
     assert job.params == {"split": "dev", "source_region": "hawaii"}
     assert job.endtime == origin - 120 and job.picks == ()
+
+
+def test_pick_outside_data(monkeypatch):
+    # The data end early: a pick after the end would be a label outside the waveform
+    start = UTCDateTime(2020, 1, 1)
+
+    async def get_waveform_array(client, inventory, request, sampling_rate, order):
+        params = {
+            "trace_start_time": str(start),
+            "trace_sampling_rate_hz": 100.0,
+            "trace_completeness": 0.5,
+        }
+        return "HV.BYL..HHZ", params, np.zeros((3, 6001))
+
+    monkeypatch.setattr("seisbench.data.dlf.get_waveform_array", get_waveform_array)
+    monkeypatch.setattr("seisbench.data.dlf.get_trace_params", lambda *args: {})
+    dataset = DeepLowFrequency.__new__(DeepLowFrequency)
+    dataset._client = None
+
+    def job(pick_offset):
+        pick = Pick(time=start + pick_offset, phase_hint="S", evaluation_mode="manual")
+        return Job(
+            kind="event",
+            region="hawaii",
+            source_id="hawaii:1",
+            trace_name="a",
+            waveform_id=WaveformStreamID("HV", "BYL", "", "HH?"),
+            starttime=start,
+            endtime=start + 120,
+            params={},
+            picks=(pick,),
+        )
+
+    download = asyncio.run(dataset.get_waveform_data(job(30), None))
+    assert download.trace_params["trace_S_arrival_sample"] == 3000
+    with pytest.raises(ValueError, match="outside the data"):
+        asyncio.run(dataset.get_waveform_data(job(90), None))

@@ -4,7 +4,6 @@ import asyncio
 import bisect
 import csv
 import json
-from datetime import datetime
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from itertools import groupby
@@ -36,6 +35,7 @@ from seisbench.data.multiclient import (
     get_cached_inventory,
     get_waveform_array,
 )
+from seisbench.util.file import move_to_backup
 from seisbench.util.trace_ops import trace_has_spikes
 
 # One QuakeML file per region, <region>.xml. Japan needs a Hi-net account.
@@ -737,6 +737,9 @@ BQ, HS, NH, 1P, 2D, LU), among others.
             trace_params["trace_has_spikes"] = trace_has_spikes(data)
         for pick in job.picks:
             sample = round((pick.time - start) * sampling_rate)
+            if not 0 <= sample < data.shape[1]:
+                # E.g., the data end early: the label would be outside the waveform
+                raise ValueError(f"The {pick.phase_hint} pick is outside the data.")
             trace_params[f"trace_{pick.phase_hint}_arrival_sample"] = sample
             trace_params[f"trace_{pick.phase_hint}_status"] = pick.evaluation_mode
 
@@ -1098,13 +1101,12 @@ if __name__ == "__main__":
         )
 
     if args.force:
-        dataset_path = DeepLowFrequency._path_internal()
-        if dataset_path.exists():
-            backup_path = dataset_path.with_name(
-                f"{dataset_path.name}.bak-{datetime.now():%Y%m%dT%H%M%S}"
-            )
-            logger.info("Moving existing dataset to %s", backup_path)
-            dataset_path.rename(backup_path)
+        try:
+            backup_path = move_to_backup(DeepLowFrequency._path_internal())
+        except RuntimeError as exc:
+            parser.error(str(exc))
+        if backup_path is not None:
+            logger.info("Moved the existing dataset to %s", backup_path)
 
     ds = DeepLowFrequency(
         catalog_dir=args.catalog_dir,

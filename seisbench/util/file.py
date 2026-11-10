@@ -1,6 +1,7 @@
 import ftplib
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 
 import requests
@@ -203,6 +204,25 @@ def _try_lock(file: Path):
         handle.close()
         return None
     return handle
+
+
+def move_to_backup(path: Path) -> Path | None:
+    """
+    Moves a dataset folder to ``<name>.bak-<time>`` next to it, e.g., before compiling the dataset anew.
+
+    :return: The backup folder, or None if the folder doesn't exist
+    :raises RuntimeError: If a download into the folder is running, i.e., holds the lock of its metadata file, see
+                          :py:func:`callback_if_uncached`
+    """
+    if not path.exists():
+        return None
+    lock = _try_lock(path / "metadata.csv")
+    if lock is None:
+        raise RuntimeError(f"A download into {path} is running. Stop it first.")
+    lock.close()
+    backup = path.with_name(f"{path.name}.bak-{datetime.now():%Y%m%dT%H%M%S}")
+    path.rename(backup)
+    return backup
 
 
 def callback_if_uncached(

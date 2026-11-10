@@ -29,9 +29,9 @@ from typing import (
 import numpy as np
 import obspy
 from obspy import Inventory, Stream, UTCDateTime, read_inventory
+from obspy.clients.fdsn.header import FDSNException, FDSNNoDataException
 from obspy.core.inventory import Channel, Network, Station
 from scipy import signal
-from obspy.clients.fdsn.header import FDSNException, FDSNNoDataException
 
 import seisbench
 from seisbench import logger
@@ -147,6 +147,16 @@ class _UnauthorizedError(FDSNException):
     """
 
 
+class _TransientError(FDSNException):
+    """
+    The server is busy or temporarily unavailable, see :py:data:`RETRY_STATUS`.
+    """
+
+
+# HTTP status codes of temporary failures, which are retried
+RETRY_STATUS = {408, 429, 500, 502, 503, 504}
+
+
 def _read_eida_token(token: str) -> str:
     """
     Returns the token itself, or reads it from a token file.
@@ -170,6 +180,9 @@ class FDSNSource(Source):
     :param eida_token: EIDA token or path to a token file, for restricted data
     :param networks: Only use this source for these networks. Pins networks to a
         data center when others hold copies of them, too.
+    :param retries: Retries of a request after a temporary failure (HTTP 408, 429 or
+        5xx, a timeout or a dropped connection)
+    :param retry_wait: Seconds before the first retry, doubled for each further one
     """
 
     def __init__(
@@ -178,9 +191,13 @@ class FDSNSource(Source):
         connections: int = 4,
         eida_token: str | None = None,
         networks: Iterable[str] | None = None,
+        retries: int = 3,
+        retry_wait: float = 10.0,
     ):
         super().__init__(connections=connections, networks=networks)
         self.base_url = base_url.rstrip("/")
+        self.retries = retries
+        self.retry_wait = retry_wait
         self.eida_token = _read_eida_token(eida_token) if eida_token else None
         self._auth = None
         self._auth_lock = asyncio.Lock()
@@ -209,11 +226,44 @@ class FDSNSource(Source):
                     f"EIDA authentication at {url} failed with HTTP "
                     f"{response.status}: {(await response.text())[:200]}"
                 )
-            login, password = (await response.text()).strip().split(":")
+            login, password = (await response.text()).strip().split(":", 1)
         self._auth = aiohttp.DigestAuthMiddleware(login, password)
         logger.info("Authenticated at %s with EIDA token.", self.base_url)
 
     async def _get(
+        self,
+        session: aiohttp.ClientSession,
+        url: str,
+        params: dict[str, str],
+        **kwargs,
+    ) -> bytes | None:
+        """
+        GET request, retried after temporary failures.
+
+        :return: The response body, or None if there are no data
+        """
+        aiohttp = _import_aiohttp()
+        for attempt in range(self.retries + 1):
+            try:
+                return await self._get_once(session, url, params, **kwargs)
+            except (
+                _TransientError,
+                aiohttp.ClientConnectionError,
+                aiohttp.ClientPayloadError,
+                asyncio.TimeoutError,
+            ) as exc:
+                if attempt == self.retries:
+                    raise
+                wait = self.retry_wait * 2**attempt
+                logger.warning(
+                    "Request to %s failed (%s), retrying in %.0f s.",
+                    self.base_url,
+                    str(exc) or type(exc).__name__,
+                    wait,
+                )
+                await asyncio.sleep(wait)
+
+    async def _get_once(
         self,
         session: aiohttp.ClientSession,
         url: str,
@@ -226,6 +276,10 @@ class FDSNSource(Source):
                 return None
             if response.status == 401:
                 raise _UnauthorizedError(f"{response.url} returned HTTP 401.")
+            if response.status in RETRY_STATUS:
+                raise _TransientError(
+                    f"{response.url} returned HTTP {response.status}."
+                )
             if response.status != 200:
                 raise FDSNException(
                     f"{response.url} returned HTTP {response.status}: "
@@ -644,10 +698,13 @@ class HinetSource(Source):
     def _fetch(self, request: HinetRequest) -> None:
         """
         Downloads a request, with retries for dropped connections, and writes it to
-        the cache. Runs in a thread.
+        the cache. Logs in again before a retry. Runs in a thread.
         """
         for attempt in range(1, self.retries + 1):
             try:
+                if attempt > 1:
+                    # A long download may outlive the Hi-net session
+                    self._client.login(self._user, self._password)
                 stream = self._fetch_once(request)
                 break
             except OSError as exc:  # requests' ConnectionError is an OSError

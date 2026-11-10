@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 import seisbench.data as sbd
-from seisbench.util.file import _try_lock, callback_if_uncached
+from seisbench.util.file import _try_lock, callback_if_uncached, move_to_backup
 
 
 def _add(writer, names):
@@ -99,3 +99,22 @@ def test_callback_resume(tmp_path):
     assert calls == ["progress"]
     assert file.read_text() == "progress done"
     assert not (tmp_path / "metadata.csv.lock").exists()
+
+
+def test_move_to_backup(tmp_path):
+    dataset = tmp_path / "dataset"
+    assert move_to_backup(dataset) is None
+
+    dataset.mkdir()
+    (dataset / "metadata.csv.partial").write_text("progress")
+    if sys.platform != "win32":  # Without fcntl, nothing is locked
+        # A running download holds the lock: its folder must not be moved
+        lock = _try_lock(dataset / "metadata.csv")
+        with pytest.raises(RuntimeError, match="running"):
+            move_to_backup(dataset)
+        lock.close()
+        assert dataset.is_dir()
+
+    backup = move_to_backup(dataset)
+    assert not dataset.exists()
+    assert (backup / "metadata.csv.partial").read_text() == "progress"

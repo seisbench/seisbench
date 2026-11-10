@@ -35,6 +35,7 @@ from seisbench.data.multiclient import (
     get_waveform_array,
 )
 from seisbench.util import download_http
+from seisbench.util.file import move_to_backup
 
 REMOVE_CHANNELS = {
     "HHT",  # Stray channel or typo
@@ -256,8 +257,11 @@ Seismic Networks:
         trace_params["trace_name"] = get_trace_name(event_params, waveform_id)
 
         for pick in picks:
-            sample = (pick.time - actual_t_start) * sampling_rate
-            trace_params[f"trace_{pick.phase_hint}_arrival_sample"] = round(sample)
+            sample = round((pick.time - actual_t_start) * sampling_rate)
+            if not 0 <= sample < data.shape[1]:
+                # E.g., the data end early: the label would be outside the waveform
+                raise ValueError(f"The {pick.phase_hint} pick is outside the data.")
+            trace_params[f"trace_{pick.phase_hint}_arrival_sample"] = sample
             trace_params[f"trace_{pick.phase_hint}_status"] = pick.evaluation_mode
             if pick.polarity is None:
                 trace_params[f"trace_{pick.phase_hint}_polarity"] = "undecidable"
@@ -679,13 +683,12 @@ if __name__ == "__main__":
         args.eida_token = str(path)
 
     if args.force:
-        dataset_path = BohemiaSaxony._path_internal()
-        if dataset_path.exists():
-            backup_path = dataset_path.with_name(
-                f"{dataset_path.name}.bak-{datetime.now():%Y%m%dT%H%M%S}"
-            )
-            logger.info("Moving existing dataset to %s", backup_path)
-            dataset_path.rename(backup_path)
+        try:
+            backup_path = move_to_backup(BohemiaSaxony._path_internal())
+        except RuntimeError as exc:
+            parser.error(str(exc))
+        if backup_path is not None:
+            logger.info("Moved the existing dataset to %s", backup_path)
 
     ds = BohemiaSaxony(eida_token=args.eida_token, component_order="ZNE")
     print(ds)

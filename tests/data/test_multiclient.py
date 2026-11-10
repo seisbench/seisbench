@@ -4,12 +4,14 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from obspy import Stream, Trace, UTCDateTime
+from obspy.clients.fdsn.header import FDSNException
 
 from seisbench.data.multiclient import (
     FDSNSource,
     HinetRequest,
     HinetSource,
     WaveformRequest,
+    _TransientError,
     _UnauthorizedError,
     antialias_filter,
     hinet_counts,
@@ -282,3 +284,58 @@ def test_resample_antialias(rate):
     assert amplitudes[50.0] < 1e-3
     assert amplitudes[60.0] < 1e-3
     assert antialias_filter.cache_info().hits > 0
+
+
+class _FakeResponse:
+    def __init__(self, status):
+        self.status = status
+        self.url = "https://x/fdsnws/dataselect/1/query"
+
+    async def read(self):
+        return b"data"
+
+    async def text(self):
+        return ""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        pass
+
+
+class _FakeSession:
+    """Answers with the given status codes, or raises the given exceptions."""
+
+    def __init__(self, answers):
+        self.answers = list(answers)
+        self.calls = 0
+
+    def get(self, url, params, **kwargs):
+        self.calls += 1
+        answer = self.answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return _FakeResponse(answer)
+
+
+def test_fdsn_retries():
+    import aiohttp
+
+    source = FDSNSource("https://x", retries=2, retry_wait=0.0)
+
+    def get(answers):
+        session = _FakeSession(answers)
+        result = asyncio.run(source._get(session, "https://x", {}))
+        return result, session.calls
+
+    assert get([503, 200]) == (b"data", 2)
+    assert get([aiohttp.ServerDisconnectedError(), 200]) == (b"data", 2)
+    assert get([asyncio.TimeoutError(), 429, 200]) == (b"data", 3)
+    # No data and permanent errors are not retried
+    assert get([204]) == (None, 1)
+    with pytest.raises(FDSNException):
+        get([400])
+    # Gives up after the retries
+    with pytest.raises(_TransientError):
+        get([503, 503, 503])
