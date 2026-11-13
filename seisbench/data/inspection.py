@@ -287,7 +287,7 @@ class DatasetInspection:
                 save_markers(pick_markers, str(filename_picks))
                 all_picks += pick_markers
 
-                seisbench.logger.info("Wrote %d events to %s", n_events_day, filename)
+                logger.debug("Wrote %d events to %s", n_events_day, filename)
                 pbar.update(n_events_day)
 
         seisbench.logger.info("Dumping events, picks and stations")
@@ -395,7 +395,7 @@ def dump_stations_csv(stations: list[_StationTuple], filename: PathStr) -> None:
     lines = [sta.as_csv() for sta in stations]
     filename = Path(filename)
     filename.write_text("\n".join([header] + lines) + "\n")
-    logger.info("Wrote %d stations to %s", len(stations), filename)
+    logger.debug("Wrote %d stations to %s", len(stations), filename)
 
 
 def dump_events_csv(events: list[Event], filename: PathStr) -> None:
@@ -418,7 +418,7 @@ def dump_events_csv(events: list[Event], filename: PathStr) -> None:
     ]
     filename = Path(filename)
     filename.write_text("\n".join([header] + lines) + "\n")
-    logger.info("Wrote %d events to %s", len(events), filename)
+    logger.debug("Wrote %d events to %s", len(events), filename)
 
 
 __all__ = ["DatasetInspection"]
