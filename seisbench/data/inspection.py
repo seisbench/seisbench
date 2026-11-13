@@ -57,8 +57,7 @@ class DatasetInspection:
         data, metadata = ds.get_sample(sample_idx)
         traces = []
 
-        location_code = str(metadata.get("station_location_code"))
-        location_code = "" if location_code == "nan" else location_code
+        location_code = _location_code(metadata)
 
         for ichannel, trace_data in enumerate(data):
             channel = metadata["trace_component_order"][ichannel]
@@ -115,16 +114,14 @@ class DatasetInspection:
         metadata = metadata.iloc[sample_idx].to_dict()
         sampling_rate = metadata["trace_sampling_rate_hz"]
         phases = [
-            key.strip("trace_").strip("_arrival_sample")
+            key.removeprefix("trace_").removesuffix("_arrival_sample")
             for key in metadata.keys()
             if key.endswith("_arrival_sample")
         ]
-        location_code = metadata.get("station_location_code")
-        location_code = "" if np.isnan(location_code) else location_code
         nsl = (
             metadata["station_network_code"],
             metadata["station_code"],
-            location_code,
+            _location_code(metadata),
         )
 
         trace_start = datetime.fromisoformat(metadata["trace_start_time"])
@@ -338,6 +335,17 @@ Created with SeisBench {seisbench.__version__}
         )
 
 
+def _location_code(metadata: TraceParameters) -> str:
+    """
+    The location code of a trace, an empty string if it has none (missing or NaN).
+    Codes such as ``00`` are strings, so they can't be tested with ``np.isnan``.
+    """
+    location_code = metadata.get("station_location_code")
+    if location_code is None or pd.isna(location_code):
+        return ""
+    return str(location_code)
+
+
 class _StationTuple(NamedTuple):
     network: str
     station: str
@@ -348,12 +356,10 @@ class _StationTuple(NamedTuple):
 
     @classmethod
     def from_metadata(cls, metadata: TraceParameters) -> _StationTuple:
-        location_code = str(metadata.get("station_location_code"))
-        location_code = "" if location_code == "nan" else location_code
         return cls(
             metadata["station_network_code"],
             metadata["station_code"],
-            location_code,
+            _location_code(metadata),
             metadata["station_latitude_deg"],
             metadata["station_longitude_deg"],
             metadata["station_elevation_m"],
