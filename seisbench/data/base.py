@@ -142,6 +142,10 @@ class WaveformDataset:
                         "trace_sampling_rate_hz": float,
                         "trace_dt_s": float,
                         "trace_component_order": str,
+                        # SEED codes, e.g., location 00 would become 0.0
+                        "station_network_code": str,
+                        "station_code": str,
+                        "station_location_code": str,
                     },
                 ).copy()  # Copy avoids pandas warnings about fragmented metadata
             tmp_metadata["trace_chunk"] = chunk
@@ -1589,14 +1593,17 @@ class WaveformDataset:
 
     def get_event_sample_indices(self, event_id: str):
         """
-        Returns the indices of all samples associated with a given event.
+        Returns the indices of all samples associated with a given event, as used by
+        :py:func:`get_sample`, also after :py:func:`filter`.
         Requires that source_id is part of the metadata.
 
         :param event: Event identifier
         :return: List of indices associated with the event
         :rtype: list[int]
         """
-        return self.metadata.index[self.metadata["source_id"] == event_id].tolist()
+        return np.flatnonzero(
+            (self.metadata["source_id"] == event_id).to_numpy()
+        ).tolist()
 
 
 class MultiWaveformDataset:
