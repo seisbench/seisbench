@@ -1138,23 +1138,33 @@ class WaveformModel(SeisBenchModel, ABC):
                           :py:func:`annotate_stream_pre`.
     :param output_type: The type of output from the model. Current options are:
 
-                        - "point" for a point prediction, i.e., the probability of containing a pick in the window
+                        - ``"point"`` for a point prediction, i.e., the probability of containing a pick in the window
                           or of a pick at a certain location. This will provide an :py:func:`annotate` function.
                           If an :py:func:`classify_aggregate` function is provided by the inheriting model,
                           this will also provide a :py:func:`classify` function.
-                        - "array" for prediction curves, i.e., probabilities over time for the arrival of certain wave
-                          types. This will provide an :py:func:`annotate` function.
+                        - ``"array"`` for prediction curves, i.e., probabilities over time for the arrival of certain
+                          wave types. This will provide an :py:func:`annotate` function.
                           If an :py:func:`classify_aggregate` function is provided by the inheriting model,
                           this will also provide a :py:func:`classify` function.
-                        - "regression" for a regression value, i.e., the sample of the arrival within a window.
-                          This will only provide a :py:func:`classify` function.
+                        - ``"triggered_point"`` for point predictions at specific times at a stream, e.g., to predict
+                          the polarity of all P arrivals in a trace. If this type is chose, the ``annotate`` and
+                          ``classify`` functions require an additional input called ``picks``. For each of these picks,
+                          one output will be generated. The output will be ``None`` if no reasonable result can be
+                          one output will be generated. The output will be ``None`` if no reasonable result can be
+                          given. The ``picks`` can be either a list of tuples with ``(station, time)`` or a
+                          ``PickList`` object, as output, for example, by the picking models. In the first case,
+                          the station needs to be in the format ``NET.STA.LOC`` and the time a ``obspy.UTCDateTime``
+                          object.
 
     :param default_args: Default arguments to use in annotate and classify functions
     :param in_samples: Number of input samples in time
+    :param samples_before_after: Number of samples before and after the trigger (only for triggered models)
     :param pred_sample: For a "point" prediction: sample number of the sample in a window for which the prediction is
                         valid. For an "array" prediction: a tuple of first and last sample defining the prediction
                         range. Note that the number of output samples and input samples within the given range are
                         not required to agree.
+    :param pick_filter: If set, only picks with the phases listed will be processed by the model
+                        (only for triggered models).
     :param labels: Labels for the different predictions in the output, e.g., Noise, P, S. If a function is passed,
                    it will be called for every label generation and be provided with the stats of the trace that was
                    annotated.
@@ -1223,7 +1233,9 @@ class WaveformModel(SeisBenchModel, ABC):
         output_type: Optional[str] = None,
         default_args: Optional[dict[str, Any]] = None,
         in_samples: Optional[int] = None,
+        samples_before_after: Optional[tuple[int, int]] = None,
         pred_sample: Optional[int | tuple[int, int]] = 0,
+        pick_filter: Optional[str | list[str]] = None,
         labels: Optional[str | list[str]] = None,
         filter_args: Optional[tuple] = None,
         filter_kwargs: Optional[dict[str, Any]] = None,
@@ -1245,9 +1257,14 @@ class WaveformModel(SeisBenchModel, ABC):
         else:
             self.default_args = default_args
         self.in_samples = in_samples
+        self.samples_before_after = samples_before_after
         self.pred_sample = pred_sample
+        self.pick_filter = pick_filter
         self.filter_args = filter_args
         self.filter_kwargs = filter_kwargs
+
+        if in_samples is None and samples_before_after is not None:
+            self.in_samples = samples_before_after[0] + samples_before_after[1]
 
         if isinstance(grouping, str):
             if grouping == "channel":
@@ -1398,6 +1415,9 @@ class WaveformModel(SeisBenchModel, ABC):
             if len(stream) == 0:
                 return None
 
+            if self.output_type == "triggered_point":
+                self._build_triggers_grouped(argdict)
+
             # Sampling rate of the data. Equal to self.sampling_rate is this is not None
             sampling_rate = stream[0].stats.sampling_rate
             argdict["sampling_rate"] = sampling_rate
@@ -1426,6 +1446,7 @@ class WaveformModel(SeisBenchModel, ABC):
             train_mode = self.training
             self.eval()
 
+            finalized = False
             groups = self._iter_groups(groups, argdict)
             if self.output_type == "array":
                 traces = self._iter_fragments_array(groups, argdict)
@@ -1440,31 +1461,88 @@ class WaveformModel(SeisBenchModel, ABC):
                 predictions = self._iter_reassemble_predictions_point(
                     predictions_blocks, argdict
                 )
+
+            elif self.output_type == "triggered_point":
+                traces = self._iter_fragments_triggered_point(groups, argdict)
+                predictions_blocks = self._iter_predictions(traces, argdict)
+
+                output = [None] * argdict["n_triggers"]
+
+                if self._argdict_get_with_default(argdict, "pbar"):
+                    pbar = tqdm(total=n_groups)
+                else:
+                    pbar = None
+
+                async for prediction_block in predictions_blocks:
+                    for prediction in prediction_block:
+                        output[prediction.pick_idx] = prediction.data
+                    if pbar is not None:
+                        pbar.update(1)
+
+                if pbar is not None:
+                    pbar.close()
+
+                finalized = True
+
             else:
                 raise NotImplementedError(
                     f"Output type '{self.output_type}' not implemented for annotate."
                 )
 
-            annotations = self._iter_prediction_streams(predictions)
+            if not finalized:
+                annotations = self._iter_prediction_streams(predictions)
 
-            if self._argdict_get_with_default(argdict, "pbar"):
-                pbar = tqdm(total=n_groups)
-            else:
-                pbar = None
+                if self._argdict_get_with_default(argdict, "pbar"):
+                    pbar = tqdm(total=n_groups)
+                else:
+                    pbar = None
 
-            output = obspy.Stream()
-            async with contextlib.aclosing(annotations):
-                async for st in annotations:
-                    output += st
-                    if pbar is not None:
-                        pbar.update(1)
+                output = obspy.Stream()
+                async with contextlib.aclosing(annotations):
+                    async for st in annotations:
+                        output += st
+                        if pbar is not None:
+                            pbar.update(1)
 
-            if pbar is not None:
-                pbar.close()
+                if pbar is not None:
+                    pbar.close()
+
         finally:
             if train_mode:
                 self.train()
         return output
+
+    def _build_triggers_grouped(self, argdict: dict[str, Any]) -> None:
+        """
+        Groups the picks by station. The picks are read from the "picks" keyword of the model. They can be either
+        a list of tuples of the form (station,
+        """
+        assert "picks" in argdict and argdict["picks"] is not None, (
+            "This model requires picks to call annotate/classify."
+        )
+        if self._grouping.grouping != "instrument":
+            raise NotImplementedError(
+                "Triggered models are currently only implemented for 'instrument' grouping"
+            )
+
+        picks = argdict["picks"]
+
+        triggers_grouped = defaultdict(list)
+
+        # Format 1: PickList
+        if isinstance(picks, util.PickList):
+            for pick_idx, pick in enumerate(picks):
+                if self.pick_filter is not None and pick.phase not in self.pick_filter:
+                    continue
+                triggers_grouped[pick.trace_id].append((pick_idx, pick.peak_time))
+
+        # Format 2: (str, UTCDateTime)
+        else:
+            for pick_idx, (station, pick_time) in enumerate(picks):
+                triggers_grouped[station].append((pick_idx, pick_time))
+
+        argdict["triggers_grouped"] = triggers_grouped
+        argdict["n_triggers"] = len(picks)
 
     def _iter_groups(
         self,
@@ -1707,6 +1785,86 @@ class WaveformModel(SeisBenchModel, ABC):
             await drain_buffer(out_queue, force=True)
 
         return iter_queue_worker(worker, groups)
+
+    def _iter_fragments_triggered_point(
+        self,
+        groups: AsyncGenerator[GroupedTraceData],
+        argdict: dict,
+    ) -> AsyncGenerator[list[TraceSegment]]:
+        """Wrapper with queue IO functionality around :py:func:`_cut_fragments_array`."""
+        buffer: dict[int, list[TraceSegment]] = defaultdict(list)
+        batch_size = self._argdict_get_with_default(argdict, "batch_size")
+
+        async def drain_buffer(out_queue: asyncio.Queue, force: bool = False) -> None:
+            if not any(len(v) >= batch_size for v in buffer.values()) and not force:
+                return
+
+            buffer_break = 0 if force else batch_size
+
+            for n_samples in buffer.keys():
+                while len(buffer[n_samples]) > buffer_break:
+                    output_elem = buffer[n_samples][:batch_size]
+                    buffer[n_samples] = buffer[n_samples][batch_size:]
+                    await out_queue.put(output_elem)
+
+        async def worker(out_queue: asyncio.Queue) -> None:
+            async for group in groups:
+                blocks = self._cut_fragments_triggered_point(group, argdict)
+                for n_samples, grouped_blocks in groupby(
+                    blocks, key=lambda blk: blk.n_samples
+                ):
+                    buffer[n_samples].extend(list(grouped_blocks))
+                await drain_buffer(out_queue)
+                # await asyncio.sleep(0)  # Yield control to event loop
+
+            await drain_buffer(out_queue, force=True)
+
+        return iter_queue_worker(worker, groups)
+
+    def _cut_fragments_triggered_point(
+        self, group: GroupedTraceData, argdict: dict
+    ) -> list[TraceSegment]:
+        """
+        Cuts numpy arrays into fragments for triggered point models
+        """
+        assert len(group.stations) == 1, (
+            "_cut_fragments_triggered_point is only implemented for 'instrument' grouping."
+        )
+        station = group.stations[0]
+        picks = argdict["triggers_grouped"][station]
+        samples_before, samples_after = self.samples_before_after
+
+        output = []
+        # Generate windows and preprocess
+        for pick_idx, pick_time in picks:
+            pick_sample = int((pick_time - group.start_time) * argdict["sampling_rate"])
+            if (
+                pick_sample - samples_before < 0
+                or pick_sample + samples_after > group.data.shape[-1]
+            ):
+                # Pick not contained in window
+                continue
+
+            window = group.data[
+                ..., pick_sample - samples_before : pick_sample + samples_after
+            ]
+            # Adding pick_idx to the key makes each key unique.
+            # Given that only the pick idx is used later and groups don't need to be reassambled, this is fine.
+            output.append(
+                TraceSegment(
+                    data=window,
+                    key=(
+                        group.start_time.timestamp,
+                        "__".join(group.stations) + str(pick_idx),
+                    ),
+                    start_time=group.start_time,
+                    stations=group.stations,
+                    pick_idx=pick_idx,
+                    n_windows=1,
+                )
+            )
+
+        return output
 
     def _get_in_pred_samples(
         self,
@@ -2657,7 +2815,9 @@ class WaveformModel(SeisBenchModel, ABC):
                 "component_order": self.component_order,
                 "default_args": self.default_args,
                 "in_samples": self.in_samples,
+                "samples_before_after": self.samples_before_after,
                 "pred_sample": self.pred_sample,
+                "pick_filter": self.pick_filter,
                 "labels": self.labels,
                 "filter_args": self.filter_args,
                 "filter_kwargs": self.filter_kwargs,

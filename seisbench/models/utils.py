@@ -79,11 +79,12 @@ class TraceSegment(NamedTuple):
     data: np.ndarray
     key: Key
     start_time: obspy.UTCDateTime
-    window_offset: int
-    n_windows: int
     stations: list[str]
-    in_samples: int
-    pred_sample: tuple[int, int]
+    n_windows: int
+    window_offset: None | int = None
+    in_samples: None | int = None
+    pred_sample: None | tuple[int, int] = None
+    pick_idx: None | int = None
 
     @property
     def n_samples(self) -> int:
@@ -114,6 +115,7 @@ class PredictionSegment(TraceSegment):
             stations=segment.stations,
             in_samples=segment.in_samples,
             pred_sample=segment.pred_sample,
+            pick_idx=segment.pick_idx,
         )
 
     @property

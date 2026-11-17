@@ -93,6 +93,15 @@ EQCCT
     :undoc-members:
     :show-inheritance:
 
+EquiPol
+-----------------------------------
+
+.. autoclass:: seisbench.models.equipol.EquiPol
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+
 GPD
 -----------------------------------
 
@@ -129,6 +138,14 @@ PickBlue
 -----------------------------------
 
 .. automodule:: seisbench.models.pickblue
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+RPNet
+-----------------------------------
+
+.. autoclass:: seisbench.models.rpnet.RPNet
     :members:
     :undoc-members:
     :show-inheritance:
