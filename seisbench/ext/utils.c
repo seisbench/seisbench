@@ -172,24 +172,38 @@ static PyObject *stack_windows(PyObject *self, PyObject *args, PyObject *kwds) {
       }
     }
   } else if (!strcmp(method, "avg")) {
-    npy_intp *sample_count =
-        (npy_intp *)calloc(size_out * n_channels, sizeof(npy_intp));
+    // A sample is covered by at most n_windows windows, so int32 counts suffice
+    npy_int32 *sample_count =
+        (npy_int32 *)calloc(size_out * n_channels, sizeof(npy_int32));
     if (sample_count == NULL) {
       no_memory = 1;
     } else {
       for (i_win = 0; i_win < n_windows; i_win++) {
         Window win = windows[i_win];
-        for (i_sample = 0; i_sample < window_samples; i_sample++) {
-          offset_res = (offsets_data[i_win] + i_sample) * n_channels;
-          const char *sample = win.data + i_sample * win.sample_stride;
+        float *window_result = result_data + offsets_data[i_win] * n_channels;
+        npy_int32 *window_count = sample_count + offsets_data[i_win] * n_channels;
+        // NaN values are added as 0 and not counted. Branch-free, so the
+        // compiler can vectorize the loops.
+        if (win.channel_stride == sizeof(float) &&
+            win.sample_stride == n_channels * (npy_intp)sizeof(float)) {
+          // Contiguous window: a single flat loop
+          const float *values = (const float *)win.data;
+          for (npy_intp i = 0; i < window_samples * n_channels; i++) {
+            int valid = !isnan(values[i]);
+            window_result[i] += valid ? values[i] : 0.0f;
+            window_count[i] += valid;
+          }
+        } else {
           for (i_channel = 0; i_channel < n_channels; i_channel++) {
-            float value =
-                *(const float *)(sample + i_channel * win.channel_stride);
-            if (isnan(value)) {
-              continue;
+            const char *channel = win.data + i_channel * win.channel_stride;
+            for (i_sample = 0; i_sample < window_samples; i_sample++) {
+              float value =
+                  *(const float *)(channel + i_sample * win.sample_stride);
+              int valid = !isnan(value);
+              window_result[i_sample * n_channels + i_channel] +=
+                  valid ? value : 0.0f;
+              window_count[i_sample * n_channels + i_channel] += valid;
             }
-            result_data[offset_res + i_channel] += value;
-            sample_count[offset_res + i_channel]++;
           }
         }
       }
